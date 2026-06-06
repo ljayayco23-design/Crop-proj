@@ -10,6 +10,8 @@ use App\Http\Controllers\FarmerHistoryController;
 use App\Http\Controllers\TechnicianController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\ChatController;
+use Illuminate\Support\Facades\Artisan;
+
 
 // ============================================
 // SHARED PROFILE ROUTES (For ALL roles)
@@ -138,10 +140,12 @@ Route::middleware('auth')->prefix('chat')->group(function () {
     Route::delete('/delete/{id}', [\App\Http\Controllers\ChatController::class, 'deleteMessage']);
 });
 // ==================== FARMER DETECTION ROUTE ====================
-Route::match(['get', 'post'], '/farmer/detection', function (\Illuminate\Http\Request $request) {
+// ==================== FARMER DETECTION ROUTE ====================
+Route::match(['get', 'post'], '/farmer/detection', function (\Illuminate\Http\Request $request) { 
     if ($request->isMethod('post') && $request->has('action')) {
         if ($request->action === 'chat_query') {
-            $result = tryGetChatResponse($request->query ?? '', $request->language ?? 'en');
+            // Change $request->query to $request->input('query')
+            $result = tryGetChatResponse($request->input('query') ?? '', $request->language ?? 'en');
             return response()->json($result);
         }
         if ($request->action === 'save_detection') return response()->json(['success' => true]);
@@ -202,3 +206,13 @@ function tryGetChatResponse($query, $language = 'en') {
     }
     return ['response' => 'Sorry, I couldn\'t get a response right now.'];
 }
+
+
+Route::get('/setup-db', function() {
+    try {
+        Artisan::call('migrate', ['--force' => true]);
+        return "Database migrated successfully!";
+    } catch (\Exception $e) {
+        return "Error: " . $e->getMessage();
+    }
+});
