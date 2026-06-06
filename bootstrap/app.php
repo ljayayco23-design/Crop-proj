@@ -11,12 +11,16 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        
-        $middleware->alias([
-            'role' => \App\Http\Middleware\RoleMiddleware::class,
-        ]);
-
+        //
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // 🚨 EMERGENCY BREAK: Forces the real hidden error to show up
+        $exceptions->render(function (\Throwable $e) {
+            header('Content-Type: text/plain', true, 500);
+            echo "--- THE REAL HIDDEN ERROR ---\n";
+            echo "MESSAGE: " . $e->getMessage() . "\n\n";
+            echo "FILE: " . $e->getFile() . " on line " . $e->getLine() . "\n\n";
+            echo "TRACE:\n" . $e->getTraceAsString();
+            exit(1);
+        });
     })->create();
