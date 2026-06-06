@@ -1,0 +1,87 @@
+<?php
+
+namespace App\Http\Controllers;
+use App\Models\User;
+use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
+
+class ProductController extends Controller 
+{
+    public function index() 
+    {
+        $users = User::all();
+        return view('product.index', compact('users'));
+    }
+
+    public function store(Request $request)
+    {
+        // Validate the request data
+
+
+
+        $validateData = $request->validate([
+            'name' => 'string|max:255',
+            'quality' => 'string|max:255',
+            'quantity' => 'int|max:255',
+        ]);
+
+        // $validateData = $request->validate([
+        //     'name' => 'required|string|max:255',
+        //     'email' => 'required|email|unique:users,email',
+        //     'password' => 'required|string|min:8|confirmed',
+        // ]);
+
+        // create a new user
+        $users = User::create ([
+            'name' => $validateData['name'],
+            'quality' => $validateData['quality'],
+            'quantity' => $validateData['quantity'],
+        ]);
+
+        // Redirect to user index page with a success message
+        return redirect()->route('product.index')->with('success', 'User Created Successfully.');
+    }
+
+    public function update(Request $request, $id)
+    {
+
+
+
+
+          $validateData = $request->validate([
+            'name' => 'string|max:255',
+            'quality' => 'string|max:255',
+            'quantity' => 'int|max:255',
+        ]);
+        // $validateData = $request->validate([
+        //     'name' => 'required|string|max:255',
+        //     'email' => 'email|unique:users,email',
+        //     'password' => 'nullable|string|min:8|confirmed',
+        // ]);
+
+        $user->name = $validateData['name'];
+        $user->name = $validateData['quality'];
+
+
+
+        // $users = User::update ([
+        //     'name' => $validateData['name'],
+        //     'email' => $validateData['email'],
+        //     'password' => $validateData['password'],
+        // ]);
+
+        // Redirect to user index page with a success message
+        return redirect()->route('product.index')->with('success', 'User Updated Successfully.');
+    }
+
+    public function destroy($id){
+
+    $user = User::findOrFail($id);
+
+    $user->delete();
+
+    return redirect()->route('product.index')->with('success', 'User delete Successfully.');
+
+}
+}
+?>
