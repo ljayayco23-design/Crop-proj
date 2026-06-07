@@ -40,12 +40,8 @@ class FarmerHistoryController extends Controller
                     }
                 }
             }
-            if (is_array($val)) {
-                return implode("\n• ", $val);
-            }
-            if (is_object($val)) {
-                return json_encode($val);
-            }
+            if (is_array($val)) return implode("\n• ", $val);
+            if (is_object($val)) return json_encode($val);
             return (string) $val;
         };
 
@@ -74,6 +70,7 @@ class FarmerHistoryController extends Controller
 
         foreach ($rawDetections as $row) {
             $key = strtolower(trim($row->class_key));
+            
             if ($currentKey !== $key && $currentKey !== '') {
                 $isPest = isset($pestNames[$currentKey]);
                 $detectionData[] = [
@@ -85,11 +82,26 @@ class FarmerHistoryController extends Controller
                 ];
                 $images = []; $confidences = [];
             }
+            
             $currentKey = $key;
-            if ($row->image_path) $images[] = asset($row->image_path);
+
+            // ✅ THE FIX: Check if it's a Base64 string before applying asset()
+            if (!empty($row->image_path)) {
+                $path = $row->image_path;
+                if (str_starts_with($path, 'data:image/') || str_starts_with($path, 'http') || str_starts_with($path, '/')) {
+                    $images[] = $path;
+                } elseif (strlen($path) > 255) {
+                    // Fallback in case raw Base64 was saved without the data prefix
+                    $images[] = 'data:image/jpeg;base64,' . $path;
+                } else {
+                    $images[] = asset($path);
+                }
+            }
+
             if (isset($row->confidence)) $confidences[] = (int)$row->confidence;
         }
 
+        // Catch the last item
         if ($currentKey !== '') {
             $isPest = isset($pestNames[$currentKey]);
             $detectionData[] = [
@@ -104,7 +116,7 @@ class FarmerHistoryController extends Controller
         return view('farmer.history', compact('diseaseNames', 'pestNames', 'knowledgeBase', 'detectionData'));
     }
 
-   public function saveDetection(Request $request)
+    public function saveDetection(Request $request)
     {
         $user_id = Auth::id();
         $class_key = strtolower(trim($request->class_key));
@@ -118,6 +130,7 @@ class FarmerHistoryController extends Controller
             'rice_gall_midge', 'rice_leaf_roller', 'rice_stem_borer', 'snail'
         ];
 
+        // Strict Filter Check
         if (!in_array($class_key, $diseaseNames) && !in_array($class_key, $pestNames)) {
             return response()->json([
                 'success' => false, 
@@ -125,17 +138,15 @@ class FarmerHistoryController extends Controller
             ], 422);
         }
 
-        // Keep the raw Base64 string instead of trying to save a physical file
-        $image_data = null;
-        if ($request->filled('image_base64')) {
-            $image_data = $request->image_base64; 
-        }
+        // Simply grab the Base64 string
+        $image_data = $request->input('image_base64');
 
+        // Insert directly into your production MySQL/TiDB database table
         DB::table('user_detections')->insert([
             'user_id' => $user_id,
             'class_key' => $request->class_key,
             'confidence' => $request->confidence ?? 0,
-            'image_path' => $image_data, // Saving the Base64 string here
+            'image_path' => $image_data, 
             'created_at' => now(),
             'updated_at' => now()
         ]);
@@ -148,38 +159,18 @@ class FarmerHistoryController extends Controller
         $user_id = Auth::id();
         $action = $request->action;
 
-        if ($action === 'delete_image') {
-            $image_path = str_replace(asset(''), '', $request->image_path);
-            $image_path = ltrim($image_path, '/');
-
-            if (File::exists(public_path($image_path))) {
-                File::delete(public_path($image_path));
+        // Ensure we only delete from the database, not trying to access Vercel's file system
+        if ($action === 'delete_image' || $action === 'delete_detection') {
+            
+            $query = DB::table('user_detections')->where('user_id', $user_id);
+            
+            if ($action === 'delete_image') {
+                $query->where('image_path', $request->image_path);
+            } else {
+                $query->where('class_key', $request->class_key);
             }
 
-            DB::table('user_detections')
-                ->where('user_id', $user_id)
-                ->where('image_path', $image_path)
-                ->delete();
-
-            return response()->json(['success' => true]);
-        }
-
-        if ($action === 'delete_detection') {
-            $records = DB::table('user_detections')
-                ->where('user_id', $user_id)
-                ->where('class_key', $request->class_key)
-                ->get();
-
-            foreach ($records as $record) {
-                if ($record->image_path && File::exists(public_path($record->image_path))) {
-                    File::delete(public_path($record->image_path));
-                }
-            }
-
-            DB::table('user_detections')
-                ->where('user_id', $user_id)
-                ->where('class_key', $request->class_key)
-                ->delete();
+            $query->delete();
 
             return response()->json(['success' => true]);
         }
