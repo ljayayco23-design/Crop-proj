@@ -277,23 +277,60 @@ function displayResults(predictions) {
     filtered.sort((a, b) => b.probability - a.probability);
     const top = filtered[0];
 
-    const className = top.className.trim().toLowerCase().replace(/\s+/g, '_');
+    // 1. Get the raw class name and lowercase it
+    let rawClassName = top.className.trim().toLowerCase().replace(/\s+/g, '_');
+
+    // 2. THE FIX: Correct the typos from your Teachable Machine model
+    if (rawClassName === 'left_blast') {
+        rawClassName = 'leaf_blast'; 
+    }
+
+    // 3. Handle the "random" background class gracefully
+    if (rawClassName === 'random') {
+        document.getElementById('top-label').textContent = "Unrecognized Image";
+        document.getElementById('top-confidence').innerHTML = `${Math.round(top.probability * 100)}%`;
+        document.getElementById('severity-label').textContent = "UNKNOWN";
+        document.getElementById('severity-message').textContent = "Please upload a clear photo of a rice plant.";
+        document.getElementById('predictions-list').innerHTML = '';
+        
+        // Hide all knowledge base info
+        document.getElementById('treatment').innerHTML = '<p class="text-secondary mb-0">No data available.</p>';
+        document.getElementById('causes').innerHTML = '';
+        document.getElementById('prevention').innerHTML = '';
+        
+        // Hide sections
+        document.getElementById('damage-section')?.classList.add('hidden');
+        document.getElementById('nutrient-section')?.classList.add('hidden');
+        document.getElementById('grain-section')?.classList.add('hidden');
+        
+        // Prevent saving to history
+        lastClassKey = null; 
+        return; 
+    }
+
+    const className = rawClassName;
     lastClassKey = className;
     lastConfidence = Math.round(top.probability * 100);
 
+    // 4. Update UI labels
     const isPest = Object.keys(pestNames).includes(className);
     const nameMap = isPest ? pestNames : diseaseNames;
 
     document.getElementById('top-label').textContent = nameMap[className] || top.className;
     document.getElementById('top-confidence').innerHTML = `${lastConfidence}%`;
 
+    // 5. Render predicted list (with typo fix applied to list items too)
     let html = '';
     filtered.forEach(pred => {
+        let pName = pred.className.trim().toLowerCase().replace(/\s+/g, '_');
+        if (pName === 'left_blast') pName = 'leaf_blast';
+        
         const perc = (pred.probability * 100).toFixed(1);
-        html += `<div class="d-flex justify-content-between mb-2"><span>${nameMap[pred.className] || pred.className}</span><span class="text-secondary">${perc}%</span></div>`;
+        html += `<div class="d-flex justify-content-between mb-2"><span>${nameMap[pName] || pred.className}</span><span class="text-secondary">${perc}%</span></div>`;
     });
     document.getElementById('predictions-list').innerHTML = html;
 
+    // 6. Severity Logic
     let severityLabel = "LOW", severityMessage = "Monitor plant.", severityPercent = 30, color = "text-info";
     if (className.includes("healthy")) {
         severityLabel = "HEALTHY"; severityMessage = "No action needed."; severityPercent = 0; color = "text-success";
@@ -309,9 +346,10 @@ function displayResults(predictions) {
     document.getElementById('severity-percent').textContent = severityPercent + "%";
     document.getElementById('severity-message').textContent = severityMessage;
 
+    // 7. Update Knowledge Base Content
     const kb = knowledgeBase[className] || {};
 
-    document.getElementById('treatment').innerHTML = `<strong class="text-success"><i class="fa-solid fa-spray-can-sparkles me-2"></i>Treatment:</strong><p class="mt-2 mb-0">${kb.treatment || 'No specific treatment data found.'}</p>`;
+    document.getElementById('treatment').innerHTML = `<strong class="text-success"><i class="fa-solid fa-spray-can-sparkles me-2"></i>Treatment:</strong><p class="mt-2 mb-0">${kb.treatments || 'No specific treatment data found.'}</p>`;
     document.getElementById('causes').innerHTML = `<strong class="text-warning"><i class="fa-solid fa-question-circle me-2"></i>Causes:</strong><p class="mt-2 mb-0">${kb.causes || '—'}</p>`;
     document.getElementById('prevention').innerHTML = `<strong class="text-info"><i class="fa-solid fa-shield-heart me-2"></i>Prevention:</strong><p class="mt-2 mb-0">${kb.prevention || '—'}</p>`;
 
@@ -319,7 +357,7 @@ function displayResults(predictions) {
         document.getElementById('nutrient-section').classList.add('hidden');
         document.getElementById('grain-section').classList.add('hidden');
         document.getElementById('damage-section').classList.remove('hidden');
-        document.getElementById('damage').innerHTML = `<strong class="text-danger"><i class="fa-solid fa-wheat-awn me-2"></i>Damage:</strong><p class="mt-2 mb-0">${kb.damage || '—'}</p>`;
+        document.getElementById('damage').innerHTML = `<strong class="text-danger"><i class="fa-solid fa-wheat-awn me-2"></i>Damage:</strong><p class="mt-2 mb-0">${kb.grain_damage || '—'}</p>`;
     } else {
         document.getElementById('damage-section').classList.add('hidden');
         document.getElementById('nutrient-section').classList.remove('hidden');
@@ -328,7 +366,6 @@ function displayResults(predictions) {
         document.getElementById('grain').innerHTML = `<strong class="text-danger"><i class="fa-solid fa-seedling me-2"></i>Grain Impact:</strong><p class="mt-2 mb-0">${kb.grain_damage || 'Not applicable'}</p>`;
     }
 }
-
 // ==================== SAVE HISTORY VIA CONTROLLER ====================
 // Find your saveCurrentDetection function and update the body:
 async function saveCurrentDetection() {

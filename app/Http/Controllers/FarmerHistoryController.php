@@ -64,14 +64,13 @@ class FarmerHistoryController extends Controller
             }
             $currentKey = $key;
             if ($row->image_path) {
-                            // If it's a base64 string, don't use asset(). If it's an old file path, use asset().
-                            if (str_starts_with($row->image_path, 'data:image')) {
-                                $images[] = $row->image_path;
-                            } else {
-                                $images[] = asset($row->image_path); 
-                            }
-                        }
-
+                // If it's a base64 string, don't use asset(). If it's an old file path, use asset().
+                if (str_starts_with($row->image_path, 'data:image')) {
+                    $images[] = $row->image_path;
+                } else {
+                    $images[] = asset($row->image_path); 
+                }
+            }
             if (isset($row->confidence)) $confidences[] = (int)$row->confidence;
         }
 
@@ -89,40 +88,28 @@ class FarmerHistoryController extends Controller
         return view('farmer.history', compact('diseaseNames', 'pestNames', 'knowledgeBase', 'detectionData'));
     }
 
-public function saveDetection(Request $request)
+    public function saveDetection(Request $request)
     {
         $user_id = Auth::id();
         $class_key = strtolower(trim($request->class_key));
 
-        $diseaseNames = [
-            'healthy_rice_plant', 'bacterial_leaf_blight', 'leaf_blast', 
-            'rice_false_smut', 'sheath_blight', 'tungro_virus'
-        ];
-        $pestNames = [
-            'brown_planthopper', 'leaf_folders', 'leafhopper', 'rice_bug', 
-            'rice_gall_midge', 'rice_leaf_roller', 'rice_stem_borer', 'snail'
-        ];
-
-        // Strict Filter Check: If the detection is random/unrecognized, reject it
-        if (!in_array($class_key, $diseaseNames) && !in_array($class_key, $pestNames)) {
+        if (empty($class_key)) {
             return response()->json([
                 'success' => false, 
-                'message' => 'Unrecognized or random class detection ignored.'
+                'message' => 'No class detected.'
             ], 422);
         }
 
         $image_path = null;
 
-        // VERCEL FIX: Avoid using public_path() or File::put() because Vercel is read-only.
-        // Instead, we directly store the compressed Base64 string in the database.
+        // VERCEL FIX: Store the compressed Base64 string directly in the database
         if ($request->filled('image_base64')) {
             $image_path = $request->image_base64; 
         }
 
-        // Insert directly into your production TiDB database table
         DB::table('user_detections')->insert([
             'user_id' => $user_id,
-            'class_key' => $request->class_key,
+            'class_key' => $class_key,
             'confidence' => $request->confidence ?? 0,
             'image_path' => $image_path,
             'created_at' => now(),
@@ -139,11 +126,14 @@ public function saveDetection(Request $request)
         $action = $request->action;
 
         if ($action === 'delete_image') {
-            $image_path = str_replace(asset(''), '', $request->image_path);
-            $image_path = ltrim($image_path, '/');
+            $image_path = $request->image_path;
 
-            if (File::exists(public_path($image_path))) {
-                File::delete(public_path($image_path));
+            // Only try physical deletion if it is NOT a base64 string
+            if (!str_starts_with($image_path, 'data:image')) {
+                $clean_path = ltrim(str_replace(asset(''), '', $image_path), '/');
+                if (File::exists(public_path($clean_path))) {
+                    File::delete(public_path($clean_path));
+                }
             }
 
             DB::table('user_detections')
@@ -161,8 +151,11 @@ public function saveDetection(Request $request)
                 ->get();
 
             foreach ($records as $record) {
-                if ($record->image_path && File::exists(public_path($record->image_path))) {
-                    File::delete(public_path($record->image_path));
+                // Only try physical deletion if it is NOT a base64 string
+                if ($record->image_path && !str_starts_with($record->image_path, 'data:image')) {
+                    if (File::exists(public_path($record->image_path))) {
+                        File::delete(public_path($record->image_path));
+                    }
                 }
             }
 
