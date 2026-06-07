@@ -155,6 +155,31 @@ let currentBase64 = null; // Store base64 representation to save to DB
 let lastClassKey = null;
 let lastConfidence = 65;
 let isModelReady = false;
+let compressedBase64 = null;
+
+
+
+
+async function compressImage(base64Image) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.src = base64Image;
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 800; // Resize to 800px wide
+            const scale = MAX_WIDTH / img.width;
+            
+            canvas.width = MAX_WIDTH;
+            canvas.height = img.height * scale;
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            // Compress to JPEG with 70% quality (This drastically reduces size)
+            resolve(canvas.toDataURL('image/jpeg', 0.7));
+        };
+    });
+}
 
 // ==================== MODEL LOADING ====================
 async function loadModel() {
@@ -192,13 +217,16 @@ function setupUpload() {
     });
 }
 
-function handleFile(file) {
+// Find your existing handleFile function and update it to this:
+async function handleFile(file) {
     if (!file.type.startsWith('image/')) return alert('Please select a valid image file');
 
-    // Extract Base64 for the DB save functionality later
     const reader = new FileReader();
-    reader.onload = (e) => {
-        currentBase64 = e.target.result;
+    reader.onload = async (e) => {
+        currentBase64 = e.target.result; // Keep original for preview
+        
+        // --- ADD THIS LINE ---
+        compressedBase64 = await compressImage(currentBase64); 
         
         // Show in Preview
         document.getElementById('preview-image').src = currentBase64;
@@ -210,6 +238,7 @@ function handleFile(file) {
     };
     reader.readAsDataURL(file);
 }
+
 
 function clearPreview() {
     document.getElementById('preview-container').classList.add('hidden');
@@ -301,8 +330,10 @@ function displayResults(predictions) {
 }
 
 // ==================== SAVE HISTORY VIA CONTROLLER ====================
+// Find your saveCurrentDetection function and update the body:
 async function saveCurrentDetection() {
-    if (!lastClassKey || !currentBase64) return alert("No detection to save.");
+    // Ensure compressedBase64 exists
+    if (!lastClassKey || !compressedBase64) return alert("No detection to save.");
     
     try {
         const response = await fetch("{{ route('farmer.history.save') }}", {
@@ -314,7 +345,7 @@ async function saveCurrentDetection() {
             body: JSON.stringify({
                 class_key: lastClassKey,
                 confidence: lastConfidence,
-                image_base64: currentBase64 
+                image_base64: compressedBase64 // Use the compressed version!
             })
         });
 
