@@ -26,6 +26,23 @@
                     </thead>
                     <tbody>
                         @forelse($histories as $history)
+                            @php
+                                // Safeguard: Process the image data to prevent asset() from ruining Base64 text strings
+                                $processedImg = '';
+                                if (!empty($history->image_path)) {
+                                    if (str_starts_with($history->image_path, 'data:image/')) {
+                                        $processedImg = $history->image_path;
+                                    } else {
+                                        $processedImg = asset($history->image_path);
+                                    }
+                                } elseif (!empty($history->image_url)) {
+                                    if (str_starts_with($history->image_url, 'data:image/')) {
+                                        $processedImg = $history->image_url;
+                                    } else {
+                                        $processedImg = asset($history->image_url);
+                                    }
+                                }
+                            @endphp
                             <tr>
                                 <td>{{ \Carbon\Carbon::parse($history->created_at ?? now())->format('M d, Y h:i A') }}</td>
                                 <td>
@@ -38,10 +55,10 @@
                                     <button class="btn btn-sm btn-info text-dark fw-bold shadow-sm" 
                                         onclick="viewDetection(
                                             '{{ addslashes($history->user_name ?? 'Unknown Farmer') }}',
-                                            '{{ addslashes($history->readable_name) }}',
-                                            '{{ $history->confidence }}%',
-                                            '{{ \Carbon\Carbon::parse($history->created_at)->format('F j, Y h:i A') }}',
-                                            '{{ $history->image_path ? asset($history->image_path) : ($history->image_url ? asset($history->image_url) : '') }}'
+                                            '{{ addslashes($history->readable_name ?? 'N/A') }}',
+                                            '{{ $history->confidence ?? 0 }}%',
+                                            '{{ \Carbon\Carbon::parse($history->created_at ?? now())->format('F j, Y h:i A') }}',
+                                            '{{ addslashes($processedImg) }}'
                                         )">
                                         <i class="fas fa-eye me-1"></i> View
                                     </button>
@@ -122,11 +139,13 @@ function viewDetection(farmer, diagnosis, confidence, date, imageUrl) {
     if (imageUrl && imageUrl !== 'null' && imageUrl !== '') {
         let formattedUrl = imageUrl;
         
-        // FIX: Check if it's a standard URL or file path instead of assuming base64
-        if (imageUrl.startsWith('http') || imageUrl.startsWith('/') || imageUrl.startsWith('uploads/')) {
+        // Secure handling for standard paths or direct Base64 strings
+        if (imageUrl.startsWith('data:image/')) {
+            formattedUrl = imageUrl;
+        } else if (imageUrl.startsWith('http') || imageUrl.startsWith('/') || imageUrl.startsWith('uploads/')) {
             formattedUrl = imageUrl.startsWith('uploads/') ? '/' + imageUrl : imageUrl;
-        } else if (!imageUrl.startsWith('data:image/')) {
-            // Fallback for older database records that might still be raw base64
+        } else {
+            // Fallback for older database records that might be raw base64 data without prefix
             formattedUrl = 'data:image/jpeg;base64,' + imageUrl;
         }
 

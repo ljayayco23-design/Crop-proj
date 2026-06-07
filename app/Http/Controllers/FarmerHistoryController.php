@@ -104,7 +104,7 @@ class FarmerHistoryController extends Controller
         return view('farmer.history', compact('diseaseNames', 'pestNames', 'knowledgeBase', 'detectionData'));
     }
 
-    public function saveDetection(Request $request)
+   public function saveDetection(Request $request)
     {
         $user_id = Auth::id();
         $class_key = strtolower(trim($request->class_key));
@@ -118,7 +118,6 @@ class FarmerHistoryController extends Controller
             'rice_gall_midge', 'rice_leaf_roller', 'rice_stem_borer', 'snail'
         ];
 
-        // Strict Filter Check: If the detection is random/unrecognized, reject it
         if (!in_array($class_key, $diseaseNames) && !in_array($class_key, $pestNames)) {
             return response()->json([
                 'success' => false, 
@@ -126,30 +125,17 @@ class FarmerHistoryController extends Controller
             ], 422);
         }
 
-        $image_path = null;
-
-        // Process Base64 file upload securely
-        if ($request->filled('image_base64') && preg_match('/^data:image\/(\w+);base64,/', $request->image_base64, $type)) {
-            $data = substr($request->image_base64, strpos($request->image_base64, ',') + 1);
-            $type = strtolower($type[1]);
-            if (in_array($type, ['jpg', 'jpeg', 'png'])) {
-                $data = base64_decode($data);
-                $filename = time() . '_' . uniqid() . '.' . $type;
-                
-                $uploadDir = public_path('uploads/detections');
-                if (!File::exists($uploadDir)) File::makeDirectory($uploadDir, 0755, true);
-                
-                File::put($uploadDir . '/' . $filename, $data);
-                $image_path = 'uploads/detections/' . $filename; 
-            }
+        // Keep the raw Base64 string instead of trying to save a physical file
+        $image_data = null;
+        if ($request->filled('image_base64')) {
+            $image_data = $request->image_base64; 
         }
 
-        // Insert directly into your production MySQL database table
         DB::table('user_detections')->insert([
             'user_id' => $user_id,
             'class_key' => $request->class_key,
             'confidence' => $request->confidence ?? 0,
-            'image_path' => $image_path,
+            'image_path' => $image_data, // Saving the Base64 string here
             'created_at' => now(),
             'updated_at' => now()
         ]);
