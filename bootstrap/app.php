@@ -15,6 +15,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
         ]);
+
+        // THE FIX: Prevent Laravel from running out of memory 
+        // by skipping the trim function on the massive image payload
+        $middleware->trimStrings(except: [
+            'current_password',
+            'password',
+            'password_confirmation',
+            'image_base64', 
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         // 🚨 EMERGENCY BREAK: Forces the real hidden error to show up

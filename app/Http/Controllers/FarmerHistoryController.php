@@ -63,7 +63,15 @@ class FarmerHistoryController extends Controller
                 $images = []; $confidences = [];
             }
             $currentKey = $key;
-            if ($row->image_path) $images[] = asset($row->image_path);
+            if ($row->image_path) {
+                            // If it's a base64 string, don't use asset(). If it's an old file path, use asset().
+                            if (str_starts_with($row->image_path, 'data:image')) {
+                                $images[] = $row->image_path;
+                            } else {
+                                $images[] = asset($row->image_path); 
+                            }
+                        }
+
             if (isset($row->confidence)) $confidences[] = (int)$row->confidence;
         }
 
@@ -81,7 +89,7 @@ class FarmerHistoryController extends Controller
         return view('farmer.history', compact('diseaseNames', 'pestNames', 'knowledgeBase', 'detectionData'));
     }
 
-    public function saveDetection(Request $request)
+public function saveDetection(Request $request)
     {
         $user_id = Auth::id();
         $class_key = strtolower(trim($request->class_key));
@@ -105,23 +113,13 @@ class FarmerHistoryController extends Controller
 
         $image_path = null;
 
-        // Process Base64 file upload securely
-        if ($request->filled('image_base64') && preg_match('/^data:image\/(\w+);base64,/', $request->image_base64, $type)) {
-            $data = substr($request->image_base64, strpos($request->image_base64, ',') + 1);
-            $type = strtolower($type[1]);
-            if (in_array($type, ['jpg', 'jpeg', 'png'])) {
-                $data = base64_decode($data);
-                $filename = time() . '_' . uniqid() . '.' . $type;
-                
-                $uploadDir = public_path('uploads/detections');
-                if (!File::exists($uploadDir)) File::makeDirectory($uploadDir, 0755, true);
-                
-                File::put($uploadDir . '/' . $filename, $data);
-                $image_path = 'uploads/detections/' . $filename; 
-            }
+        // VERCEL FIX: Avoid using public_path() or File::put() because Vercel is read-only.
+        // Instead, we directly store the compressed Base64 string in the database.
+        if ($request->filled('image_base64')) {
+            $image_path = $request->image_base64; 
         }
 
-        // Insert directly into your production MySQL database table
+        // Insert directly into your production TiDB database table
         DB::table('user_detections')->insert([
             'user_id' => $user_id,
             'class_key' => $request->class_key,
@@ -134,6 +132,7 @@ class FarmerHistoryController extends Controller
         return response()->json(['success' => true]);
     }
 
+    
     public function action(Request $request)
     {
         $user_id = Auth::id();

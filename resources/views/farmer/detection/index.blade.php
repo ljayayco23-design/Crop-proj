@@ -128,7 +128,7 @@
     <div id="chat-messages" class="flex-grow-1 p-3 overflow-auto" style="background:#1e2937;"></div>
     <div class="p-3 border-top border-secondary">
         <div class="input-group">
-            <input id="chat-input" type="text" class="form-control bg-dark text-white border-secondary" placeholder="Ask about rice farming...">
+                <input id="chat-input" type="text" autocomplete="off" class="form-control bg-dark text-white border-secondary" placeholder="Ask about rice farming...">
             <button id="chat-send" class="btn btn-success"><i class="fa-solid fa-paper-plane"></i></button>
         </div>
     </div>
@@ -332,7 +332,6 @@ function displayResults(predictions) {
 // ==================== SAVE HISTORY VIA CONTROLLER ====================
 // Find your saveCurrentDetection function and update the body:
 async function saveCurrentDetection() {
-    // Ensure compressedBase64 exists
     if (!lastClassKey || !compressedBase64) return alert("No detection to save.");
     
     try {
@@ -345,9 +344,16 @@ async function saveCurrentDetection() {
             body: JSON.stringify({
                 class_key: lastClassKey,
                 confidence: lastConfidence,
-                image_base64: compressedBase64 // Use the compressed version!
+                image_base64: compressedBase64 
             })
         });
+
+        // ADD THIS CHECK: Ensure the server returned a 200 OK before parsing JSON
+        if (!response.ok) {
+            const errorText = await response.text(); // Read the error as text
+            console.error("Server Error Details:", errorText);
+            return alert("❌ Server error occurred. Please check the console.");
+        }
 
         const data = await response.json();
         if(data.success) {
@@ -356,11 +362,10 @@ async function saveCurrentDetection() {
             alert("❌ Failed to save detection.");
         }
     } catch(e) {
-        console.error(e);
+        console.error("Network or parsing error:", e);
         alert("Server connection failed. Check console.");
     }
 }
-
 // ==================== CHATBOT ====================
 function initChat() {
     const toggleBtn = document.getElementById('chat-toggle');
