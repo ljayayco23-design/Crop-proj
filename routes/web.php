@@ -139,12 +139,11 @@ Route::middleware('auth')->prefix('chat')->group(function () {
     Route::post('/send', [\App\Http\Controllers\ChatController::class, 'sendMessage']);
     Route::delete('/delete/{id}', [\App\Http\Controllers\ChatController::class, 'deleteMessage']);
 });
-// ==================== FARMER DETECTION ROUTE ====================
+
 // ==================== FARMER DETECTION ROUTE ====================
 Route::match(['get', 'post'], '/farmer/detection', function (\Illuminate\Http\Request $request) { 
     if ($request->isMethod('post') && $request->has('action')) {
         if ($request->action === 'chat_query') {
-            // Change $request->query to $request->input('query')
             $result = tryGetChatResponse($request->input('query') ?? '', $request->language ?? 'en');
             return response()->json($result);
         }
@@ -157,14 +156,33 @@ Route::match(['get', 'post'], '/farmer/detection', function (\Illuminate\Http\Re
     $knowledgeBase = [];
     try {
         $records = \App\Models\TreatmentRecord::whereNull('user_id')->get();
+        
+        $flatten = function($val, $def) {
+            if (empty($val)) return $def;
+            if (is_string($val)) {
+                $trimmed = trim($val);
+                if (str_starts_with($trimmed, '[') || str_starts_with($trimmed, '{')) {
+                    $decoded = json_decode($trimmed, true);
+                    if (json_last_error() === JSON_ERROR_NONE) {
+                        $val = $decoded;
+                    }
+                }
+            }
+            if (is_array($val)) return implode("\n• ", $val);
+            if (is_object($val)) return json_encode($val);
+            return (string) $val;
+        };
+
         foreach ($records as $row) {
             $key = strtolower(trim($row->disease));
             $knowledgeBase[$key] = [
-                'treatment' => $row->treatments ?? 'No data available yet.',
-                'causes' => $row->causes ?? '—',
-                'nutrient_deficiency' => $row->nutrient_deficiency ?? '—',
-                'grain_damage' => $row->grain_damage ?? '—',
-                'prevention' => $row->prevention ?? '—'
+                'treatment' => $flatten($row->treatments ?? null, 'No data available yet.'),
+                'treatments' => $flatten($row->treatments ?? null, 'No data available yet.'),
+                'causes' => $flatten($row->causes ?? null, '—'),
+                'nutrient_deficiency' => $flatten($row->nutrient_deficiency ?? null, '—'),
+                'grain_damage' => $flatten($row->grain_damage ?? null, '—'),
+                'prevention' => $flatten($row->prevention ?? null, '—'),
+                'natural_enemies' => $flatten($row->natural_enemies ?? null, '—')
             ];
         }
     } catch (\Exception $e) { 

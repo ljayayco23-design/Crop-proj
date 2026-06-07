@@ -80,7 +80,7 @@
                         @if($isPest)
                         <div class="knowledge-section">
                             <strong class="text-info d-block mb-2">Natural Enemies</strong>
-                            <div class="small text-light">{!! nl2br(e($kb['nutrient_deficiency'] ?? '—')) !!}</div>
+                            <div class="small text-light">{!! nl2br(e($kb['natural_enemies'] ?? '—')) !!}</div>
                         </div>
                         @endif
 

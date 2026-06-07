@@ -27,13 +27,36 @@ class FarmerHistoryController extends Controller
         // Fetch Knowledge Base details from your real treatments table
         $knowledgeBase = [];
         $kbRecords = DB::table('treatment_records')->whereNull('user_id')->get();
+
+        // Safe conversion tool to avoid htmlspecialchars array type crashes
+        $flatten = function($val, $def) {
+            if (empty($val)) return $def;
+            if (is_string($val)) {
+                $trimmed = trim($val);
+                if (str_starts_with($trimmed, '[') || str_starts_with($trimmed, '{')) {
+                    $decoded = json_decode($trimmed, true);
+                    if (json_last_error() === JSON_ERROR_NONE) {
+                        $val = $decoded;
+                    }
+                }
+            }
+            if (is_array($val)) {
+                return implode("\n• ", $val);
+            }
+            if (is_object($val)) {
+                return json_encode($val);
+            }
+            return (string) $val;
+        };
+
         foreach ($kbRecords as $row) {
             $knowledgeBase[strtolower(trim($row->disease))] = [
-                'treatments' => $row->treatments,
-                'causes' => $row->causes ?? '—',
-                'nutrient_deficiency' => $row->nutrient_deficiency ?? '—',
-                'grain_damage' => $row->grain_damage ?? '—',
-                'prevention' => $row->prevention ?? '—'
+                'treatments' => $flatten($row->treatments ?? null, 'No data available yet.'),
+                'causes' => $flatten($row->causes ?? null, '—'),
+                'nutrient_deficiency' => $flatten($row->nutrient_deficiency ?? null, '—'),
+                'grain_damage' => $flatten($row->grain_damage ?? null, '—'),
+                'prevention' => $flatten($row->prevention ?? null, '—'),
+                'natural_enemies' => $flatten($row->natural_enemies ?? null, '—')
             ];
         }
 
