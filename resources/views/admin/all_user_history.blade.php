@@ -98,7 +98,9 @@
                                                 <p class="text-muted small mb-2">Uploaded Photos</p>
                                                 <div class="image-gallery d-flex flex-wrap gap-2">
                                                     @foreach($det['images'] as $img)
-                                                        <img src="{{ $img }}" alt="Photo" onclick="showImageModal('{{ addslashes($img) }}')">
+                                                    <img src="{{ (str_starts_with($img, 'http') || str_starts_with($img, '/') || str_starts_with($img, 'data:image/')) ? $img : 'data:image/jpeg;base64,' . $img }}" 
+                                                        alt="Photo" 
+                                                        onclick="showImageModal('{{ (str_starts_with($img, 'http') || str_starts_with($img, '/') || str_starts_with($img, 'data:image/')) ? $img : 'data:image/jpeg;base64,' . $img }}')">
                                                     @endforeach
                                                 </div>
                                             </div>
@@ -158,7 +160,9 @@
                                                 <p class="text-muted small mb-2">Uploaded Photos</p>
                                                 <div class="image-gallery d-flex flex-wrap gap-2">
                                                     @foreach($det['images'] as $img)
-                                                        <img src="{{ $img }}" alt="Photo" onclick="showImageModal('{{ addslashes($img) }}')">
+                                                    <img src="{{ (str_starts_with($img, 'http') || str_starts_with($img, '/') || str_starts_with($img, 'data:image/')) ? $img : 'data:image/jpeg;base64,' . $img }}" 
+                                                        alt="Photo" 
+                                                        onclick="showImageModal('{{ (str_starts_with($img, 'http') || str_starts_with($img, '/') || str_starts_with($img, 'data:image/')) ? $img : 'data:image/jpeg;base64,' . $img }}')">                                                         
                                                     @endforeach
                                                 </div>
                                             </div>

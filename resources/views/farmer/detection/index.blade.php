@@ -5,6 +5,64 @@
 @section('content')
 <style>
     .hidden { display: none !important; }
+
+    /* Responsive Chat Toggle */
+    .chat-toggle-btn {
+        width: 60px; 
+        height: 60px; 
+        font-size: 28px; 
+        z-index: 1045;
+        bottom: 30px; /* Anchors to the bottom of the screen */
+        right: 30px;  /* Anchors to the right of the screen */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Responsive Chat Window */
+    .chat-window {
+        width: 380px; 
+        height: 520px; 
+        border: 1px solid #334155; 
+        z-index: 1050;
+        bottom: 100px; /* Floats right above the chat button */
+        right: 30px;
+    }
+
+    /* Mobile Device Adjustments */
+    @media (max-width: 576px) {
+        /* Make chat full-screen on phones */
+        .chat-window {
+            width: 100% !important;
+            height: 100dvh !important; /* Uses dynamic viewport height */
+            margin: 0 !important;
+            bottom: 0 !important;
+            right: 0 !important;
+            border-radius: 0 !important;
+            z-index: 9999;
+        }
+        .chat-header { border-radius: 0 !important; }
+        
+        /* Adjust chat button position on small screens */
+        .chat-toggle-btn {
+            bottom: 20px !important;
+            right: 20px !important;
+        }
+
+        /* Shrink drop zone so it fits without scrolling */
+        #drop-zone {
+            padding: 1.5rem !important;
+            min-height: 220px !important;
+        }
+        #drop-zone .btn {
+            width: 100%; /* Full width button on mobile */
+            padding-left: 10px !important;
+            padding-right: 10px !important;
+        }
+        
+        /* Scale text */
+        .page-header-title h4 { font-size: 1.25rem; }
+    }
 </style>
 
 <div class="nxl-content">
@@ -30,7 +88,8 @@
                                 <input type="file" id="file-input" accept="image/*" style="display:none;">
                                 <i class="fa-solid fa-cloud-arrow-up fa-4x text-success mb-3"></i>
                                 <h5 class="mb-2">Drop image here or</h5>
-                                <button type="button" onclick="browsePhoto()" class="btn btn-success px-5 py-2">                                    <i class="fa-solid fa-folder-open me-2"></i> BROWSE PHOTO
+                                <button type="button" onclick="browsePhoto()" class="btn btn-success px-5 py-2">                                    
+                                    <i class="fa-solid fa-folder-open me-2"></i> BROWSE PHOTO
                                 </button>
                                 <p class="text-muted mt-4 small">JPG or PNG • Clear rice leaf/plant photo</p>
                             </div>
@@ -38,7 +97,7 @@
                             <div id="preview-container" class="hidden mb-4">
                                 <div class="d-flex justify-content-between mb-3">
                                     <span class="fw-medium">Selected Image</span>
-                                <button type="button" onclick="clearPreview()" class="btn btn-sm btn-outline-danger">
+                                    <button type="button" onclick="clearPreview()" class="btn btn-sm btn-outline-danger">
                                             <i class="fa-solid fa-trash"></i> Clear
                                     </button>
                                 </div>
@@ -47,7 +106,7 @@
                                 </div>
                             </div>
 
-                                <button type="button" onclick="classifyCurrentImage()" id="classify-btn" class="btn btn-success btn-lg w-100 py-3 fw-bold shadow" disabled> 
+                            <button type="button" onclick="classifyCurrentImage()" id="classify-btn" class="btn btn-success btn-lg w-100 py-3 fw-bold shadow" disabled> 
                                 <i class="fa-solid fa-magnifying-glass me-2"></i> CLASSIFY IMAGE
                             </button>
                         </div>
@@ -70,7 +129,7 @@
 
                             <div id="results-panel" class="hidden">
                                 <div class="d-flex justify-content-end mb-4">
-                            <button type="button" onclick="saveCurrentDetection()" class="btn btn-outline-success fw-bold">
+                                    <button type="button" onclick="saveCurrentDetection()" class="btn btn-outline-success fw-bold">
                                             <i class="fa-solid fa-floppy-disk me-2"></i> SAVE TO HISTORY
                                     </button>
                                 </div>
@@ -116,11 +175,11 @@
     </div>
 </div>
 
-<button id="chat-toggle" class="btn btn-success rounded-circle position-fixed bottom-0 end-0 m-4 shadow-lg" style="width:60px;height:60px;font-size:28px;">
+<button id="chat-toggle" class="btn btn-success rounded-circle position-fixed chat-toggle-btn shadow-lg">
     <i class="fa-solid fa-comment-dots"></i>
 </button>
 
-<div id="chat-window" class="position-fixed bottom-0 end-0 m-4 bg-dark rounded-4 shadow-lg" style="width:380px;height:520px;display:none;flex-direction:column;border:1px solid #334155;z-index:1050;">
+<div id="chat-window" class="position-fixed bg-dark rounded-4 shadow-lg chat-window" style="display:none;flex-direction:column;">
     <div class="chat-header d-flex justify-content-between align-items-center p-3 bg-success text-white rounded-top-4">
         <h5 class="mb-0 fw-bold">CROPSENSE AI Assistant 🌾</h5>
         <button id="chat-close" class="btn-close btn-close-white"></button>
@@ -128,7 +187,7 @@
     <div id="chat-messages" class="flex-grow-1 p-3 overflow-auto" style="background:#1e2937;"></div>
     <div class="p-3 border-top border-secondary">
         <div class="input-group">
-                <input id="chat-input" type="text" autocomplete="off" class="form-control bg-dark text-white border-secondary" placeholder="Ask about rice farming...">
+            <input id="chat-input" type="text" autocomplete="off" class="form-control bg-dark text-white border-secondary" placeholder="Ask about rice farming...">
             <button id="chat-send" class="btn btn-success"><i class="fa-solid fa-paper-plane"></i></button>
         </div>
     </div>
@@ -151,14 +210,11 @@ const metadataURL = "{{ asset('model/metadata.json') }}";
 let model = null;
 let currentImage = null;
 let currentObjectURL = null;
-let currentBase64 = null; // Store base64 representation to save to DB
+let currentBase64 = null; 
 let lastClassKey = null;
 let lastConfidence = 65;
 let isModelReady = false;
 let compressedBase64 = null;
-
-
-
 
 async function compressImage(base64Image) {
     return new Promise((resolve) => {
@@ -166,7 +222,7 @@ async function compressImage(base64Image) {
         img.src = base64Image;
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            const MAX_WIDTH = 800; // Resize to 800px wide
+            const MAX_WIDTH = 800; 
             const scale = MAX_WIDTH / img.width;
             
             canvas.width = MAX_WIDTH;
@@ -175,7 +231,6 @@ async function compressImage(base64Image) {
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-            // Compress to JPEG with 70% quality (This drastically reduces size)
             resolve(canvas.toDataURL('image/jpeg', 0.7));
         };
     });
@@ -217,18 +272,14 @@ function setupUpload() {
     });
 }
 
-// Find your existing handleFile function and update it to this:
 async function handleFile(file) {
     if (!file.type.startsWith('image/')) return alert('Please select a valid image file');
 
     const reader = new FileReader();
     reader.onload = async (e) => {
-        currentBase64 = e.target.result; // Keep original for preview
-        
-        // --- ADD THIS LINE ---
+        currentBase64 = e.target.result; 
         compressedBase64 = await compressImage(currentBase64); 
         
-        // Show in Preview
         document.getElementById('preview-image').src = currentBase64;
         document.getElementById('preview-container').classList.remove('hidden');
 
@@ -238,7 +289,6 @@ async function handleFile(file) {
     };
     reader.readAsDataURL(file);
 }
-
 
 function clearPreview() {
     document.getElementById('preview-container').classList.add('hidden');
@@ -277,33 +327,21 @@ function displayResults(predictions) {
     filtered.sort((a, b) => b.probability - a.probability);
     const top = filtered[0];
 
-    // 1. Get the raw class name and lowercase it
     let rawClassName = top.className.trim().toLowerCase().replace(/\s+/g, '_');
+    if (rawClassName === 'left_blast') rawClassName = 'leaf_blast'; 
 
-    // 2. THE FIX: Correct the typos from your Teachable Machine model
-    if (rawClassName === 'left_blast') {
-        rawClassName = 'leaf_blast'; 
-    }
-
-    // 3. Handle the "random" background class gracefully
     if (rawClassName === 'random') {
         document.getElementById('top-label').textContent = "Unrecognized Image";
         document.getElementById('top-confidence').innerHTML = `${Math.round(top.probability * 100)}%`;
         document.getElementById('severity-label').textContent = "UNKNOWN";
         document.getElementById('severity-message').textContent = "Please upload a clear photo of a rice plant.";
         document.getElementById('predictions-list').innerHTML = '';
-        
-        // Hide all knowledge base info
         document.getElementById('treatment').innerHTML = '<p class="text-secondary mb-0">No data available.</p>';
         document.getElementById('causes').innerHTML = '';
         document.getElementById('prevention').innerHTML = '';
-        
-        // Hide sections
         document.getElementById('damage-section')?.classList.add('hidden');
         document.getElementById('nutrient-section')?.classList.add('hidden');
         document.getElementById('grain-section')?.classList.add('hidden');
-        
-        // Prevent saving to history
         lastClassKey = null; 
         return; 
     }
@@ -312,25 +350,21 @@ function displayResults(predictions) {
     lastClassKey = className;
     lastConfidence = Math.round(top.probability * 100);
 
-    // 4. Update UI labels
     const isPest = Object.keys(pestNames).includes(className);
     const nameMap = isPest ? pestNames : diseaseNames;
 
     document.getElementById('top-label').textContent = nameMap[className] || top.className;
     document.getElementById('top-confidence').innerHTML = `${lastConfidence}%`;
 
-    // 5. Render predicted list (with typo fix applied to list items too)
     let html = '';
     filtered.forEach(pred => {
         let pName = pred.className.trim().toLowerCase().replace(/\s+/g, '_');
         if (pName === 'left_blast') pName = 'leaf_blast';
-        
         const perc = (pred.probability * 100).toFixed(1);
         html += `<div class="d-flex justify-content-between mb-2"><span>${nameMap[pName] || pred.className}</span><span class="text-secondary">${perc}%</span></div>`;
     });
     document.getElementById('predictions-list').innerHTML = html;
 
-    // 6. Severity Logic
     let severityLabel = "LOW", severityMessage = "Monitor plant.", severityPercent = 30, color = "text-info";
     if (className.includes("healthy")) {
         severityLabel = "HEALTHY"; severityMessage = "No action needed."; severityPercent = 0; color = "text-success";
@@ -346,7 +380,6 @@ function displayResults(predictions) {
     document.getElementById('severity-percent').textContent = severityPercent + "%";
     document.getElementById('severity-message').textContent = severityMessage;
 
-    // 7. Update Knowledge Base Content
     const kb = knowledgeBase[className] || {};
 
     document.getElementById('treatment').innerHTML = `<strong class="text-success"><i class="fa-solid fa-spray-can-sparkles me-2"></i>Treatment:</strong><p class="mt-2 mb-0">${kb.treatments || 'No specific treatment data found.'}</p>`;
@@ -366,8 +399,8 @@ function displayResults(predictions) {
         document.getElementById('grain').innerHTML = `<strong class="text-danger"><i class="fa-solid fa-seedling me-2"></i>Grain Impact:</strong><p class="mt-2 mb-0">${kb.grain_damage || 'Not applicable'}</p>`;
     }
 }
+
 // ==================== SAVE HISTORY VIA CONTROLLER ====================
-// Find your saveCurrentDetection function and update the body:
 async function saveCurrentDetection() {
     if (!lastClassKey || !compressedBase64) return alert("No detection to save.");
     
@@ -385,9 +418,8 @@ async function saveCurrentDetection() {
             })
         });
 
-        // ADD THIS CHECK: Ensure the server returned a 200 OK before parsing JSON
         if (!response.ok) {
-            const errorText = await response.text(); // Read the error as text
+            const errorText = await response.text();
             console.error("Server Error Details:", errorText);
             return alert("❌ Server error occurred. Please check the console.");
         }
@@ -403,6 +435,7 @@ async function saveCurrentDetection() {
         alert("Server connection failed. Check console.");
     }
 }
+
 // ==================== CHATBOT ====================
 function initChat() {
     const toggleBtn = document.getElementById('chat-toggle');
@@ -434,12 +467,11 @@ async function sendChatQuery() {
     document.getElementById('chat-messages').appendChild(typing);
 
     try {
-        // Securely call your own Laravel backend route
         const response = await fetch("{{ route('farmer.detection') }}", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "X-CSRF-TOKEN": "{{ csrf_token() }}" // Required for Laravel POST requests
+                "X-CSRF-TOKEN": "{{ csrf_token() }}" 
             },
             body: JSON.stringify({
                 action: "chat_query",
@@ -451,7 +483,6 @@ async function sendChatQuery() {
         const data = await response.json();
         document.getElementById('typing-indicator').remove();
         
-        // Display the response from your tryGetChatResponse function
         if (data && data.response) {
             addChatMessage(data.response, false);
         } else {
@@ -463,9 +494,6 @@ async function sendChatQuery() {
         addChatMessage("I'm having trouble connecting right now.", false);
     }
 }
-
-
-
 
 function addChatMessage(text, isUser = false) {
     const container = document.getElementById('chat-messages');
@@ -482,19 +510,16 @@ window.onload = async () => {
     setupUpload();
     initChat();
 
-    // Check if user came directly from Camera
     const savedCameraImage = sessionStorage.getItem('capturedImage');
     if (savedCameraImage) {
-        sessionStorage.removeItem('capturedImage'); // Clear immediately so it doesn't trigger again on refresh
+        sessionStorage.removeItem('capturedImage');
         
-        // Convert Base64 back to a simulated File to reuse the exact same logic
         fetch(savedCameraImage)
             .then(res => res.blob())
             .then(blob => {
                 const file = new File([blob], "camera_capture.jpg", { type: "image/jpeg" });
                 handleFile(file);
                 
-                // Automatically hit "Classify" button after a short delay to allow image rendering
                 setTimeout(() => {
                     if(document.getElementById('classify-btn').disabled === false) {
                         classifyCurrentImage();

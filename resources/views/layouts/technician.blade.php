@@ -20,7 +20,28 @@
         .dropdown-menu { border: 1px solid #334155 !important; border-radius: 16px !important; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5) !important; background: rgba(30,41,59,0.98) !important; backdrop-filter: blur(20px) !important; }
         .dropdown-item:hover { background: rgba(255,255,255,0.08) !important; color: white !important; }
         
-        .floating-panel { position: fixed; top: 0; right: -550px; width: 480px; height: 100vh; background: rgba(30,41,59,0.98); backdrop-filter: blur(30px); border-left: 1px solid #334155; transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1); z-index: 1200; overflow-y: auto; padding: 32px; }
+        /* Updated Floating Panel for Responsiveness */
+        .floating-panel { 
+            position: fixed; 
+            top: 0; 
+            right: -550px; 
+            width: 100%;             /* Allow it to be fully flexible */
+            max-width: 480px;        /* Cap the size on desktop */
+            height: 100vh; 
+            background: rgba(30,41,59,0.98); 
+            backdrop-filter: blur(30px); 
+            border-left: 1px solid #334155; 
+            transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
+            z-index: 1200; 
+            overflow-y: auto; 
+            padding: 32px; 
+        }
+
+        /* Media query for small phones */
+        @media (max-width: 576px) {
+            .floating-panel { padding: 20px; }
+        }
+
         .floating-panel.show { right: 0; box-shadow: -30px 0 80px rgba(0,0,0,0.6); }
         .profile-photo { width: 140px; height: 140px; object-fit: cover; border: 5px solid rgba(14,165,233,0.5); border-radius: 50%; }
 
@@ -33,9 +54,9 @@
         $user = Auth::user();
         $userFullName = $user->full_name ?? $user->name ?? 'Technician';
         
-        // Profile picture with fallback
+        // Base64 Image Handling (matching admin logic)
         if (!empty($user->profile_photo)) {
-            $profile_pic = asset($user->profile_photo) . '?v=' . time();
+            $profile_pic = $user->profile_photo;
         } else {
             $profile_pic = 'https://ui-avatars.com/api/?name=' . urlencode($userFullName) . '&background=0ea5e9&color=fff&size=140&bold=true';
         }
@@ -95,13 +116,13 @@
 
                 <li class="nav-item dropdown">
                     <a href="#" class="nav-link d-flex align-items-center gap-2" data-bs-toggle="dropdown">
-                        <img src="{{ $profile_pic }}" class="rounded-circle border border-2 border-info" width="40" height="40" style="object-fit: cover;">
+                        <img src="{{ $profile_pic }}" id="navbar-profile-pic" class="rounded-circle border border-2 border-info" width="40" height="40" style="object-fit: cover;">
                     </a>
                     <div class="dropdown-menu dropdown-menu-end p-3" style="width: 280px;">
                         <div class="d-flex align-items-center gap-3 mb-3">
-                            <img src="{{ $profile_pic }}" class="rounded-circle" width="50" height="50" style="object-fit: cover;">
+                            <img src="{{ $profile_pic }}" id="dropdown-profile-pic" class="rounded-circle" width="50" height="50" style="object-fit: cover;">
                             <div>
-                                <h6 class="mb-0 text-white fw-bold">{{ $userFullName }}</h6>
+                                <h6 class="mb-0 text-white fw-bold" id="dropdown-user-name">{{ $userFullName }}</h6>
                                 <small class="text-info text-capitalize">Technician</small>
                             </div>
                         </div>
@@ -121,7 +142,7 @@
         <div id="floatingPanel" class="floating-panel">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h4 class="fw-bold text-white mb-0">My Profile</h4>
-<button onclick="document.getElementById('floatingPanel').classList.remove('show')" class="btn btn-link text-white text-decoration-none"><i class="fas fa-times fs-3 text-danger"></i></button>
+                <button onclick="document.getElementById('floatingPanel').classList.remove('show')" class="btn btn-link text-white text-decoration-none"><i class="fas fa-times fs-3 text-danger"></i></button>
             </div>
 
             <ul class="nav nav-pills nav-fill bg-dark border border-secondary rounded-3 p-1 mb-4" id="profileTabs">
@@ -180,85 +201,88 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-// --- 1. Tab Switching Logic ---
-function showProfilePanel(tab) { 
-    document.getElementById('floatingPanel').classList.add('show'); 
-    switchTab(tab); 
-}
-
-function switchTab(tab) {
-    const tabs = document.querySelectorAll('#profileTabs .nav-link');
-    tabs[0].classList.toggle('active', tab === 0); 
-    tabs[0].classList.toggle('text-white', tab !== 0);
-    tabs[1].classList.toggle('active', tab === 1); 
-    tabs[1].classList.toggle('text-white', tab !== 1);
-    
-    document.getElementById('tab-profile').style.display = tab === 0 ? 'block' : 'none';
-    document.getElementById('tab-settings').style.display = tab === 1 ? 'block' : 'none';
-}
-
-// --- 2. Click Outside to Close Panel ---
-document.addEventListener('click', function(event) {
-    const panel = document.getElementById('floatingPanel');
-    const isClickInsidePanel = panel.contains(event.target);
-    const isClickingTrigger = event.target.closest('[onclick*="showProfilePanel"]');
-    
-    // If the panel is open, the click is outside, and we didn't just click the open button
-    if (panel.classList.contains('show') && !isClickInsidePanel && !isClickingTrigger) {
-        panel.classList.remove('show');
+    // --- 1. Tab Switching Logic ---
+    function showProfilePanel(tab) { 
+        document.getElementById('floatingPanel').classList.add('show'); 
+        switchTab(tab); 
     }
-});
 
-// --- 3. Smarter Save Function ---
-async function saveProfile(formId) {
-    const form = document.getElementById(formId);
-    const formData = new FormData(form);
-    const btn = form.querySelector('button[type="button"]');
-    const originalText = btn.innerHTML;
-    
-    // Show loading state
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-    btn.disabled = true;
+    function switchTab(tab) {
+        const tabs = document.querySelectorAll('#profileTabs .nav-link');
+        tabs[0].classList.toggle('active', tab === 0); 
+        tabs[0].classList.toggle('text-white', tab !== 0);
+        tabs[1].classList.toggle('active', tab === 1); 
+        tabs[1].classList.toggle('text-white', tab !== 1);
+        
+        document.getElementById('tab-profile').style.display = tab === 0 ? 'block' : 'none';
+        document.getElementById('tab-settings').style.display = tab === 1 ? 'block' : 'none';
+    }
 
-    try {
-        const res = await fetch(form.action, { 
-            method: 'POST', 
-            body: formData,
-            headers: { 
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json' // CRITICAL: Tells Laravel we want JSON errors, not redirects
-            }
-        });
-
-        const data = await res.json();
-
-        if (res.ok) { 
-            alert(data.message || 'Profile updated successfully!'); 
-            const url = new URL(window.location.href);
-            url.searchParams.set('v', new Date().getTime());
-            window.location.href = url.toString();
-        } else {
-            // If Laravel returns validation errors (Code 422), show them exactly to the user
-            if (res.status === 422 && data.errors) {
-                let errorMsg = 'Could not save. Please fix these errors:\n\n';
-                for (const key in data.errors) {
-                    errorMsg += `- ${data.errors[key][0]}\n`;
-                }
-                alert(errorMsg);
-            } else {
-                alert(data.message || 'Failed to update. Server error occurred.');
-            }
+    // --- 2. Click Outside to Close Panel ---
+    document.addEventListener('click', function(event) {
+        const panel = document.getElementById('floatingPanel');
+        const isClickInsidePanel = panel.contains(event.target);
+        const isClickingTrigger = event.target.closest('[onclick*="showProfilePanel"]');
+        
+        if (panel.classList.contains('show') && !isClickInsidePanel && !isClickingTrigger) {
+            panel.classList.remove('show');
         }
-    } catch(e) { 
-        console.error("Save Error:", e);
-        alert('A network error occurred. Please try again.');
-    } finally {
-        // Reset button state
-        btn.innerHTML = originalText;
-        btn.disabled = false;
+    });
+
+    // --- 3. Instant UI Update Save Logic ---
+    async function saveProfile(formId) {
+        const form = document.getElementById(formId);
+        const formData = new FormData(form);
+        const btn = form.querySelector('button[type="button"]');
+        const originalText = btn.innerHTML;
+        
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch(form.action, { 
+                method: 'POST', 
+                body: formData,
+                headers: { 
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json' 
+                }
+            });
+
+            const data = await res.json();
+
+            if (res.ok) { 
+                alert(data.message || 'Profile updated successfully!'); 
+                
+                // Instantly update UI with the Base64 string/name from the backend response
+                if(data.user) {
+                    const newPic = data.user.profile_photo_url;
+                    document.getElementById('navbar-profile-pic').src = newPic;
+                    document.getElementById('dropdown-profile-pic').src = newPic;
+                    document.getElementById('profile-pic').src = newPic;
+                    document.getElementById('dropdown-user-name').innerText = data.user.full_name;
+                }
+            } else {
+                if (res.status === 422 && data.errors) {
+                    let errorMsg = 'Could not save. Please fix these errors:\n\n';
+                    for (const key in data.errors) {
+                        errorMsg += `- ${data.errors[key][0]}\n`;
+                    }
+                    alert(errorMsg);
+                } else {
+                    alert(data.message || 'Failed to update. Server error occurred.');
+                }
+            }
+        } catch(e) { 
+            console.error("Save Error:", e);
+            alert('A network error occurred. Please try again.');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
     }
-}
     </script>
     @yield('scripts')
 </body>
 </html>
+

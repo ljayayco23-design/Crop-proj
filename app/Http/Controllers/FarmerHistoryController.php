@@ -63,14 +63,7 @@ class FarmerHistoryController extends Controller
                 $images = []; $confidences = [];
             }
             $currentKey = $key;
-            if ($row->image_path) {
-                // If it's a base64 string, don't use asset(). If it's an old file path, use asset().
-                if (str_starts_with($row->image_path, 'data:image')) {
-                    $images[] = $row->image_path;
-                } else {
-                    $images[] = asset($row->image_path); 
-                }
-            }
+            if ($row->image_path) $images[] = asset($row->image_path);
             if (isset($row->confidence)) $confidences[] = (int)$row->confidence;
         }
 
@@ -93,23 +86,45 @@ class FarmerHistoryController extends Controller
         $user_id = Auth::id();
         $class_key = strtolower(trim($request->class_key));
 
-        if (empty($class_key)) {
+        $diseaseNames = [
+            'healthy_rice_plant', 'bacterial_leaf_blight', 'leaf_blast', 
+            'rice_false_smut', 'sheath_blight', 'tungro_virus'
+        ];
+        $pestNames = [
+            'brown_planthopper', 'leaf_folders', 'leafhopper', 'rice_bug', 
+            'rice_gall_midge', 'rice_leaf_roller', 'rice_stem_borer', 'snail'
+        ];
+
+        // Strict Filter Check: If the detection is random/unrecognized, reject it
+        if (!in_array($class_key, $diseaseNames) && !in_array($class_key, $pestNames)) {
             return response()->json([
                 'success' => false, 
-                'message' => 'No class detected.'
+                'message' => 'Unrecognized or random class detection ignored.'
             ], 422);
         }
 
         $image_path = null;
 
-        // VERCEL FIX: Store the compressed Base64 string directly in the database
-        if ($request->filled('image_base64')) {
-            $image_path = $request->image_base64; 
+        // Process Base64 file upload securely
+        if ($request->filled('image_base64') && preg_match('/^data:image\/(\w+);base64,/', $request->image_base64, $type)) {
+            $data = substr($request->image_base64, strpos($request->image_base64, ',') + 1);
+            $type = strtolower($type[1]);
+            if (in_array($type, ['jpg', 'jpeg', 'png'])) {
+                $data = base64_decode($data);
+                $filename = time() . '_' . uniqid() . '.' . $type;
+                
+                $uploadDir = public_path('uploads/detections');
+                if (!File::exists($uploadDir)) File::makeDirectory($uploadDir, 0755, true);
+                
+                File::put($uploadDir . '/' . $filename, $data);
+                $image_path = 'uploads/detections/' . $filename; 
+            }
         }
 
+        // Insert directly into your production MySQL database table
         DB::table('user_detections')->insert([
             'user_id' => $user_id,
-            'class_key' => $class_key,
+            'class_key' => $request->class_key,
             'confidence' => $request->confidence ?? 0,
             'image_path' => $image_path,
             'created_at' => now(),
@@ -119,21 +134,17 @@ class FarmerHistoryController extends Controller
         return response()->json(['success' => true]);
     }
 
-    
     public function action(Request $request)
     {
         $user_id = Auth::id();
         $action = $request->action;
 
         if ($action === 'delete_image') {
-            $image_path = $request->image_path;
+            $image_path = str_replace(asset(''), '', $request->image_path);
+            $image_path = ltrim($image_path, '/');
 
-            // Only try physical deletion if it is NOT a base64 string
-            if (!str_starts_with($image_path, 'data:image')) {
-                $clean_path = ltrim(str_replace(asset(''), '', $image_path), '/');
-                if (File::exists(public_path($clean_path))) {
-                    File::delete(public_path($clean_path));
-                }
+            if (File::exists(public_path($image_path))) {
+                File::delete(public_path($image_path));
             }
 
             DB::table('user_detections')
@@ -151,11 +162,8 @@ class FarmerHistoryController extends Controller
                 ->get();
 
             foreach ($records as $record) {
-                // Only try physical deletion if it is NOT a base64 string
-                if ($record->image_path && !str_starts_with($record->image_path, 'data:image')) {
-                    if (File::exists(public_path($record->image_path))) {
-                        File::delete(public_path($record->image_path));
-                    }
+                if ($record->image_path && File::exists(public_path($record->image_path))) {
+                    File::delete(public_path($record->image_path));
                 }
             }
 

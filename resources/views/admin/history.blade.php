@@ -41,7 +41,7 @@
                                             '{{ addslashes($history->readable_name) }}',
                                             '{{ $history->confidence }}%',
                                             '{{ \Carbon\Carbon::parse($history->created_at)->format('F j, Y h:i A') }}',
-                                            '{{ $history->image_url }}'
+                                            '{{ $history->image_path ? asset($history->image_path) : ($history->image_url ? asset($history->image_url) : '') }}'
                                         )">
                                         <i class="fas fa-eye me-1"></i> View
                                     </button>
@@ -108,30 +108,43 @@
 
 @section('scripts')
 <script>
-    function viewDetection(farmer, diagnosis, confidence, date, imageUrl) {
-        // Fill the text data
-        document.getElementById('modalFarmer').innerText = farmer;
-        document.getElementById('modalDiagnosis').innerText = diagnosis;
-        document.getElementById('modalConfidence').innerText = confidence;
-        document.getElementById('modalDate').innerText = date;
+function viewDetection(farmer, diagnosis, confidence, date, imageUrl) {
+    // 1. Fill the text data
+    document.getElementById('modalFarmer').innerText = farmer;
+    document.getElementById('modalDiagnosis').innerText = diagnosis;
+    document.getElementById('modalConfidence').innerText = confidence;
+    document.getElementById('modalDate').innerText = date;
+
+    // 2. Handle the image logic
+    const imgEl = document.getElementById('modalImage');
+    const noImgEl = document.getElementById('noImageText');
+
+    if (imageUrl && imageUrl !== 'null' && imageUrl !== '') {
+        let formattedUrl = imageUrl;
         
-        // Handle the image logic
-        const imgEl = document.getElementById('modalImage');
-        const noImgEl = document.getElementById('noImageText');
-        
-        if (imageUrl && imageUrl !== 'null' && imageUrl !== '') {
-            imgEl.src = imageUrl;
-            imgEl.style.display = 'block';
-            noImgEl.style.display = 'none';
-        } else {
-            imgEl.src = '';
-            imgEl.style.display = 'none';
-            noImgEl.style.display = 'block';
+        // FIX: Check if it's a standard URL or file path instead of assuming base64
+        if (imageUrl.startsWith('http') || imageUrl.startsWith('/') || imageUrl.startsWith('uploads/')) {
+            formattedUrl = imageUrl.startsWith('uploads/') ? '/' + imageUrl : imageUrl;
+        } else if (!imageUrl.startsWith('data:image/')) {
+            // Fallback for older database records that might still be raw base64
+            formattedUrl = 'data:image/jpeg;base64,' + imageUrl;
         }
+
+        imgEl.src = formattedUrl;
+        imgEl.style.display = 'block';
         
-        // Trigger the Bootstrap Modal
-        var myModal = new bootstrap.Modal(document.getElementById('viewDetectionModal'));
-        myModal.show();
+        if (noImgEl) noImgEl.style.display = 'none';
+    } else {
+        imgEl.src = '';
+        imgEl.style.display = 'none';
+        
+        if (noImgEl) noImgEl.style.display = 'block';
     }
+
+    // 3. Trigger the Bootstrap Modal
+    var modalElement = document.getElementById('viewDetectionModal');
+    var myModal = new bootstrap.Modal(modalElement);
+    myModal.show();
+}
 </script>
 @endsection

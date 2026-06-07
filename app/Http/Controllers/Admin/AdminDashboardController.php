@@ -15,46 +15,65 @@ class AdminDashboardController extends Controller
 {
     public function updateProfile(Request $request)
     {
-        $user = Auth::user();
-        
-        // 1. Validation: 'nullable' allows you to leave fields empty
-        $request->validate([
-            'full_name' => 'nullable|string|max:255',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string',
-            'farm_size' => 'nullable|numeric',
-            'preferred_variety' => 'nullable|string|max:255',
-            'bio' => 'nullable|string',
-            'profile_photo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048'
-        ]);
+        try {
+            $user = Auth::user();
+            
+            $request->validate([
+                'full_name' => 'nullable|string|max:255',
+                'phone' => 'nullable|string|max:20',
+                'address' => 'nullable|string',
+                'farm_size' => 'nullable|numeric',
+                'preferred_variety' => 'nullable|string|max:255',
+                'bio' => 'nullable|string',
+                // We limit it to 1MB here because Base64 strings get very large
+                'profile_photo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:1024' 
+            ]);
 
-        // 2. Handle profile photo upload safely
-        if ($request->hasFile('profile_photo')) {
-            if ($user->profile_photo && Storage::disk('public')->exists($user->profile_photo)) {
-                Storage::disk('public')->delete($user->profile_photo);
+            // --- Convert the image to a Base64 string for TiDB ---
+            if ($request->hasFile('profile_photo')) {
+                $image = $request->file('profile_photo');
+                // getRealPath() ensures we safely grab the temporary file path
+                $base64Image = base64_encode(file_get_contents($image->getRealPath()));
+                $mimeType = $image->getClientMimeType();
+                
+                // This creates a data URI string that browsers can read directly as an image
+                $user->profile_photo = 'data:' . $mimeType . ';base64,' . $base64Image;
             }
-            $file = $request->file('profile_photo');
-            $filename = 'profile_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs('profiles', $filename, 'public');
-            $user->profile_photo = $path;
+
+            $user->full_name = $request->filled('full_name') ? $request->full_name : $user->name;
+            $user->phone = $request->phone;
+            $user->address = $request->address;
+            
+            if ($user->role === 'farmer') {
+                $user->farm_size = $request->farm_size;
+                $user->preferred_variety = $request->preferred_variety;
+                $user->bio = $request->bio;
+            }
+
+            $user->save();
+
+            // Prepare the image URL to send back to JS instantly
+            $userFullName = $user->full_name ?? $user->name ?? 'Admin';
+            $newImageUrl = !empty($user->profile_photo) 
+                ? $user->profile_photo 
+                : 'https://ui-avatars.com/api/?name=' . urlencode($userFullName) . '&background=3b82f6&color=fff&size=140&bold=true';
+
+            return response()->json([
+                'success' => true, 
+                'message' => 'Profile updated successfully!',
+                'user' => [
+                    'full_name' => $userFullName,
+                    'profile_photo_url' => $newImageUrl
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            // If anything fails (like a database error), catch it and tell the frontend
+            return response()->json([
+                'success' => false, 
+                'message' => 'Server Error: ' . $e->getMessage()
+            ], 500);
         }
-
-        // 3. Save standard fields (even if they are empty/null)
-        // If full_name is entirely empty, we default to their current name to avoid a blank display
-        $user->full_name = $request->filled('full_name') ? $request->full_name : $user->name;
-        $user->phone = $request->phone;
-        $user->address = $request->address;
-        
-        // 4. Save Farmer-specific fields (if the user is a farmer)
-        if ($user->role === 'farmer') {
-            $user->farm_size = $request->farm_size;
-            $user->preferred_variety = $request->preferred_variety;
-            $user->bio = $request->bio;
-        }
-
-        $user->save();
-
-        return response()->json(['success' => true, 'message' => 'Profile updated successfully!']);
     }
 
     public function updatePassword(Request $request)
@@ -137,11 +156,7 @@ class AdminDashboardController extends Controller
         return response()->json(['success' => true]);
     }
 
-
-
-
     // ====================== HISTORY / DETECTIONS ======================
-// ====================== HISTORY / DETECTIONS ======================
     public function allUserHistory()
     {
         try {
@@ -178,4 +193,4 @@ class AdminDashboardController extends Controller
 
         return view('admin.history', compact('histories'));
     }
-    }
+}
