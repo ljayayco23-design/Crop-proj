@@ -234,3 +234,11 @@ Route::get('/setup-db', function() {
         return "Error: " . $e->getMessage();
     }
 });
+
+
+// Make sure this is NOT inside Route::middleware(['auth'])
+Route::get('/check-status', function(\Illuminate\Http\Request $request) {
+    $user = \App\Models\User::where('email', $request->query('email'))->first();
+    return response()->json(['status' => $user ? $user->status : 'none'])
+                     ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+});

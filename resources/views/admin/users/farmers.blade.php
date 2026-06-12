@@ -31,7 +31,7 @@
                             <th class="text-end" style="width: 120px;">Actions</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="farmers-table-body">
                         @forelse($farmers as $row)
                         <tr>
                             <td><strong>{{ $row->full_name }}</strong></td>
@@ -59,4 +59,28 @@
 </div>
 
 @include('partials.admin-user-edit-modal')
+@endsection
+
+@section('scripts')
+<script>
+    // Silently fetch the latest table data every 5 seconds
+    setInterval(function() {
+        fetch(window.location.href) // Fetch the current page URL
+            .then(response => response.text())
+            .then(html => {
+                // Parse the new HTML
+                let parser = new DOMParser();
+                let doc = parser.parseFromString(html, 'text/html');
+                
+                // Find the new table body from the background fetch
+                let newTableBody = doc.querySelector('#farmers-table-body');
+                
+                // If we found it, replace the current table body with the new one
+                if (newTableBody) {
+                    document.getElementById('farmers-table-body').innerHTML = newTableBody.innerHTML;
+                }
+            })
+            .catch(error => console.error('Error fetching updates:', error));
+    }, 5000); // 5000 milliseconds = 5 seconds
+</script>
 @endsection

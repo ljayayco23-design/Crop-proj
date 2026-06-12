@@ -78,10 +78,13 @@
                        class="w-full p-4 rounded-2xl bg-zinc-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none">
             </div>
 
-            <div class="mb-6">
+            <div class="mb-6 relative">
                 <label class="block text-zinc-400 text-sm mb-2">Password</label>
-                <input type="password" name="password" required 
-                       class="w-full p-4 rounded-2xl bg-zinc-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <input type="password" name="password" id="signup_password_input" required 
+                    class="w-full p-4 pr-12 rounded-2xl bg-zinc-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <span class="absolute right-4 top-[42px] text-zinc-400 hover:text-zinc-300 cursor-pointer text-lg" id="toggleSignupPassword">
+                    <i class="fas fa-eye"></i>
+                </span>
             </div>
 
             <button type="submit" 
@@ -130,24 +133,68 @@
 @if (session('pending'))
 <div class="fixed inset-0 bg-black/90 flex items-center justify-center z-[100]">
     <div class="text-center">
-        <div class="relative w-24 h-24 mx-auto mb-6">
+        <div id="pending-spinner" class="relative w-24 h-24 mx-auto mb-6">
             <div class="absolute inset-0 border-4 border-zinc-700 rounded-full"></div>
             <div class="absolute inset-0 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
-        <h3 class="text-xl font-semibold text-emerald-400">Naghihintay ng Approval</h3>
-        <p class="text-zinc-400 mt-2">Mangyaring maghintay habang inaaprubahan ng Admin ang iyong account.</p>
-        <p class="text-sm text-zinc-500 mt-6">Email: {{ session('pending') }}</p>
+        <h3 id="pending-title" class="text-xl font-semibold text-emerald-400">Naghihintay ng Approval</h3>
+        <p id="pending-desc" class="text-zinc-400 mt-2">Mangyaring maghintay habang inaaprubahan ng Admin ang iyong account.</p>
+        <p class="text-sm text-zinc-500 mt-6">Email: <span id="pending-email">{{ session('pending') }}</span></p>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        let email = "{{ session('pending') }}";
+        
+        let interval = setInterval(() => {
+            let checkUrl = `{{ url('/check-status') }}?email=${encodeURIComponent(email)}&_t=${Date.now()}`;
+            
+            fetch(checkUrl)
+                .then(response => {
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.status === 'approved') {
+                        clearInterval(interval);
+                        
+                        document.getElementById('pending-spinner').style.display = 'none';
+                        document.getElementById('pending-title').textContent = 'Na-aprubahan na!';
+                        document.getElementById('pending-title').className = 'text-xl font-semibold text-emerald-400';
+                        document.getElementById('pending-desc').textContent = 'Maaari ka nang mag-login. Nire-redirect...';
+                        
+                        setTimeout(() => {
+                            window.location.href = "{{ route('login') }}"; 
+                        }, 2000);
+                        
+                    } else if (data.status === 'declined') {
+                        clearInterval(interval);
+                        
+                        document.getElementById('pending-spinner').style.display = 'none';
+                        document.getElementById('pending-title').textContent = 'Account Declined';
+                        document.getElementById('pending-title').className = 'text-xl font-semibold text-red-500';
+                        document.getElementById('pending-desc').textContent = 'Ikinalulungkot namin, ngunit na-decline ang iyong account. Nire-redirect...';
+                        
+                        setTimeout(() => {
+                            window.location.href = "{{ route('login') }}"; 
+                        }, 2500);
+                    }
+                })
+                .catch(error => console.error('Error checking status:', error));
+        }, 3000); 
+    });
+</script>
 @endif
+
 @endsection
 
 @section('scripts')
 <script>
-    // Password Visibility Toggle
-    document.addEventListener('DOMContentLoaded', function() {
-        const togglePassword = document.getElementById('togglePassword');
-        const passwordInput = document.getElementById('password_input');
+    // Reusable Password Visibility Toggle Function
+    function setupPasswordToggle(toggleId, inputId) {
+        const togglePassword = document.getElementById(toggleId);
+        const passwordInput = document.getElementById(inputId);
 
         if (togglePassword && passwordInput) {
             togglePassword.addEventListener('click', function() {
@@ -159,9 +206,15 @@
                 icon.classList.toggle('fa-eye-slash');
             });
         }
+    }
+
+    // Initialize toggles when DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+        setupPasswordToggle('togglePassword', 'password_input');       // Login Form
+        setupPasswordToggle('toggleSignupPassword', 'signup_password_input'); // Signup Form
     });
 
-    // Signup Modal
+    // Signup Modal Functions
     function showSignupModal() {
         document.getElementById('signupModal').classList.remove('hidden');
     }
@@ -169,18 +222,15 @@
         document.getElementById('signupModal').classList.add('hidden');
     }
 
-    // Forgot Password Modal
+    // Forgot Password Modal Functions
     function showForgotModal() {
         const modal = document.getElementById('forgotModal');
         const emailInput = document.getElementById('email_input');
         modal.classList.remove('hidden');
-        
-        // Auto-fill email if they already typed it in the login form
         if (emailInput && emailInput.value) {
             document.getElementById('forgot_email_input').value = emailInput.value;
         }
     }
-
     function hideForgotModal() {
         document.getElementById('forgotModal').classList.add('hidden');
     }
