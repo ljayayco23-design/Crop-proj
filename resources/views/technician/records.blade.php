@@ -6,7 +6,8 @@
 <style>
     .knowledge-section { background: #1e2937; border-radius: 8px; padding: 16px; margin-bottom: 12px; border: 1px solid #334155; }
     .image-gallery img { transition: all 0.2s; cursor: pointer; border: 2px solid transparent; }
-    .image-gallery img:hover { transform: scale(1.05); border-color: #3b82f6; }
+    .image-gallery img:hover { transform: scale(1.05); border-color: #3b82f6; z-index: 10; position: relative;}
+    .img-container { position: relative; display: inline-block; }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -41,6 +42,12 @@
                     @php
                         $kb = $knowledgeBase[$det['class_key']] ?? [];
                         $isPest = $det['is_pest'];
+                        $images = isset($det['images']) ? (is_array($det['images']) ? $det['images'] : json_decode($det['images'], true)) : [];
+                        
+                        // Detect if the loaded item belongs to the Groq subset
+                        $isGroq = (isset($kb['is_groq']) && $kb['is_groq']) || 
+                                  str_contains(strtolower($kb['updated_by'] ?? ''), 'groq') || 
+                                  (isset($det['source']) && strtolower($det['source']) === 'groq');
                     @endphp
                     <div class="col-lg-6">
                         <div class="card bg-secondary bg-opacity-10 border-secondary h-100 position-relative">
@@ -51,7 +58,7 @@
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end bg-dark border-secondary shadow">
                                     <li>
-                                        <a class="dropdown-item text-white" href="#" onclick="openEditModal('{{ $det['class_key'] }}', '{{ addslashes($det['class_name']) }}')">
+                                        <a class="dropdown-item text-white" href="#" onclick="openEditModal('{{ $det['class_key'] }}', '{{ addslashes($det['class_name']) }}', {{ $isPest ? 'true' : 'false' }}, {{ $isGroq ? 'true' : 'false' }})">
                                             <i class="fas fa-pen me-2 text-info"></i> Edit Knowledge
                                         </a>
                                     </li>
@@ -68,8 +75,16 @@
                                     <div class="fs-2">{{ $isPest ? '🐛' : '🌾' }}</div>
                                     <div>
                                         <h5 class="mb-1 fw-bold text-white">{{ $det['class_name'] }}</h5>
-                                        <span class="badge {{ $isPest ? 'bg-warning text-dark' : 'bg-success' }}">{{ $isPest ? 'PEST' : 'DISEASE' }}</span>
+                                        <div class="d-flex gap-2 align-items-center">
+                                            <span class="badge {{ $isPest ? 'bg-warning text-dark' : 'bg-success' }}">{{ $isPest ? 'PEST' : 'DISEASE' }}</span>
+                                            <span class="badge bg-secondary bg-opacity-50 border border-secondary text-light">Confidence: {{ $det['confidence'] ?? 'N/A' }}%</span>
+                                        </div>
                                     </div>
+                                </div>
+
+                                <div class="knowledge-section">
+                                    <strong class="text-white d-block mb-2">Description / About</strong>
+                                    <div class="small text-light">{!! nl2br(e($kb['description'] ?? 'No description available.')) !!}</div>
                                 </div>
 
                                 <div class="knowledge-section">
@@ -83,10 +98,10 @@
                                 </div>
 
                                 @if(!$isPest)
-                                <div class="knowledge-section">
-                                    <strong class="text-info d-block mb-2">Nutrient Deficiency</strong>
-                                    <div class="small text-light">{!! nl2br(e($kb['nutrient_deficiency'] ?? '—')) !!}</div>
-                                </div>
+                                    <div class="knowledge-section">
+                                        <strong class="text-info d-block mb-2">Nutrient Deficiency</strong>
+                                        <div class="small text-light">{!! nl2br(e($kb['nutrient_deficiency'] ?? '—')) !!}</div>
+                                    </div>
                                 @endif
 
                                 <div class="knowledge-section">
@@ -95,10 +110,10 @@
                                 </div>
 
                                 @if($isPest)
-                                <div class="knowledge-section">
-                                    <strong class="text-info d-block mb-2">Natural Enemies</strong>
-                                    <div class="small text-light">{!! nl2br(e($kb['nutrient_deficiency'] ?? '—')) !!}</div>
-                                </div>
+                                    <div class="knowledge-section">
+                                        <strong class="text-info d-block mb-2">Natural Enemies</strong>
+                                        <div class="small text-light">{!! nl2br(e($kb['natural_enemies'] ?? '—')) !!}</div>
+                                    </div>
                                 @endif
 
                                 <div class="knowledge-section mb-0">
@@ -106,12 +121,19 @@
                                     <div class="small text-light">{!! nl2br(e($kb['prevention'] ?? '—')) !!}</div>
                                 </div>
 
-                                @if(!empty($det['images']))
+                                @if(!empty($images))
                                 <div class="mt-4 pt-3 border-top border-secondary">
-                                    <p class="text-secondary small mb-3">Uploaded Photos ({{ count($det['images']) }})</p>
+                                    <p class="text-secondary small mb-3">Uploaded Photos ({{ count($images) }})</p>
                                     <div class="image-gallery d-flex flex-wrap gap-2">
-                                        @foreach($det['images'] as $img)
-                                            <img src="{{ $img }}" class="rounded-3" style="width: 80px; height: 80px; object-fit: cover;" onclick="showImageModal('{{ addslashes($img) }}')">
+                                        @foreach($images as $img)
+                                            @php
+                                                $formattedSrc = strpos($img, 'data:image') === 0 ? $img : 'data:image/jpeg;base64,' . $img;
+                                            @endphp
+                                            <div class="img-container">
+                                                <img src="{{ $formattedSrc }}" class="rounded-3 shadow-sm" 
+                                                    style="width: 80px; height: 80px; object-fit: cover;" 
+                                                    onclick="showImageModal('{{ addslashes($formattedSrc) }}')">
+                                            </div>
                                         @endforeach
                                     </div>
                                 </div>
@@ -136,7 +158,7 @@
                 <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body text-center p-0">
-                <img id="modalImageBig" src="" class="img-fluid rounded" style="max-height: 85vh; object-fit: contain;">
+                <img id="modalImageBig" src="" class="img-fluid rounded shadow-lg" style="max-height: 85vh; object-fit: contain;">
             </div>
         </div>
     </div>
@@ -153,7 +175,12 @@
                 <form method="POST" action="{{ route('technician.knowledge.update') }}" id="editForm">
                     @csrf
                     <input type="hidden" name="disease_key" id="modal_key">
-
+                    <input type="hidden" name="is_groq" id="modal_is_groq" value="0">
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-light">Description / About</label>
+                        <textarea name="description" id="edit_description" rows="3" class="form-control bg-dark text-light border-secondary"></textarea>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold text-success">Recommended Treatments</label>
                         <textarea name="treatments" id="edit_treatments" rows="4" class="form-control bg-dark text-light border-secondary"></textarea>
@@ -162,9 +189,15 @@
                         <label class="form-label fw-bold text-warning">Common Causes</label>
                         <textarea name="causes" id="edit_causes" rows="3" class="form-control bg-dark text-light border-secondary"></textarea>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold text-info">Nutrient Deficiency / Natural Enemies</label>
-                        <textarea name="nutrient_deficiency" id="edit_nutrient" rows="3" class="form-control bg-dark text-light border-secondary"></textarea>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold text-info" id="label_nutrient">Nutrient Deficiency</label>
+                            <textarea name="nutrient_deficiency" id="edit_nutrient" rows="3" class="form-control bg-dark text-light border-secondary"></textarea>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold text-info" id="label_enemies">Natural Enemies</label>
+                            <textarea name="natural_enemies" id="edit_enemies" rows="3" class="form-control bg-dark text-light border-secondary"></textarea>
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold text-danger">Grain Damage / Symptoms</label>
@@ -188,15 +221,17 @@
 
 @section('scripts')
 <script>
-    // Knowledge Base Data directly injected from backend to handle quick edits without AJAX
     const kbData = @json($knowledgeBase);
-
     let imgModal = null;
     let editModal = null;
 
     document.addEventListener("DOMContentLoaded", () => {
         imgModal = new bootstrap.Modal(document.getElementById('imageModal'));
         editModal = new bootstrap.Modal(document.getElementById('editModal'));
+
+        document.getElementById('imageModal').addEventListener('hidden.bs.modal', function () {
+            document.getElementById('modalImageBig').src = '';
+        });
     });
 
     function showImageModal(src) {
@@ -204,18 +239,28 @@
         imgModal.show();
     }
 
-    function openEditModal(key, name) {
+    // UPDATED: Now receives and sets the isGroq state flags cleanly
+    function openEditModal(key, name, isPest, isGroq = false) {
         document.getElementById('modal_key').value = key;
-        document.getElementById('modalTitle').textContent = 'Edit Knowledge: ' + name;
-
+        document.getElementById('modal_is_groq').value = isGroq ? 1 : 0;
+        document.getElementById('modalTitle').textContent = 'Edit Knowledge: ' + name + (isGroq ? ' (Groq AI Data)' : '');
+        
         const data = kbData[key] || {};
-
+        document.getElementById('edit_description').value = data.description || '';
         document.getElementById('edit_treatments').value = data.treatments || '';
         document.getElementById('edit_causes').value = data.causes || '';
         document.getElementById('edit_nutrient').value = data.nutrient_deficiency || '';
+        document.getElementById('edit_enemies').value = data.natural_enemies || '';
         document.getElementById('edit_grain').value = data.grain_damage || '';
         document.getElementById('edit_prevention').value = data.prevention || '';
-
+        
+        if (isPest) {
+            document.getElementById('edit_nutrient').parentElement.style.display = 'none';
+            document.getElementById('edit_enemies').parentElement.style.display = 'block';
+        } else {
+            document.getElementById('edit_nutrient').parentElement.style.display = 'block';
+            document.getElementById('edit_enemies').parentElement.style.display = 'none';
+        }
         editModal.show();
     }
 
@@ -233,10 +278,6 @@
         if (!confirm('Save these changes to the shared knowledge base? This will immediately affect all farmers.')) {
             return false;
         }
-    });
-
-    document.getElementById('imageModal').addEventListener('hidden.bs.modal', function () {
-        document.getElementById('modalImageBig').src = '';
     });
 </script>
 @endsection

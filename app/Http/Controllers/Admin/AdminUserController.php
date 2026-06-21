@@ -93,4 +93,10 @@ class AdminUserController extends Controller
         $route = $role === 'farmer' ? 'admin.farmers' : 'admin.technicians';
         return redirect()->route($route)->with('success', ucfirst($role) . ' deleted successfully.');
     }
+
+    public function getUserInfo($id)
+    {
+        $user = User::findOrFail($id);
+        return response()->json($user);
+    }
 }

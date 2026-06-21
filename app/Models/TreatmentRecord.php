@@ -11,15 +11,17 @@ class TreatmentRecord extends Model
 
     protected $table = 'treatment_records';
 
-    protected $fillable = [
+   protected $fillable = [
+        'type',
+        'user_id',
         'disease',
+        'description', // <-- ADD THIS IF MISSING
         'treatments',
         'causes',
         'nutrient_deficiency',
         'grain_damage',
+        'natural_enemies',
         'prevention',
-        'type',
-        'updated_by',
-        'user_id'
+        'updated_by'
     ];
 }

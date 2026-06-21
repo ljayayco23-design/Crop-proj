@@ -13,10 +13,15 @@
                 </a>
             </li>
 
-            <!-- NEW: Announcements -->
             <li class="nav-item mb-1">
                 <a href="{{ route('admin.announcement') }}" class="nav-link text-white {{ request()->routeIs('admin.announcement') ? 'active bg-primary' : '' }}">
                     <i class="fas fa-bullhorn me-2 width-20"></i> Announcements
+                </a>
+            </li>
+
+            <li class="nav-item mb-1">
+                <a href="{{ route('admin.documents') }}" class="nav-link text-white {{ request()->routeIs('admin.documents') ? 'active bg-primary' : '' }}">
+                    <i class="fas fa-file-contract me-2 width-20"></i> Verification Docs
                 </a>
             </li>
 
@@ -68,20 +73,15 @@
                                 <i class="fas fa-history me-2 fs-7"></i> Modifier History
                             </a>
                         </li>
-
-
                     </ul>
                 </div>
-
-
             </li>
 
-
             <li class="nav-item mb-1">
-    <a href="{{ route('admin.history') }}" class="nav-link text-white {{ request()->routeIs('admin.history') ? 'active bg-primary' : '' }}">
-        <i class="fas fa-clock me-2 width-20"></i> Diagnoses History
-    </a>
-</li>
+                <a href="{{ route('admin.history') }}" class="nav-link text-white {{ request()->routeIs('admin.history') ? 'active bg-primary' : '' }}">
+                    <i class="fas fa-clock me-2 width-20"></i> Diagnoses History
+                </a>
+            </li>
         </ul>
     </div>
 </aside>

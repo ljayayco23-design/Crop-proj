@@ -4,6 +4,13 @@
     </button>
     
     <div class="dropdown-menu dropdown-menu-end shadow" style="min-width: 180px;">
+        
+        <!-- NEW INFO BUTTON -->
+<a class="dropdown-item text-info" href="javascript:void(0)" 
+   onclick="viewFarmerInfo({{ $user->id }})">
+    <i class="fa-solid fa-eye me-2"></i> Info
+</a>
+
         <a class="dropdown-item" href="javascript:void(0)" 
            onclick="editUser({{ $user->id }}, '{{ addslashes($user->full_name) }}', '{{ addslashes($user->email) }}', '{{ $user->status ?? "pending" }}')">
             <i class="fa-solid fa-pen me-2"></i> Edit

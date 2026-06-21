@@ -23,7 +23,6 @@ class AdminDashboardController extends Controller
                 'phone' => 'nullable|string|max:20',
                 'address' => 'nullable|string',
                 'farm_size' => 'nullable|numeric',
-                'preferred_variety' => 'nullable|string|max:255',
                 'bio' => 'nullable|string',
                 // We limit it to 1MB here because Base64 strings get very large
                 'profile_photo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:1024' 
@@ -46,7 +45,6 @@ class AdminDashboardController extends Controller
             
             if ($user->role === 'farmer') {
                 $user->farm_size = $request->farm_size;
-                $user->preferred_variety = $request->preferred_variety;
                 $user->bio = $request->bio;
             }
 
@@ -95,7 +93,7 @@ class AdminDashboardController extends Controller
         return response()->json(['success' => true, 'message' => 'Password updated!']);
     }
 
-    public function index()
+public function index()
     {
         $registeredFarmers = User::where('role', 'farmer')->count();
         $activeTechnicians = User::where('role', 'technician')->count();
@@ -112,12 +110,20 @@ class AdminDashboardController extends Controller
                                 ->where('status', 'pending')
                                 ->count();
 
+        // NEW: Calculate total hectares and fetch all users for the tables/map
+        $totalPaddyArea = User::where('role', 'farmer')->sum('farm_size');
+        $allFarmers = User::where('role', 'farmer')->get();
+        $allTechnicians = User::where('role', 'technician')->get();
+
         return view('admin.dashboard', compact(
             'registeredFarmers', 
             'activeTechnicians', 
             'knowledgeEntries', 
             'totalDetections', 
-            'pendingApprovals'
+            'pendingApprovals',
+            'totalPaddyArea',
+            'allFarmers',
+            'allTechnicians'
         ));
     }
 

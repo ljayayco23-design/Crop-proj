@@ -27,10 +27,19 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
+// Inside AuthController.php -> login(Request $request) method
+
         // Handle Signup
         if ($request->has('action') && $request->action === 'signup') {
             $request->validate([
                 'full_name' => 'required|string|max:255',
+                'email' => 'required|email',
+                'password' => 'required|min:6',
+                'address' => 'required|string',
+                'farm_name' => 'required|string',
+                'latitude' => 'required|numeric',
+                'longitude' => 'required|numeric',
+                // You can add more validations here if needed
             ]);
 
             $existing = User::where('email', $request->email)->first();
@@ -44,8 +53,25 @@ class AuthController extends Controller
                 'password' => Hash::make($request->password),
                 'role' => 'farmer',
                 'status' => 'pending',
-            ]);
+                // New Fields mapped from the multi-step form
+                'phone' => $request->mobile,
+                'dob' => $request->dob,
+                'farmer_category' => $request->farmer_category,
 
+                'farm_size' => $request->farm_size,
+                'water_source' => $request->water_source,
+                'id_type' => $request->id_type,
+                // These come from the hidden inputs populated via JS FileReader
+                'document_photo' => $request->document_photo_base64, 
+                'address' => $request->address,
+                'farm_name' => $request->farm_name,
+                'latitude' => $request->latitude,
+                'longitude' => $request->longitude,
+                'device_latitude' => $request->device_latitude, // From navigator.geolocation
+                'device_longitude' => $request->device_longitude,
+                ]);
+
+            // Redirects to login, where your existing JS will show the "Pending Approval" spinner
             return back()->with('pending', $request->email);
         }
 

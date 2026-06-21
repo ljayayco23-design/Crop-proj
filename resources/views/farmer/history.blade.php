@@ -54,6 +54,10 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="knowledge-section">
+                            <strong class="text-white d-block mb-2">Description / About</strong>
+                            <div class="small text-light">{!! nl2br(e($kb['description'] ?? 'No description available.')) !!}</div>
+                        </div>
 
                         <div class="knowledge-section">
                             <strong class="text-success d-block mb-2">Recommended Treatments</strong>

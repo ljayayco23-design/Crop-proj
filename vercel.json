@@ -10,6 +10,12 @@
         { "src": "/favicon.ico", "dest": "/public/favicon.ico" },
         { "src": "/(.*)", "dest": "/api/index.php" }
     ],
+     "crons": [
+    {
+      "path": "/api/cron/weather-alerts",
+      "schedule": "0 22 * * *"
+    }
+  ],
     "env": {
         "APP_ENV": "production",
         "APP_DEBUG": "false",
@@ -19,3 +25,4 @@
         "VIEW_COMPILED_PATH": "/tmp"
     }
 }
+

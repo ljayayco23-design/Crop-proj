@@ -78,9 +78,15 @@
 
                 <div class="col-lg-5">
                     <div class="card bg-dark border-secondary h-100">
-                        <div class="card-header border-secondary">
-                            <h5 class="card-title mb-0">Upload Rice Plant Image</h5>
-                        </div>
+                        <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">Upload Rice Plant Image</h5>
+                        <select id="language-selector" class="form-select form-select-sm w-auto bg-dark text-white border-secondary fw-bold">
+                            <option value="tagalog" selected>Tagalog</option>
+                            <option value="english">English</option>
+                            <option value="cebuano">Cebuano</option>
+                            <option value="hiligaynon">Hiligaynon</option>
+                        </select>
+                    </div>
                         <div class="card-body">
 
                             <div id="drop-zone" class="border border-dashed border-success rounded-3 p-5 text-center cursor-pointer mb-4" 
@@ -159,11 +165,13 @@
                                 </div>
 
                                 <div class="row g-3">
+                                    <div class="col-12"><div id="description" class="p-3 border border-secondary rounded"></div></div>
                                     <div class="col-12"><div id="treatment" class="p-3 border border-secondary rounded"></div></div>
                                     <div class="col-12"><div id="causes" class="p-3 border border-secondary rounded"></div></div>
                                     <div id="nutrient-section" class="col-12"><div id="nutrient" class="p-3 border border-secondary rounded"></div></div>
                                     <div id="damage-section" class="col-12 hidden"><div id="damage" class="p-3 border border-secondary rounded"></div></div>
                                     <div id="grain-section" class="col-12"><div id="grain" class="p-3 border border-secondary rounded"></div></div>
+                                    <div id="natural-enemies-section" class="col-12 hidden"><div id="natural-enemies" class="p-3 border border-secondary rounded"></div></div>
                                     <div class="col-12"><div id="prevention" class="p-3 border border-secondary rounded"></div></div>
                                 </div>
                             </div>
@@ -215,23 +223,36 @@ let lastClassKey = null;
 let lastConfidence = 65;
 let isModelReady = false;
 let compressedBase64 = null;
+let currentGroqData = null; // TRACKS GROQ AI GENERATED DATA
 
+let lastPredictions = null;
+let isShowingFallback = false;
+
+// Add this translation dictionary
+const uiTranslations = {
+    english: { description: "Description / About", treatment: "Treatment", causes: "Causes", prevention: "Prevention", nutrient: "Nutrient / Deficiency", grain: "Grain Impact", damage: "Damage Symptoms", naturalEnemies: "Natural Enemies" },
+    tagalog: { description: "Paglalarawan / Tungkol dito", treatment: "Paggamot", causes: "Mga Sanhi", prevention: "Pag-iwas", nutrient: "Kakulangan sa Nutrisyon", grain: "Epekto sa Butil", damage: "Sintomas ng Pinsala", naturalEnemies: "Mga Likas na Kaaway" },
+    cebuano: { description: "Paghulagway / Mahitungod", treatment: "Pagtambal", causes: "Mga Hinungdan", prevention: "Pagpugong", nutrient: "Kulang sa Nutrisyon", grain: "Epekto sa Uhay", damage: "Sintomas sa Kadaot", naturalEnemies: "Mga Natural nga Kaaway" },
+    hiligaynon: { description: "Paglaragway / Tuhoy Diri", treatment: "Pagbulong", causes: "Mga Rason", prevention: "Pagpangamlig", nutrient: "Kulang sa Nutrisyon", grain: "Epekto sa Uhay", damage: "Sintomas sang Halit", naturalEnemies: "Mga Natural nga Kontra" }
+};
+
+// ==================== COMPRESSION ====================
 async function compressImage(base64Image) {
     return new Promise((resolve) => {
         const img = new Image();
         img.src = base64Image;
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            const MAX_WIDTH = 800; 
-            const scale = MAX_WIDTH / img.width;
+            const MAX_WIDTH = 512; 
+            const scale = Math.min(MAX_WIDTH / img.width, 1); 
             
-            canvas.width = MAX_WIDTH;
+            canvas.width = img.width * scale;
             canvas.height = img.height * scale;
 
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-            resolve(canvas.toDataURL('image/jpeg', 0.7));
+            resolve(canvas.toDataURL('image/jpeg', 0.6)); 
         };
     });
 }
@@ -239,21 +260,21 @@ async function compressImage(base64Image) {
 // ==================== MODEL LOADING ====================
 async function loadModel() {
     const statusEl = document.getElementById('status');
-    statusEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Loading model...`;
+    statusEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Loading TF model...`;
     try {
         model = await tmImage.load(modelURL, metadataURL);
         statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> Model ready`;
         statusEl.className = "badge bg-success text-white";
         isModelReady = true;
     } catch (e) {
-        console.error(e);
-        statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> Model failed`;
-        statusEl.className = "badge bg-danger text-white";
+        console.error("TF Model failed to load:", e);
+        statusEl.innerHTML = `<i class="fa-solid fa-bolt"></i> Groq Only Mode`;
+        statusEl.className = "badge bg-primary text-white";
     }
 }
 
 // ==================== UPLOAD & CLASSIFICATION ====================
-function browsePhoto() { document.getElementById('file-input').click(); }
+window.browsePhoto = function() { document.getElementById('file-input').click(); };
 
 function setupUpload() {
     const dropZone = document.getElementById('drop-zone');
@@ -295,58 +316,167 @@ function clearPreview() {
     document.getElementById('classify-btn').disabled = true;
     currentBase64 = null;
     currentImage = null;
+    currentGroqData = null;
     document.getElementById('results-panel').classList.add('hidden');
     document.getElementById('no-result').classList.remove('hidden');
 }
 
-async function classifyCurrentImage() {
-    if (!isModelReady || !currentImage) return alert("Model not ready or no image selected.");
+window.classifyCurrentImage = async function() {
+    if (!currentImage || !compressedBase64) return alert("No image selected.");
 
     const btn = document.getElementById('classify-btn');
     const original = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> CLASSIFYING...`;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ANALYZING WITH AI...`;
+
+    const statusEl = document.getElementById('status');
+    statusEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Groq analyzing...`;
+    statusEl.className = "badge bg-info text-dark";
 
     try {
-        const predictions = await model.predict(currentImage);
-        displayResults(predictions);
+        const response = await fetch("{{ route('farmer.history.groq') }}", {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}'
+            },
+           body: JSON.stringify({ 
+                image_base64: compressedBase64,
+                language: document.getElementById('language-selector').value // Pass language to Groq
+            })
+        });
+
+        if (response.status === 401 || response.status === 419) {
+            alert("Your login session has expired. The page will now refresh so you can log back in.");
+            window.location.reload();
+            return;
+        }
+
+       const rawText = await response.text(); 
+        let result;
+        
+        try {
+            result = JSON.parse(rawText);
+        } catch (parseError) {
+            console.error("🚨 Server returned invalid JSON. Raw output:", rawText);
+            throw new Error("Server crashed or returned non-JSON data. Check logs.");
+        }
+        // ------------------------------------
+
+        if (result.success && result.data && result.data.class_key) {
+            statusEl.innerHTML = `<i class="fa-solid fa-bolt"></i> Groq Ready`;
+            statusEl.className = "badge bg-primary text-white";
+            displayGroqResults(result.data);
+            
+            btn.disabled = false;
+            btn.innerHTML = original;
+            return; 
+        } else {
+            const exactReason = result.message || "Unknown API Error";
+            console.error("🚨 GROQ API CULPRIT: 🚨", exactReason, result.debug_info || "");
+            throw new Error(exactReason);
+        }
+
     } catch (err) {
-        console.error(err);
+        console.warn("Groq sequence failed, falling back to local model...", err);
+        
+        statusEl.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> Groq failed. Using Fallback...`;
+        statusEl.className = "badge bg-warning text-dark";
+
+        if (!isModelReady) {
+            alert("Both AI and Fallback Model failed. Please check the browser console for details.");
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> Scan Failed`;
+            statusEl.className = "badge bg-danger text-white";
+        } else {
+            const predictions = await model.predict(currentImage);
+            displayResults(predictions);
+            
+            setTimeout(() => {
+                statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> Model ready`;
+                statusEl.className = "badge bg-success text-white";
+            }, 4000);
+        }
     } finally {
         btn.disabled = false;
         btn.innerHTML = original;
     }
-}
+};
 
-// ==================== DISPLAY RESULTS ====================
-function displayResults(predictions) {
+// ==================== DISPLAY GROQ RESULTS ====================
+function displayGroqResults(data) {
+    currentGroqData = data;
+    isShowingFallback = false;
+    const lang = document.getElementById('language-selector').value;
+    const t = uiTranslations[lang];
+    
     document.getElementById('no-result').classList.add('hidden');
     document.getElementById('results-panel').classList.remove('hidden');
+
+    lastClassKey = data.class_key;
+    lastConfidence = data.confidence;
+
+    const safeSet = (id, html) => { const el = document.getElementById(id); if(el) el.innerHTML = html; };
+
+    document.getElementById('top-label').textContent = data.class_name;
+    document.getElementById('top-confidence').innerHTML = `${data.confidence}%`;
+
+    safeSet('predictions-list', `<div class="d-flex justify-content-between mb-2"><span class="text-primary fw-bold"><i class="fa-solid fa-bolt me-2"></i>Groq AI Primary Diagnosis</span><span class="text-primary">${data.confidence}%</span></div>`);
+
+    let color = "text-info";
+    if (data.severity_label === 'HEALTHY') color = "text-success";
+    else if (data.severity_label === 'SEVERE') color = "text-danger";
+    else if (data.severity_label === 'MODERATE') color = "text-warning";
+
+    const severityLabelEl = document.getElementById('severity-label');
+    if(severityLabelEl) {
+        severityLabelEl.textContent = data.severity_label;
+        severityLabelEl.className = `h4 mb-1 ${color}`;
+    }
+    safeSet('severity-percent', data.severity_percent + "%");
+    safeSet('severity-message', data.severity_message);
+
+    safeSet('description', `<strong class="text-white"><i class="fa-solid fa-circle-info me-2"></i>${t.description}:</strong><p class="mt-2 mb-0">${data.description || '—'}</p>`);
+    safeSet('treatment', `<strong class="text-success"><i class="fa-solid fa-spray-can-sparkles me-2"></i>${t.treatment}:</strong><p class="mt-2 mb-0">${data.treatments || '—'}</p>`);
+    safeSet('causes', `<strong class="text-warning"><i class="fa-solid fa-question-circle me-2"></i>${t.causes}:</strong><p class="mt-2 mb-0">${data.causes || '—'}</p>`);
+    safeSet('prevention', `<strong class="text-info"><i class="fa-solid fa-shield-heart me-2"></i>${t.prevention}:</strong><p class="mt-2 mb-0">${data.prevention || '—'}</p>`);
+
+    if (data.is_pest) {
+        document.getElementById('nutrient-section')?.classList.add('hidden');
+        document.getElementById('grain-section')?.classList.add('hidden');
+        document.getElementById('damage-section')?.classList.remove('hidden');
+        document.getElementById('natural-enemies-section')?.classList.remove('hidden');
+        safeSet('damage', `<strong class="text-danger"><i class="fa-solid fa-wheat-awn me-2"></i>${t.damage}:</strong><p class="mt-2 mb-0">${data.grain_damage || '—'}</p>`);
+        safeSet('natural-enemies', `<strong class="text-success"><i class="fa-solid fa-bug-slash me-2"></i>${t.naturalEnemies}:</strong><p class="mt-2 mb-0">${data.natural_enemies || '—'}</p>`);
+    } else {
+        document.getElementById('damage-section')?.classList.add('hidden');
+        document.getElementById('natural-enemies-section')?.classList.add('hidden');
+        document.getElementById('nutrient-section')?.classList.remove('hidden');
+        document.getElementById('grain-section')?.classList.remove('hidden');
+        safeSet('nutrient', `<strong class="text-warning"><i class="fa-solid fa-leaf me-2"></i>${t.nutrient}:</strong><p class="mt-2 mb-0">${data.nutrient_deficiency || '—'}</p>`);
+        safeSet('grain', `<strong class="text-danger"><i class="fa-solid fa-seedling me-2"></i>${t.grain}:</strong><p class="mt-2 mb-0">${data.grain_damage || '—'}</p>`);
+    }
+}
+
+// ==================== DISPLAY LOCAL FALLBACK RESULTS ====================
+function displayResults(predictions) {
+    lastPredictions = predictions;
+    isShowingFallback = true;
+    currentGroqData = null;
+    const lang = document.getElementById('language-selector').value;
+    const t = uiTranslations[lang];
+
+    document.getElementById('no-result').classList.add('hidden');
+    document.getElementById('results-panel').classList.remove('hidden');
+    const safeSet = (id, html) => { const el = document.getElementById(id); if(el) el.innerHTML = html; };
 
     let filtered = predictions.filter(p => p.probability >= 0.01);
     filtered.sort((a, b) => b.probability - a.probability);
     const top = filtered[0];
 
-    let rawClassName = top.className.trim().toLowerCase().replace(/\s+/g, '_');
-    if (rawClassName === 'left_blast') rawClassName = 'leaf_blast'; 
-
-    if (rawClassName === 'random') {
-        document.getElementById('top-label').textContent = "Unrecognized Image";
-        document.getElementById('top-confidence').innerHTML = `${Math.round(top.probability * 100)}%`;
-        document.getElementById('severity-label').textContent = "UNKNOWN";
-        document.getElementById('severity-message').textContent = "Please upload a clear photo of a rice plant.";
-        document.getElementById('predictions-list').innerHTML = '';
-        document.getElementById('treatment').innerHTML = '<p class="text-secondary mb-0">No data available.</p>';
-        document.getElementById('causes').innerHTML = '';
-        document.getElementById('prevention').innerHTML = '';
-        document.getElementById('damage-section')?.classList.add('hidden');
-        document.getElementById('nutrient-section')?.classList.add('hidden');
-        document.getElementById('grain-section')?.classList.add('hidden');
-        lastClassKey = null; 
-        return; 
-    }
-
-    const className = rawClassName;
+    const className = top.className.trim().toLowerCase().replace(/\s+/g, '_');
     lastClassKey = className;
     lastConfidence = Math.round(top.probability * 100);
 
@@ -359,71 +489,94 @@ function displayResults(predictions) {
     let html = '';
     filtered.forEach(pred => {
         let pName = pred.className.trim().toLowerCase().replace(/\s+/g, '_');
-        if (pName === 'left_blast') pName = 'leaf_blast';
-        const perc = (pred.probability * 100).toFixed(1);
-        html += `<div class="d-flex justify-content-between mb-2"><span>${nameMap[pName] || pred.className}</span><span class="text-secondary">${perc}%</span></div>`;
+        html += `<div class="d-flex justify-content-between mb-2"><span>${nameMap[pName] || pred.className}</span><span class="text-secondary">${(pred.probability * 100).toFixed(1)}%</span></div>`;
     });
-    document.getElementById('predictions-list').innerHTML = html;
-
-    let severityLabel = "LOW", severityMessage = "Monitor plant.", severityPercent = 30, color = "text-info";
-    if (className.includes("healthy")) {
-        severityLabel = "HEALTHY"; severityMessage = "No action needed."; severityPercent = 0; color = "text-success";
-    } else if (top.probability >= 0.80) {
-        severityLabel = "SEVERE"; severityMessage = "Immediate action required!"; severityPercent = 95; color = "text-danger";
-    } else if (top.probability >= 0.50) {
-        severityLabel = "MODERATE"; severityMessage = "Apply treatment soon."; severityPercent = 65; color = "text-warning";
-    }
-
-    const severityLabelEl = document.getElementById('severity-label');
-    severityLabelEl.textContent = severityLabel;
-    severityLabelEl.className = `h4 mb-1 ${color}`;
-    document.getElementById('severity-percent').textContent = severityPercent + "%";
-    document.getElementById('severity-message').textContent = severityMessage;
+    safeSet('predictions-list', html);
 
     const kb = knowledgeBase[className] || {};
-
-    document.getElementById('treatment').innerHTML = `<strong class="text-success"><i class="fa-solid fa-spray-can-sparkles me-2"></i>Treatment:</strong><p class="mt-2 mb-0">${kb.treatments || 'No specific treatment data found.'}</p>`;
-    document.getElementById('causes').innerHTML = `<strong class="text-warning"><i class="fa-solid fa-question-circle me-2"></i>Causes:</strong><p class="mt-2 mb-0">${kb.causes || '—'}</p>`;
-    document.getElementById('prevention').innerHTML = `<strong class="text-info"><i class="fa-solid fa-shield-heart me-2"></i>Prevention:</strong><p class="mt-2 mb-0">${kb.prevention || '—'}</p>`;
+    
+    // Note: kb data remains untouched, only labels change
+    safeSet('description', `<strong class="text-white"><i class="fa-solid fa-circle-info me-2"></i>${t.description}:</strong><p class="mt-2 mb-0">${kb.description || '—'}</p>`);
+    safeSet('treatment', `<strong class="text-success"><i class="fa-solid fa-spray-can-sparkles me-2"></i>${t.treatment}:</strong><p class="mt-2 mb-0">${kb.treatments || '—'}</p>`);
+    safeSet('causes', `<strong class="text-warning"><i class="fa-solid fa-question-circle me-2"></i>${t.causes}:</strong><p class="mt-2 mb-0">${kb.causes || '—'}</p>`);
+    safeSet('prevention', `<strong class="text-info"><i class="fa-solid fa-shield-heart me-2"></i>${t.prevention}:</strong><p class="mt-2 mb-0">${kb.prevention || '—'}</p>`);
 
     if (isPest) {
-        document.getElementById('nutrient-section').classList.add('hidden');
-        document.getElementById('grain-section').classList.add('hidden');
-        document.getElementById('damage-section').classList.remove('hidden');
-        document.getElementById('damage').innerHTML = `<strong class="text-danger"><i class="fa-solid fa-wheat-awn me-2"></i>Damage:</strong><p class="mt-2 mb-0">${kb.grain_damage || '—'}</p>`;
+        document.getElementById('nutrient-section')?.classList.add('hidden');
+        document.getElementById('grain-section')?.classList.add('hidden');
+        document.getElementById('damage-section')?.classList.remove('hidden');
+        document.getElementById('natural-enemies-section')?.classList.remove('hidden');
+        safeSet('damage', `<strong class="text-danger"><i class="fa-solid fa-wheat-awn me-2"></i>${t.damage}:</strong><p class="mt-2 mb-0">${kb.grain_damage || '—'}</p>`);
+        safeSet('natural-enemies', `<strong class="text-success"><i class="fa-solid fa-bug-slash me-2"></i>${t.naturalEnemies}:</strong><p class="mt-2 mb-0">${kb.natural_enemies || '—'}</p>`);
     } else {
-        document.getElementById('damage-section').classList.add('hidden');
-        document.getElementById('nutrient-section').classList.remove('hidden');
-        document.getElementById('grain-section').classList.remove('hidden');
-        document.getElementById('nutrient').innerHTML = `<strong class="text-warning"><i class="fa-solid fa-leaf me-2"></i>Nutrient/Deficiency:</strong><p class="mt-2 mb-0">${kb.nutrient_deficiency || 'Not applicable'}</p>`;
-        document.getElementById('grain').innerHTML = `<strong class="text-danger"><i class="fa-solid fa-seedling me-2"></i>Grain Impact:</strong><p class="mt-2 mb-0">${kb.grain_damage || 'Not applicable'}</p>`;
+        document.getElementById('damage-section')?.classList.add('hidden');
+        document.getElementById('natural-enemies-section')?.classList.add('hidden');
+        document.getElementById('nutrient-section')?.classList.remove('hidden');
+        document.getElementById('grain-section')?.classList.remove('hidden');
+        safeSet('nutrient', `<strong class="text-warning"><i class="fa-solid fa-leaf me-2"></i>${t.nutrient}:</strong><p class="mt-2 mb-0">${kb.nutrient_deficiency || '—'}</p>`);
+        safeSet('grain', `<strong class="text-danger"><i class="fa-solid fa-seedling me-2"></i>${t.grain}:</strong><p class="mt-2 mb-0">${kb.grain_damage || '—'}</p>`);
     }
+
+    currentGroqData = {
+        is_pest: isPest,
+        description: kb.description || '',
+        treatments: kb.treatments || '',
+        causes: kb.causes || '',
+        nutrient_deficiency: kb.nutrient_deficiency || '',
+        grain_damage: kb.grain_damage || '',
+        prevention: kb.prevention || '',
+        natural_enemies: kb.natural_enemies || ''
+    };
 }
 
-// ==================== SAVE HISTORY VIA CONTROLLER ====================
+// Add the event listener to auto-update UI labels when language is toggled
+document.getElementById('language-selector').addEventListener('change', function() {
+    if (!document.getElementById('results-panel').classList.contains('hidden')) {
+        if (!isShowingFallback && currentGroqData) {
+            displayGroqResults(currentGroqData);
+        } else if (isShowingFallback && lastPredictions) {
+            displayResults(lastPredictions);
+        }
+    }
+});
+
+
+
+// ==================== SAVE HISTORY ====================
+// ==================== SAVE HISTORY ====================
 async function saveCurrentDetection() {
     if (!lastClassKey || !compressedBase64) return alert("No detection to save.");
     
     try {
         const response = await fetch("{{ route('farmer.history.save') }}", {
             method: 'POST',
+            credentials: 'same-origin', // <-- CRITICAL FIX: Sends login session
             headers: {
                 'Content-Type': 'application/json',
+                'Accept': 'application/json', // Force Laravel to return JSON errors
                 'X-CSRF-TOKEN': '{{ csrf_token() }}'
             },
             body: JSON.stringify({
                 class_key: lastClassKey,
                 confidence: lastConfidence,
-                image_base64: compressedBase64 
+                image_base64: compressedBase64,
+                groq_data: currentGroqData 
             })
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error("Server Error Details:", errorText);
-            return alert("❌ Server error occurred. Please check the console.");
+        // Handle expired login session gracefully
+        if (response.status === 401 || response.status === 419) {
+            alert("Your login session has expired. Please log in again.");
+            window.location.reload();
+            return;
         }
 
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error("🚨 LARAVEL ERROR 🚨:", errText);
+            throw new Error(`Server returned ${response.status}. Check browser console.`);
+        }
+        
         const data = await response.json();
         if(data.success) {
             alert("✅ Detection saved to history successfully!");
@@ -471,12 +624,13 @@ async function sendChatQuery() {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
                 "X-CSRF-TOKEN": "{{ csrf_token() }}" 
             },
-            body: JSON.stringify({
-                action: "chat_query",
-                query: query,
-                language: "en"
+           body: JSON.stringify({ 
+                image_base64: compressedBase64,
+                language: document.getElementById('language-selector').value
             })
         });
 
@@ -504,7 +658,7 @@ function addChatMessage(text, isUser = false) {
     container.scrollTop = container.scrollHeight;
 }
 
-// ==================== INITIALIZATION & CAMERA BRIDGE ====================
+// ==================== INITIALIZATION ====================
 window.onload = async () => {
     await loadModel();
     setupUpload();

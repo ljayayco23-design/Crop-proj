@@ -175,10 +175,7 @@
                         <label class="form-label prodigy-label">Farm Size (Hectares)</label>
                         <input type="number" step="0.1" name="farm_size" class="form-control bg-dark border-secondary text-white" value="{{ $user->farm_size ?? '' }}">
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label prodigy-label">Preferred Rice Variety</label>
-                        <input type="text" name="preferred_variety" class="form-control bg-dark border-secondary text-white" value="{{ $user->preferred_variety ?? '' }}">
-                    </div>
+                  
                     <div class="mb-4">
                         <label class="form-label prodigy-label">About My Farm (Bio)</label>
                         <textarea name="bio" class="form-control bg-dark border-secondary text-white" rows="3">{{ $user->bio ?? '' }}</textarea>

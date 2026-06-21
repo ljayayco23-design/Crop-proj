@@ -4,82 +4,162 @@
 
 @section('content')
 <style>
-    .version-card { transition: all 0.2s; }
-    .version-card:hover { transform: translateY(-2px); }
-    .type-badge { font-size: 0.85rem; padding: 4px 10px; }
+    .scroll-container { 
+        max-height: 80vh; 
+        overflow-y: auto; 
+        padding-right: 15px; 
+    }
+    .scroll-container::-webkit-scrollbar { width: 6px; }
+    .scroll-container::-webkit-scrollbar-track { background: #1e2937; border-radius: 4px; }
+    .scroll-container::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+    .scroll-container::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    
+    .timeline-item { border-left: 2px solid #3b82f6; padding-left: 1.5rem; position: relative; margin-bottom: 1.5rem; }
+    .timeline-item::before {
+        content: ''; position: absolute; left: -6px; top: 0; width: 10px; height: 10px;
+        background: #3b82f6; border-radius: 50%;
+    }
+    .timeline-item.groq-item { border-left-color: #0dcaf0; }
+    .timeline-item.groq-item::before { background: #0dcaf0; }
+    
+    .accordion-button::after { filter: invert(1); }
+    .accordion-button:not(.collapsed) { background-color: rgba(255,255,255,0.05); color: white; box-shadow: none; }
+    .accordion-button { background-color: transparent; color: #cbd5e1; padding: 10px 15px; font-weight: 600; box-shadow: none; }
 </style>
 
 <div class="row mb-4">
     <div class="col-12 d-flex justify-content-between align-items-center">
         <div>
             <h2 class="fw-bold text-white">Knowledge Update History</h2>
-            <p class="text-secondary">Track every change made to the shared knowledge base by Admins and Technicians.</p>
+            <p class="text-secondary">Track every modification made to the shared knowledge base. View full records and identifying authors.</p>
         </div>
     </div>
 </div>
 
-@if(empty($data))
-    <div class="card bg-dark border-secondary">
-        <div class="card-body text-center py-5 text-secondary">
-            No knowledge records found in the database.
+<div class="row g-4">
+    <!-- COLUMN 1: Fallback System Data -->
+    <div class="col-lg-6">
+        <div class="card bg-dark border-secondary h-100 shadow-sm">
+            <div class="card-header border-secondary sticky-top bg-dark z-1 py-3">
+                <h5 class="mb-0 text-white fw-bold"><i class="fas fa-database me-2 text-primary"></i> Primary Knowledge Base</h5>
+            </div>
+            <div class="card-body scroll-container">
+                @if(empty($data))
+                    <div class="text-center text-secondary py-5">No primary system records found.</div>
+                @else
+                    @foreach ($data as $type => $items)
+                        @foreach ($items as $jsonKey => $versions)
+                            <div class="mb-5">
+                                <h5 class="fw-bold text-white border-bottom border-secondary pb-2 mb-4 d-flex align-items-center justify-content-between">
+                                    {{ strtoupper(str_replace('_', ' ', $jsonKey)) }}
+                                    <span class="badge {{ $type === 'disease' ? 'bg-primary' : 'bg-danger' }} fs-6">
+                                        {{ strtoupper($type) }}
+                                    </span>
+                                </h5>
+                                
+                                <div class="accordion" id="accordion-primary-{{ $jsonKey }}">
+                                    @foreach ($versions as $index => $v)
+                                        <div class="timeline-item">
+                                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                                <div>
+                                                    <span class="fw-bold text-white d-block">{{ \Carbon\Carbon::parse($v['updated_at'])->format('M d, Y h:i A') }}</span>
+                                                    <span class="badge bg-primary bg-opacity-25 text-primary mt-1"><i class="fas fa-user-edit me-1"></i> {{ $v['updated_by'] ?? 'System' }}</span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="accordion-item border-secondary bg-secondary bg-opacity-10 rounded">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-p-{{ $v['id'] }}">
+                                                        View Full Record Data
+                                                    </button>
+                                                </h2>
+                                                <div id="collapse-p-{{ $v['id'] }}" class="accordion-collapse collapse" data-bs-parent="#accordion-primary-{{ $jsonKey }}">
+                                                    <div class="accordion-body text-secondary small">
+                                                        <strong class="text-white">Description:</strong> <p>{{ $v['description'] ?? 'N/A' }}</p>
+                                                        <strong class="text-success">Treatments:</strong> <p>{{ $v['treatments'] ?? 'N/A' }}</p>
+                                                        <strong class="text-warning">Causes:</strong> <p>{{ $v['causes'] ?? 'N/A' }}</p>
+                                                        @if($type === 'disease')
+                                                            <strong class="text-info">Nutrient Deficiency:</strong> <p>{{ $v['nutrient_deficiency'] ?? 'N/A' }}</p>
+                                                        @else
+                                                            <strong class="text-danger">Damage Symptoms:</strong> <p>{{ $v['grain_damage'] ?? 'N/A' }}</p>
+
+                                                            <strong class="text-info">Natural Enemies:</strong> <p>{{ $v['natural_enemies'] ?? 'N/A' }}</p>
+                                                        @endif
+                                                        <strong class="text-light">Prevention:</strong> <p>{{ $v['prevention'] ?? 'N/A' }}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endforeach
+                    @endforeach
+                @endif
+            </div>
         </div>
     </div>
-@else
-    @foreach ($data as $type => $items)
-        <div class="card bg-dark border-secondary shadow-sm mb-5">
-            <div class="card-header border-secondary">
-                <h5 class="mb-0 text-white fw-bold">{{ ucfirst($type) }}s</h5>
+
+    <!-- COLUMN 2: Groq AI Discovered Data -->
+    <div class="col-lg-6">
+        <div class="card bg-dark border-info h-100 shadow-sm">
+            <div class="card-header border-info sticky-top bg-dark z-1 py-3">
+                <h5 class="mb-0 text-info fw-bold"><i class="fas fa-robot me-2"></i> Groq AI Discovered Data</h5>
             </div>
-            <div class="card-body">
-                @foreach ($items as $jsonKey => $versions)
-                    @php $original = $originalData[$jsonKey] ?? []; @endphp
-                    <div class="border border-secondary rounded-3 p-4 mb-4 bg-secondary bg-opacity-10">
-                        <div class="d-flex justify-content-between align-items-center mb-3 border-bottom border-secondary pb-3">
-                            <h5 class="fw-bold mb-0 text-white">{{ strtoupper(str_replace('_', ' ', $jsonKey)) }}</h5>
-                            <span class="badge {{ $type === 'disease' ? 'bg-primary' : 'bg-danger' }} type-badge">
-                                {{ strtoupper($type) }}
-                            </span>
-                        </div>
-                        <div class="row g-4">
-                            <div class="col-md-5">
-                                <div class="border border-secondary bg-dark p-4 rounded-3 h-100">
-                                    <h6 class="text-warning mb-3 fw-bold"><i class="fa-solid fa-history me-2"></i> Original System Default</h6>
-                                    <div class="small text-secondary">
-                                        <strong class="text-white">Treatments:</strong> {!! nl2br(e($original['treatments'] ?? '—')) !!}<br><br>
-                                        <strong class="text-white">Causes:</strong> {!! nl2br(e($original['causes'] ?? '—')) !!}<br><br>
-                                        <strong class="text-white">Nutrient/Enemies:</strong> {!! nl2br(e($original['nutrient_deficiency'] ?? '—')) !!}<br><br>
-                                        <strong class="text-white">Damage:</strong> {!! nl2br(e($original['grain_damage'] ?? '—')) !!}<br><br>
-                                        <strong class="text-white">Prevention:</strong> {!! nl2br(e($original['prevention'] ?? '—')) !!}
-                                    </div>
+            <div class="card-body scroll-container">
+                @if(empty($groqGrouped))
+                    <div class="text-center text-secondary py-5">No Groq data has been saved or modified yet.</div>
+                @else
+                    @foreach ($groqGrouped as $type => $items)
+                        @foreach ($items as $jsonKey => $versions)
+                            <div class="mb-5">
+                                <h5 class="fw-bold text-info border-bottom border-info pb-2 mb-4 d-flex align-items-center justify-content-between">
+                                    {{ strtoupper(str_replace('_', ' ', $jsonKey)) }}
+                                    <span class="badge {{ $type === 'disease' ? 'bg-primary' : 'bg-danger' }} fs-6">
+                                        {{ strtoupper($type) }}
+                                    </span>
+                                </h5>
+                                
+                                <div class="accordion" id="accordion-groq-{{ $jsonKey }}">
+                                    @foreach ($versions as $index => $v)
+                                        <div class="timeline-item groq-item">
+                                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                                <div>
+                                                    <span class="fw-bold text-white d-block">{{ \Carbon\Carbon::parse($v['updated_at'])->format('M d, Y h:i A') }}</span>
+                                                    <span class="badge bg-info bg-opacity-25 text-info mt-1"><i class="fas fa-microchip me-1"></i> {{ $v['updated_by'] ?? 'Groq Auto' }}</span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="accordion-item border-info bg-info bg-opacity-10 rounded">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button collapsed text-info" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-g-{{ $v['id'] }}">
+                                                        View Full Record Data
+                                                    </button>
+                                                </h2>
+                                                <div id="collapse-g-{{ $v['id'] }}" class="accordion-collapse collapse" data-bs-parent="#accordion-groq-{{ $jsonKey }}">
+                                                    <div class="accordion-body text-secondary small">
+                                                        <strong class="text-white">Description:</strong> <p>{{ $v['description'] ?? 'N/A' }}</p>
+                                                        <strong class="text-success">Treatments:</strong> <p>{{ $v['treatments'] ?? 'N/A' }}</p>
+                                                        <strong class="text-warning">Causes:</strong> <p>{{ $v['causes'] ?? 'N/A' }}</p>
+                                                        @if($type === 'disease')
+                                                            <strong class="text-info">Nutrient Deficiency:</strong> <p>{{ $v['nutrient_deficiency'] ?? 'N/A' }}</p>
+                                                        @else
+                                                            <strong class="text-danger">Damage Symptoms:</strong> <p>{{ $v['grain_damage'] ?? 'N/A' }}</p>
+                                                            <strong class="text-info">Natural Enemies:</strong> <p>{{ $v['natural_enemies'] ?? 'N/A' }}</p>
+                                                        @endif
+                                                        <strong class="text-light">Prevention:</strong> <p>{{ $v['prevention'] ?? 'N/A' }}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    @endforeach
                                 </div>
                             </div>
-                            
-                            <div class="col-md-7">
-                                @foreach ($versions as $v)
-                                <div class="version-card border border-success p-4 rounded-3 mb-3 bg-dark">
-                                    <div class="d-flex justify-content-between align-items-start mb-3">
-                                        <h6 class="text-success mb-0 fw-bold">
-                                            Current DB Version • {{ \Carbon\Carbon::parse($v['updated_at'])->format('M d, Y h:i A') }}
-                                        </h6>
-                                        <span class="badge bg-success bg-opacity-25 text-success border border-success">
-                                            Updated by: {{ $v['updated_by'] ?? 'System' }}
-                                        </span>
-                                    </div>
-                                    <div class="small text-secondary">
-                                        <strong class="text-white">Treatments:</strong> {!! nl2br(e($v['treatments'] ?? '—')) !!}<br><br>
-                                        <strong class="text-white">Causes:</strong> {!! nl2br(e($v['causes'] ?? '—')) !!}<br><br>
-                                        <strong class="text-white">Nutrient/Enemies:</strong> {!! nl2br(e($v['nutrient_deficiency'] ?? '—')) !!}<br><br>
-                                        <strong class="text-white">Damage:</strong> {!! nl2br(e($v['grain_damage'] ?? '—')) !!}<br><br>
-                                        <strong class="text-white">Prevention:</strong> {!! nl2br(e($v['prevention'] ?? '—')) !!}
-                                    </div>
-                                </div>
-                                @endforeach
-                            </div>
-                        </div>
-                    </div>
-                @endforeach
+                        @endforeach
+                    @endforeach
+                @endif
             </div>
         </div>
-    @endforeach
-@endif
+    </div>
+</div>
 @endsection

@@ -24,27 +24,21 @@
                     <i class="fas fa-history me-2"></i> History
                 </a>
             </li>
-            
-            <!-- NEW: Announcements -->
             <li class="nav-item mb-2">
                 <a href="{{ route('farmer.announcement') }}" class="nav-link {{ request()->routeIs('farmer.announcement') ? 'active' : '' }}">
                     <i class="fas fa-bullhorn me-2"></i> Announcements
                 </a>
             </li>
-
             <li class="nav-item mb-2">
-    <a href="{{ route('farmer.live_com') }}" class="nav-link {{ request()->routeIs('farmer.live_com') ? 'active' : '' }}">
-        <i class="fas fa-message me-2"></i> Messenger
-    </a>
-</li>
-
-
-<li class="nav-item mb-2">
-    <a href="{{ route('farmer.weather') }}" class="nav-link {{ request()->routeIs('farmer.weather') ? 'active' : '' }}">
-        <i class="fas fa-cloud-sun me-2"></i> Weather
-    </a>
-</li>
-
+                <a href="{{ route('farmer.live_com') }}" class="nav-link {{ request()->routeIs('farmer.live_com') ? 'active' : '' }}">
+                    <i class="fas fa-message me-2"></i> Messenger
+                </a>
+            </li>
+            <li class="nav-item mb-2">
+                <a href="{{ route('farmer.field_map') }}" class="nav-link {{ request()->routeIs('farmer.field_map') ? 'active' : '' }}">
+                    <i class="fas fa-map-location-dot me-2"></i> Field Map & Weather
+                </a>
+            </li>
         </ul>
     </nav>
 </aside>

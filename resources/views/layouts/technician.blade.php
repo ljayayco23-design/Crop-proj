@@ -76,8 +76,9 @@
 
     <div class="content-area">
         <nav class="main-header navbar navbar-expand navbar-dark px-4 shadow-sm">
-            <button onclick="document.body.classList.toggle('sidebar-collapsed')" class="btn btn-link text-white p-0 me-4"><i class="fas fa-bars fs-5"></i></button>
-
+            <button onclick="document.body.classList.toggle('sidebar-collapsed')" class="btn btn-link text-white p-0 me-4">
+                <i class="fas fa-bars fs-5"></i>
+            </button>
             <ul class="navbar-nav ms-auto d-flex align-items-center gap-3">
                 <li class="nav-item dropdown">
                     <a class="nav-link text-white" href="#" data-bs-toggle="dropdown" data-bs-auto-close="outside"><i class="fas fa-search fs-5"></i></a>

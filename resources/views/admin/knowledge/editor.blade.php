@@ -61,7 +61,10 @@
                                 @endforeach
                             </select>
                         </div>
-
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">description / Description</label>
+                            <textarea name="description" rows="3" class="form-control bg-dark text-white border-secondary" placeholder="Enter general description...">{{ (isset($record) && $record->type === 'disease') ? $record->description : '' }}</textarea>
+                        </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold">Recommended Treatments</label>
                             <textarea name="treatments" rows="4" class="form-control bg-dark text-white border-secondary" placeholder="Enter treatment prescriptions...">{{ (isset($record) && $record->type === 'disease') ? $record->treatments : '' }}</textarea>
@@ -100,6 +103,10 @@
                                 @endforeach
                             </select>
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">About / Description</label>
+                            <textarea name="description" rows="3" class="form-control bg-dark text-white border-secondary" placeholder="Enter general description...">{{ (isset($record) && $record->type === 'pest') ? $record->description : '' }}</textarea>
+                        </div>
 
                         <div class="mb-3">
                             <label class="form-label fw-bold">Recommended Treatments</label>
@@ -117,13 +124,13 @@
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Prevention</label>
-                            <textarea name="prevention" rows="3" class="form-control bg-dark text-white border-secondary" placeholder="Cultural prevention habits...">{{ (isset($record) && $record->type === 'pest') ? $record->prevention : '' }}</textarea>
+                            <label class="form-label fw-bold">Natural Enemies</label>
+                            <textarea name="natural_enemies" rows="3" class="form-control bg-dark text-white border-secondary" placeholder="List helpful predatory insects...">{{ (isset($record) && $record->type === 'pest') ? $record->natural_enemies : '' }}</textarea>
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Natural Enemies</label>
-                            <textarea name="natural_enemies" rows="3" class="form-control bg-dark text-white border-secondary" placeholder="List helpful predatory insects...">{{ (isset($record) && $record->type === 'pest') ? $record->nutrient_deficiency : '' }}</textarea>
+                            <label class="form-label fw-bold">Prevention</label>
+                            <textarea name="prevention" rows="3" class="form-control bg-dark text-white border-secondary" placeholder="Cultural prevention habits...">{{ (isset($record) && $record->type === 'pest') ? $record->prevention : '' }}</textarea>
                         </div>
                     </div>
 

@@ -17,8 +17,19 @@ class User extends Authenticatable
         'status',
         'phone',
         'address',
-        'photo',
         'lang',
+        // ADDED MISSING REGISTRATION FIELDS BELOW:
+        'dob',
+        'farmer_category',
+        'farm_name',
+        'latitude',
+        'longitude',
+        'device_latitude',
+        'device_longitude',
+        'farm_size',
+        'water_source',
+        'id_type',
+        'document_photo',
     ];
 
     protected $hidden = [

@@ -10,6 +10,7 @@ use App\Http\Controllers\FarmerHistoryController;
 use App\Http\Controllers\TechnicianController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\FieldMapController; // ✅ Added New Field Map Controller
 use Illuminate\Support\Facades\Artisan;
 
 
@@ -20,12 +21,6 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/profile/update', [AdminDashboardController::class, 'updateProfile'])->name('profile.update');
     Route::post('/password/update', [AdminDashboardController::class, 'updatePassword'])->name('password.update');
 });
-
-// ============================================
-// EXISTING ROUTES CONTINUE...
-
-
-// Add this line to your routes/web.php
 
 Route::get('/', function () {
     return redirect()->route('login');
@@ -58,23 +53,26 @@ Route::prefix('admin')->name('admin.')->group(function () {
 });
 
 // ==================== PROTECTED ADMIN ROUTES ====================
-
-
-
 Route::prefix('admin')->middleware(['auth', 'role:admin'])->name('admin.')->group(function () {
 
-Route::get('/notifications', [AdminDashboardController::class, 'getNotifications'])
-         ->name('notifications');
-    Route::post('/notifications/{id}/read', [AdminDashboardController::class, 'markAsRead'])
-         ->name('notifications.read');
-    Route::delete('/notifications/{id}', [AdminDashboardController::class, 'deleteNotification'])
-         ->name('notifications.delete');
 
+// Admin Documents Route
+    Route::get('/documents', function () {
+        // Fetch all farmers to display their verification documents
+        $users = \App\Models\User::where('role', 'farmer')->get();
+        return view('admin.documents', compact('users'));
+    })->name('documents');
+    // The route for the new Groq Edit Modal
+    Route::post('/knowledge/update-groq', [\App\Http\Controllers\KnowledgeController::class, 'updateGroq'])->name('knowledge.updateGroq');
 
+    Route::get('/notifications', [AdminDashboardController::class, 'getNotifications'])->name('notifications');
+    Route::post('/notifications/{id}/read', [AdminDashboardController::class, 'markAsRead'])->name('notifications.read');
+    Route::delete('/notifications/{id}', [AdminDashboardController::class, 'deleteNotification'])->name('notifications.delete');
 
     Route::post('/profile/update', [AdminDashboardController::class, 'updateProfile'])->name('profile.update');
+    
     // Admin: Diagnoses / All User History
-Route::get('/history', [\App\Http\Controllers\Admin\AdminDashboardController::class, 'allUserHistory'])->name('history');
+    Route::get('/history', [\App\Http\Controllers\Admin\AdminDashboardController::class, 'allUserHistory'])->name('history');
     Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
 
     Route::get('/farmers', [AdminUserController::class, 'farmers'])->name('farmers');
@@ -82,12 +80,14 @@ Route::get('/history', [\App\Http\Controllers\Admin\AdminDashboardController::cl
     Route::get('/technician/create', [AdminUserController::class, 'createTechnician'])->name('technician.create');
     Route::post('/technician/store', [AdminUserController::class, 'storeTechnician'])->name('technician.store');
 
+    Route::get('/users/{id}/info', [AdminUserController::class, 'getUserInfo'])->name('users.info');
     Route::post('/users/{id}/update', [AdminUserController::class, 'update'])->name('users.update');    
     Route::get('/users/{id}/approve', [AdminUserController::class, 'approve'])->name('users.approve');
     Route::get('/users/{id}/decline', [AdminUserController::class, 'decline'])->name('users.decline');
     Route::get('/users/{id}/delete', [AdminUserController::class, 'delete'])->name('users.delete');
 
     Route::prefix('knowledge')->name('knowledge.')->group(function () {
+        Route::post('/delete-groq/{id}', [KnowledgeController::class, 'destroyGroq'])->name('deleteGroq');
         Route::get('/editor/{id?}', [KnowledgeController::class, 'editor'])->name('editor');
         Route::post('/editor/store', [KnowledgeController::class, 'store'])->name('store');
         Route::get('/management', [KnowledgeController::class, 'management'])->name('management');
@@ -103,6 +103,13 @@ Route::get('/history', [\App\Http\Controllers\Admin\AdminDashboardController::cl
 
 // ==================== PROTECTED TECHNICIAN ROUTES ====================
 Route::prefix('technician')->middleware(['auth'])->group(function () {
+
+// Technician Documents Route
+    Route::get('/documents', function () {
+        // Fetch only approved farmers for technicians to view
+        $users = \App\Models\User::where('role', 'farmer')->where('status', 'approved')->get();
+        return view('technician.documents', compact('users'));
+    })->name('technician.documents');
     Route::get('/dashboard', [TechnicianController::class, 'dashboard'])->name('technician.dashboard');
     Route::get('/records', [TechnicianController::class, 'records'])->name('technician.records');
     Route::post('/knowledge/update', [TechnicianController::class, 'updateKnowledge'])->name('technician.knowledge.update');
@@ -111,14 +118,22 @@ Route::prefix('technician')->middleware(['auth'])->group(function () {
     
     // ✅ Messenger
     Route::get('/live-com', [ChatController::class, 'technicianIndex'])->name('technician.live_com');
+    Route::get('/field-map/weather', [\App\Http\Controllers\FieldMapController::class, 'getWeather'])->name('technician.field_map.weather');
+    Route::get('/field-map', [\App\Http\Controllers\FieldMapController::class, 'index'])->name('technician.field_map');
+    Route::match(['get', 'post'], '/field-map/sync', [\App\Http\Controllers\FieldMapController::class, 'syncLayers'])->name('technician.field_map.sync');
 });
 
 // ==================== PROTECTED FARMER ROUTES ====================
-
-
-
-Route::get('/weather', [\App\Http\Controllers\WeatherController::class, 'index'])->name('farmer.weather');
 Route::prefix('farmer')->middleware(['auth'])->group(function () {
+    
+    // 🗺️ UNIFIED FIELD MAP & WEATHER ROUTES
+    Route::get('/field-map/weather', [FieldMapController::class, 'getWeather'])->name('farmer.field_map.weather');
+    Route::get('/field-map', [FieldMapController::class, 'index'])->name('farmer.field_map');
+    Route::match(['get', 'post'], '/field-map/sync', [FieldMapController::class, 'syncLayers'])->name('farmer.field_map.sync');
+
+    // AI Analysis route for farmers
+    Route::post('/history/groq', [App\Http\Controllers\FarmerHistoryController::class, 'analyzeImageWithGroq'])->name('farmer.history.groq');
+
     Route::get('/dashboard', function () { return view('farmer.dashboard'); })->name('farmer.dashboard');
     Route::get('/camera', function () { return view('farmer.camera'); })->name('farmer.camera');
     
@@ -176,6 +191,7 @@ Route::match(['get', 'post'], '/farmer/detection', function (\Illuminate\Http\Re
         foreach ($records as $row) {
             $key = strtolower(trim($row->disease));
             $knowledgeBase[$key] = [
+                'description' => $flatten($row->description ?? null, '—'), // <-- Added description mapping here
                 'treatment' => $flatten($row->treatments ?? null, 'No data available yet.'),
                 'treatments' => $flatten($row->treatments ?? null, 'No data available yet.'),
                 'causes' => $flatten($row->causes ?? null, '—'),
@@ -236,9 +252,11 @@ Route::get('/setup-db', function() {
 });
 
 
-// Make sure this is NOT inside Route::middleware(['auth'])
 Route::get('/check-status', function(\Illuminate\Http\Request $request) {
     $user = \App\Models\User::where('email', $request->query('email'))->first();
     return response()->json(['status' => $user ? $user->status : 'none'])
                      ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
 });
+
+
+Route::get('/api/cron/weather-alerts', [FieldMapController::class, 'triggerWeatherCron']);
