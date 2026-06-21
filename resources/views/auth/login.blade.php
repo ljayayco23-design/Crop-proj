@@ -189,8 +189,10 @@
             <div class="flex gap-3 mt-6">
                 <button type="button" id="backBtn" class="hidden flex-1 py-3 bg-zinc-700 hover:bg-zinc-600 text-white rounded-2xl font-semibold transition-all">Back</button>
                 <button type="button" id="nextBtn" class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-semibold transition-all">Next</button>
-                <button onclick="hideSignupModal(); return false;" class="text-emerald-400 hover:text-emerald-300 underline underline-offset-4 text-sm font-medium transition-colors">Bumalik sa Login</button>
                 <button type="submit" id="submitBtn" class="hidden flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-semibold transition-all">Submit Registration</button>
+            </div>
+            <div class="text-center mt-4" id="backToLoginContainer">
+                <button onclick="hideSignupModal(); return false;" class="text-emerald-400 hover:text-emerald-300 underline underline-offset-4 text-sm font-medium transition-colors">Bumalik sa Login</button>
             </div>
         </form>
 
@@ -319,7 +321,7 @@
     const stepIndicator = document.getElementById("step-indicator");
     let currentStep = 0;
 
-    function updateFormDisplay() {
+function updateFormDisplay() {
         formSteps.forEach((step, index) => {
             step.classList.toggle("hidden", index !== currentStep);
             step.classList.toggle("active", index === currentStep);
@@ -327,6 +329,12 @@
 
         stepIndicator.textContent = `Step ${currentStep + 1} of ${formSteps.length}`;
         backBtn.classList.toggle("hidden", currentStep === 0);
+
+        // Hide "Bumalik sa Login" if proceeding past Step 1
+        const backToLoginContainer = document.getElementById("backToLoginContainer");
+        if (backToLoginContainer) {
+            backToLoginContainer.classList.toggle("hidden", currentStep > 0);
+        }
 
         if (currentStep === formSteps.length - 1) {
             nextBtn.classList.add("hidden");
