@@ -180,9 +180,21 @@
                     <label class="block text-zinc-400 text-sm mb-2">Email Address</label>
                     <input type="email" name="email" required class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
                 </div>
-                <div class="mb-6">
-                    <label class="block text-zinc-400 text-sm mb-2">Password</label>
-                    <input type="password" name="password" required minlength="6" class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
+            <div class="mb-6">
+                    <label class="block text-zinc-400 text-sm mb-2">
+                        Password
+                        <span class="block text-zinc-500 text-xs mt-1 leading-snug">
+                            (Use at least 8 characters, including an uppercase letter, lowercase letter, number, and special character.)
+                        </span>
+                    </label>
+                    
+                    <div class="relative">
+                        <input type="password" name="password" id="signup_password_input" required minlength="6" 
+                            class="w-full p-3 pr-12 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
+                        <span class="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-300 cursor-pointer text-lg flex items-center" id="toggleSignupPassword">
+                            <i class="fas fa-eye"></i>
+                        </span>
+                    </div>
                 </div>
             </div>
 
