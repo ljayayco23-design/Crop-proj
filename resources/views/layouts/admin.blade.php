@@ -138,7 +138,7 @@
                         </div>
                         <hr class="border-secondary">
                         <a class="dropdown-item py-2 text-white" href="#" onclick="showProfilePanel(0)"><i class="fas fa-user me-3 text-primary"></i>Profile Details</a>
-                        <a class="dropdown-item py-2 text-white" href="#" onclick="showProfilePanel(1)"><i class="fas fa-cog me-3 text-info"></i>Account Settings</a>
+                        <a class="dropdown-item py-2 text-white" href="#" onclick="showProfilePanel(1)"><i class="fas fa-cog me-3 text-info"></i>Account Center</a>
                         <hr class="border-secondary">
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf

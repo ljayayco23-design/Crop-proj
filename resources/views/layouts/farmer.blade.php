@@ -128,7 +128,7 @@
                         </div>
                         <hr class="border-secondary">
                         <a class="dropdown-item py-2 text-white" href="#" onclick="showProfilePanel(0)"><i class="fas fa-user me-3 text-success"></i>Profile Details</a>
-                        <a class="dropdown-item py-2 text-white" href="#" onclick="showProfilePanel(1)"><i class="fas fa-cog me-3 text-info"></i>Account Settings</a>
+                        <a class="dropdown-item py-2 text-white" href="#" onclick="showProfilePanel(1)"><i class="fas fa-cog me-3 text-info"></i>Account Center</a>
                         <hr class="border-secondary">
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
@@ -200,7 +200,7 @@
                         <label class="form-label prodigy-label">Confirm Password</label>
                         <input type="password" name="new_password_confirmation" class="form-control bg-dark border-secondary text-white" required>
                     </div>
-                    <button type="submit" class="btn btn-success w-100 py-3 fw-bold shadow">Change Password</button>
+                        <button type="button" onclick="savePassword('passwordForm')" class="btn btn-success w-100 py-3 fw-bold shadow">Change Password</button>
                 </form>
             </div>
         </div>
@@ -284,6 +284,56 @@
             }
         } catch(e) { 
             console.error("Save Error:", e);
+            alert('A network error occurred. Please try again.');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
+
+
+    // --- 4. Password Update Save Logic ---
+    async function savePassword(formId) {
+        const form = document.getElementById(formId);
+        const formData = new FormData(form);
+        const btn = form.querySelector('button[type="button"]');
+        const originalText = btn.innerHTML;
+        
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch(form.action, { 
+                method: 'POST', 
+                body: formData,
+                headers: { 
+                    'X-Requested-With': 'XMLHttpRequest', // Tells Laravel to return JSON errors
+                    'Accept': 'application/json' 
+                }
+            });
+
+            const data = await res.json();
+
+            if (res.ok && data.success) { 
+                // Success popup
+                alert(data.message || 'Password updated successfully!'); 
+                form.reset(); // Clear the password fields so they aren't left filled in
+            } else {
+                // Handle Laravel validation errors (e.g., passwords don't match, too short)
+                if (res.status === 422 && data.errors) {
+                    let errorMsg = 'Could not update password:\n\n';
+                    for (const key in data.errors) {
+                        errorMsg += `- ${data.errors[key][0]}\n`;
+                    }
+                    alert(errorMsg);
+                } else {
+                    // Handle custom errors from your controller (e.g., "Current password is incorrect")
+                    alert(data.message || 'Failed to update password.');
+                }
+            }
+        } catch(e) { 
+            console.error("Password Update Error:", e);
             alert('A network error occurred. Please try again.');
         } finally {
             btn.innerHTML = originalText;
