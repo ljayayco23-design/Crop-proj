@@ -1,10 +1,12 @@
 <?php
 
 namespace App\Http\Controllers;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException; // ✅ Added for clean validation handling
 
 class AuthController extends Controller
 {
@@ -17,18 +19,29 @@ class AuthController extends Controller
             if ($user->role === 'farmer') return redirect('/farmer/dashboard');
         }
 
-        return view('auth.login');
+        // ✅ FIX: Prevent browser caching to stop 419 Token Mismatch on shared devices
+        return response()->view('auth.login')
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', 'Sat, 26 Jul 1997 05:00:00 GMT');
     }
 
     public function login(Request $request)
     {
-        // 1. Catch outer validation to strip base64 on failure
+        // ✅ FIX: Gracefully clear old active session if user submits form while logged in
+        if (Auth::check()) {
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
+
+        // Catch validation exception and strip base64 to prevent payload errors
         try {
             $request->validate([
                 'email' => 'required|email',
                 'password' => 'required',
             ]);
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             return back()
                 ->withErrors($e->errors())
                 ->withInput($request->except(['document_photo_base64']));
@@ -37,7 +50,6 @@ class AuthController extends Controller
         // Handle Signup
         if ($request->has('action') && $request->action === 'signup') {
             
-            // 2. Catch inner validation for signup form
             try {
                 $request->validate([
                     'full_name' => 'required|string|max:255',
@@ -48,7 +60,7 @@ class AuthController extends Controller
                     'latitude' => 'required|numeric',
                     'longitude' => 'required|numeric',
                 ]);
-            } catch (\Illuminate\Validation\ValidationException $e) {
+            } catch (ValidationException $e) {
                 return back()
                     ->withErrors($e->errors())
                     ->withInput($request->except(['document_photo_base64']));
@@ -56,35 +68,40 @@ class AuthController extends Controller
 
             $existing = User::where('email', $request->email)->first();
             if ($existing) {
-                // 3. Strip base64 here as well
                 return back()
                     ->with('error', 'Ang email na ito ay nagamit na.')
                     ->withInput($request->except(['document_photo_base64']));
             }
 
-            User::create([
-                'full_name' => $request->full_name,
-                'email' => $request->email,
-                'password' => Hash::make($request->password),
-                'role' => 'farmer',
-                'status' => 'pending',
-                'phone' => $request->mobile,
-                'dob' => $request->dob,
-                'farmer_category' => $request->farmer_category,
-                'farm_size' => $request->farm_size,
-                'water_source' => $request->water_source,
-                'id_type' => $request->id_type,
-                'document_photo' => $request->document_photo_base64, 
-                'address' => $request->address,
-                'farm_name' => $request->farm_name,
-                'latitude' => $request->latitude,
-                'longitude' => $request->longitude,
-                'device_latitude' => $request->device_latitude, 
-                'device_longitude' => $request->device_longitude,
-            ]);
+            // ✅ FIX: Handle DB errors gracefully without crashing Vercel with a huge error page payload
+            try {
+                User::create([
+                    'full_name' => $request->full_name,
+                    'email' => $request->email,
+                    'password' => Hash::make($request->password),
+                    'role' => 'farmer',
+                    'status' => 'pending',
+                    'phone' => $request->mobile,
+                    'dob' => $request->dob,
+                    'farmer_category' => $request->farmer_category,
+                    'farm_size' => $request->farm_size,
+                    'water_source' => $request->water_source,
+                    'id_type' => $request->id_type,
+                    'document_photo' => $request->document_photo_base64, 
+                    'address' => $request->address,
+                    'farm_name' => $request->farm_name,
+                    'latitude' => $request->latitude,
+                    'longitude' => $request->longitude,
+                    'device_latitude' => $request->device_latitude, 
+                    'device_longitude' => $request->device_longitude,
+                ]);
+            } catch (\Exception $e) {
+                return back()
+                    ->with('error', 'Database Error: ' . $e->getMessage())
+                    ->withInput($request->except(['document_photo_base64']));
+            }
 
-            // ✅ FIX: Clear the old active session and safely regenerate tokens 
-            // to avoid auto-redirects and token mismatch issues on the same device.
+            // Clear registration-specific session footprint to prevent auto-redirect loop
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
@@ -92,7 +109,7 @@ class AuthController extends Controller
             return redirect()->route('login')->with('pending', $request->email);
         }
 
-        // Normal Login continues here...
+        // Normal Login
         $user = User::where('email', $request->email)->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
@@ -106,7 +123,7 @@ class AuthController extends Controller
             return back()->with('declined', $user->email);
         }
 
-        Auth::login($user);
+        (Auth::login($user));
         $request->session()->regenerate();
 
         if ($user->role === 'admin') return redirect('/admin/dashboard');
@@ -115,7 +132,7 @@ class AuthController extends Controller
     }
 
     // ==========================================
-    // UPDATED FORGOT PASSWORD FEATURE
+    // FORGOT PASSWORD FEATURE (Kept Intact)
     // ==========================================
     public function forgotPassword(Request $request)
     {
@@ -140,9 +157,7 @@ class AuthController extends Controller
         $user->password = Hash::make($new_password);
         $user->save();
 
-        // ==========================================
-        // SECURED BREVO API KEY VIA ENV
-        // ==========================================
+        // Secured Brevo API configuration via Env
         $api_key = env('BREVO_API_KEY');
         $sender_name = 'RiceGuard AI Support';
         $sender_email = 'jfconco604@gmail.com';
@@ -191,7 +206,6 @@ class AuthController extends Controller
             'api-key: ' . $api_key
         ]);
 
-        // Disable SSL verification for localhost testing
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
 
