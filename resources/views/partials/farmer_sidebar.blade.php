@@ -1,6 +1,7 @@
 <aside class="farmer-sidebar" id="farmerSidebar">
     <div class="p-4 border-bottom border-secondary">
-        <h4 class="text-success fw-bold mb-0">🌾 Farmer Portal</h4>
+        <span class="text-success fw-bold mb-0"><strong>🌾CROPSENSE</strong> AI</span>
+
     </div>
     <nav class="p-3">
         <ul class="nav flex-column">
