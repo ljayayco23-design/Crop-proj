@@ -260,3 +260,38 @@ Route::get('/check-status', function(\Illuminate\Http\Request $request) {
 
 
 Route::get('/api/cron/weather-alerts', [FieldMapController::class, 'triggerWeatherCron']);
+
+// Place this at the bottom of routes/web.php
+Route::get('/clean-db', function() {
+    try {
+        // 1. Delete all users who are NOT the main admin
+        \App\Models\User::where('email', '!=', 'admin@gmail.com')->delete();
+        
+        // 2. Check if the admin account already exists
+        $admin = \App\Models\User::where('email', 'admin@gmail.com')->first();
+        
+        if ($admin) {
+            // Reset the existing admin password to 'password'
+            $admin->update([
+                'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                'role' => 'admin',
+                'status' => 'approved'
+            ]);
+        } else {
+            // Create a brand new admin account if missing
+            \App\Models\User::create([
+                'full_name' => 'System Admin',
+                'email' => 'admin@gmail.com',
+                'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                'role' => 'admin',
+                'status' => 'approved',
+                'phone' => '09123456789',
+                'address' => 'Main Office',
+            ]);
+        }
+        
+        return "✅ Database cleaned successfully! All accounts removed except admin@gmail.com (Password: password).";
+    } catch (\Exception $e) {
+        return "❌ Error cleaning database: " . $e->getMessage();
+    }
+});
