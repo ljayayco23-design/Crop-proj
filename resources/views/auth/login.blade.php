@@ -307,6 +307,7 @@
 
 <script>
     // --- Image to Base64 Logic ---
+// --- Image to Base64 Logic with Compression ---
     function setupBase64Conversion(fileInputId, hiddenInputId) {
         const fileInput = document.getElementById(fileInputId);
         if (fileInput) {
@@ -314,14 +315,48 @@
                 const file = this.files[0];
                 if (file) {
                     const reader = new FileReader();
-                    reader.onloadend = function() {
-                        document.getElementById(hiddenInputId).value = reader.result;
+                    reader.onload = function(event) {
+                        const img = new Image();
+                        img.onload = function() {
+                            const canvas = document.createElement('canvas');
+                            
+                            // Set maximum dimensions to keep file size tiny
+                            const MAX_WIDTH = 800;
+                            const MAX_HEIGHT = 800;
+                            let width = img.width;
+                            let height = img.height;
+
+                            if (width > height) {
+                                if (width > MAX_WIDTH) {
+                                    height *= MAX_WIDTH / width;
+                                    width = MAX_WIDTH;
+                                }
+                            } else {
+                                if (height > MAX_HEIGHT) {
+                                    width *= MAX_HEIGHT / height;
+                                    height = MAX_HEIGHT;
+                                }
+                            }
+
+                            canvas.width = width;
+                            canvas.height = height;
+                            
+                            // Draw and compress
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, width, height);
+                            
+                            // Compress image to JPEG at 70% quality (Reduces size by 90%)
+                            const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                            document.getElementById(hiddenInputId).value = dataUrl;
+                        };
+                        img.src = event.target.result;
                     };
                     reader.readAsDataURL(file);
                 }
             });
         }
     }
+    
     setupBase64Conversion('document_upload', 'document_photo_base64');
     setupBase64Conversion('selfie_upload', 'selfie_photo_base64');
 
@@ -387,6 +422,51 @@ function updateFormDisplay() {
         backBtn.addEventListener("click", () => {
             currentStep--;
             updateFormDisplay();
+        });
+    }
+
+    // --- SILENT Location Trigger on Final Submit ---
+    const signupForm = document.getElementById('signupForm');
+    
+    if (submitBtn) {
+        submitBtn.addEventListener("click", function(e) {
+            e.preventDefault(); // Pause the submission for just a second to get coordinates
+            
+            if (!validateStepInput()) return; 
+
+            // Request location silently (This triggers the mobile popup over your existing loading screen)
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        // Success! Save real device location
+                        document.getElementById('device-lat').value = position.coords.latitude;
+                        document.getElementById('device-lng').value = position.coords.longitude;
+                        
+                        // Fire your existing form submission (which triggers your admin loading screen)
+                        if (typeof signupForm.requestSubmit === 'function') {
+                            signupForm.requestSubmit();
+                        } else {
+                            signupForm.submit();
+                        }
+                    },
+                    (error) => {
+                        // If user denies permission, gracefully continue so your loading screen still works
+                        console.warn("Location error:", error);
+                        if (typeof signupForm.requestSubmit === 'function') {
+                            signupForm.requestSubmit();
+                        } else {
+                            signupForm.submit();
+                        }
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
+            } else {
+                if (typeof signupForm.requestSubmit === 'function') {
+                    signupForm.requestSubmit();
+                } else {
+                    signupForm.submit();
+                }
+            }
         });
     }
 </script>
@@ -463,35 +543,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const defaultLatLng = [10.8986, 123.4143]; // Sagay coordinates
 
-    // 2. Capture Real Device Location (With High Accuracy and Fallbacks)
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition((position) => {
-            document.getElementById('device-lat').value = position.coords.latitude;
-            document.getElementById('device-lng').value = position.coords.longitude;
-            
-            let latlng = [position.coords.latitude, position.coords.longitude];
-            regMap.setView(latlng, 16);
-            placeMarker(latlng, "Your Current Location");
-            reverseGeocode(position.coords.latitude, position.coords.longitude); // Auto-fill the search bar
-            
-        }, (error) => {
-            console.warn("Geolocation access denied or inaccurate. Defaulting to Sagay.");
-            // Fallback: Drop a pin in Sagay if user denies location or it fails
-            regMap.setView(defaultLatLng, 13);
-            placeMarker(defaultLatLng, "Default Location (Drag to change)");
-            reverseGeocode(defaultLatLng[0], defaultLatLng[1]);
-            
-        }, {
-            enableHighAccuracy: true, // Force GPS/Wifi accuracy over IP address
-            timeout: 10000,
-            maximumAge: 0
-        });
-    } else {
-        // Fallback for very old browsers
-        placeMarker(defaultLatLng, "Default Location");
-        reverseGeocode(defaultLatLng[0], defaultLatLng[1]);
-    }
-
+// 2. Set Default Fallback Location Initially (No automatic location prompt)
+    placeMarker(defaultLatLng, "Default Farm Location (Drag to adjust)");
+    reverseGeocode(defaultLatLng[0], defaultLatLng[1]);
+    
+    
     // 3. Map Click Event (Click to pin)
     regMap.on('click', function(e) {
         placeMarker([e.latlng.lat, e.latlng.lng]);

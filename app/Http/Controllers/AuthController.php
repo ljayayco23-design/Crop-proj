@@ -22,29 +22,44 @@ class AuthController extends Controller
 
     public function login(Request $request)
     {
-        $request->validate([
-            'email' => 'required|email',
-            'password' => 'required',
-        ]);
-
-// Inside AuthController.php -> login(Request $request) method
+        // 1. Catch outer validation to strip base64 on failure
+        try {
+            $request->validate([
+                'email' => 'required|email',
+                'password' => 'required',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()
+                ->withErrors($e->errors())
+                ->withInput($request->except(['document_photo_base64']));
+        }
 
         // Handle Signup
         if ($request->has('action') && $request->action === 'signup') {
-            $request->validate([
-                'full_name' => 'required|string|max:255',
-                'email' => 'required|email',
-                'password' => 'required|min:6',
-                'address' => 'required|string',
-                'farm_name' => 'required|string',
-                'latitude' => 'required|numeric',
-                'longitude' => 'required|numeric',
-                // You can add more validations here if needed
-            ]);
+            
+            // 2. Catch inner validation for signup form
+            try {
+                $request->validate([
+                    'full_name' => 'required|string|max:255',
+                    'email' => 'required|email',
+                    'password' => 'required|min:6',
+                    'address' => 'required|string',
+                    'farm_name' => 'required|string',
+                    'latitude' => 'required|numeric',
+                    'longitude' => 'required|numeric',
+                ]);
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                return back()
+                    ->withErrors($e->errors())
+                    ->withInput($request->except(['document_photo_base64']));
+            }
 
             $existing = User::where('email', $request->email)->first();
             if ($existing) {
-                return back()->with('error', 'Ang email na ito ay nagamit na.');
+                // 3. Strip base64 here as well
+                return back()
+                    ->with('error', 'Ang email na ito ay nagamit na.')
+                    ->withInput($request->except(['document_photo_base64']));
             }
 
             User::create([
@@ -53,29 +68,31 @@ class AuthController extends Controller
                 'password' => Hash::make($request->password),
                 'role' => 'farmer',
                 'status' => 'pending',
-                // New Fields mapped from the multi-step form
                 'phone' => $request->mobile,
                 'dob' => $request->dob,
                 'farmer_category' => $request->farmer_category,
-
                 'farm_size' => $request->farm_size,
                 'water_source' => $request->water_source,
                 'id_type' => $request->id_type,
-                // These come from the hidden inputs populated via JS FileReader
                 'document_photo' => $request->document_photo_base64, 
                 'address' => $request->address,
                 'farm_name' => $request->farm_name,
                 'latitude' => $request->latitude,
                 'longitude' => $request->longitude,
-                'device_latitude' => $request->device_latitude, // From navigator.geolocation
+                'device_latitude' => $request->device_latitude, 
                 'device_longitude' => $request->device_longitude,
-                ]);
+            ]);
 
-            // Redirects to login, where your existing JS will show the "Pending Approval" spinner
-            return back()->with('pending', $request->email);
+            // ✅ FIX: Clear the old active session and safely regenerate tokens 
+            // to avoid auto-redirects and token mismatch issues on the same device.
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()->route('login')->with('pending', $request->email);
         }
 
-        // Normal Login
+        // Normal Login continues here...
         $user = User::where('email', $request->email)->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
@@ -199,4 +216,3 @@ class AuthController extends Controller
         }
     }
 }
-
