@@ -229,4 +229,23 @@ class AuthController extends Controller
             return back()->with('error', $errorMessage);
         }
     }
+    // Add this inside AuthController class in AuthController.php
+
+public function logout(Request $request)
+{
+    // 1. Log out the authenticated user
+    Auth::logout();
+
+    // 2. Invalidate user's session and clear session data
+    $request->session()->invalidate();
+
+    // 3. Regenerate CSRF token for the next request
+    $request->session()->regenerateToken();
+
+    // 4. Redirect to login with cache-prevention headers
+    return redirect()->route('login')
+        ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        ->header('Pragma', 'no-cache')
+        ->header('Expires', 'Sat, 26 Jul 1997 05:00:00 GMT');
+}
 }

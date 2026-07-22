@@ -39,7 +39,12 @@ Route::post('/logout', function (\Illuminate\Http\Request $request) {
     Auth::logout();
     $request->session()->invalidate();
     $request->session()->regenerateToken();
-    return redirect()->route('login');
+    
+    // Explicitly prevent the browser from caching the redirect state
+    return redirect()->route('login')
+        ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        ->header('Pragma', 'no-cache')
+        ->header('Expires', 'Sat, 26 Jul 1997 05:00:00 GMT');
 })->name('logout');
 
 // ==================== ADMIN ROUTES ====================
