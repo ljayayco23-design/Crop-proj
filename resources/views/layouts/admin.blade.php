@@ -9,6 +9,10 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 
+
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <style>
         body { background: #0f172a; color: #e2e8f0; overflow-x: hidden; min-height: 100vh; font-family: system-ui, -apple-system, sans-serif; }
         
@@ -296,5 +300,15 @@ async function saveProfile(formId) {
 </script>
     
     @yield('scripts')
+
+    <script>
+    window.addEventListener('pageshow', function (event) {
+        // If the page was loaded from the browser cache (like hitting the back arrow)
+        if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
+            // Force a hard reload from the server
+            window.location.reload();
+        }
+    });
+</script>
 </body>
 </html>

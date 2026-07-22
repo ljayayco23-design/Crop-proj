@@ -35,18 +35,24 @@ Route::post('/login', [AuthController::class, 'login'])->name('login.post');
 // ✅ Keep this one and ensure the name is 'password.email'
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('password.email');
 
-Route::post('/logout', function (\Illuminate\Http\Request $request) {
+Route::match(['get', 'post'], '/logout', function (\Illuminate\Http\Request $request) {
+    // 1. Log the user out completely
     Auth::logout();
+    
+    // 2. Invalidate session and token
     $request->session()->invalidate();
     $request->session()->regenerateToken();
     
-    // Explicitly prevent the browser from caching the redirect state
+    // 3. EXPLICITLY delete the session cookie from the browser
+    $cookie = cookie()->forget(config('session.cookie'));
+
+    // 4. Redirect with strict anti-cache headers
     return redirect()->route('login')
+        ->withCookie($cookie)
         ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
         ->header('Pragma', 'no-cache')
-        ->header('Expires', 'Sat, 26 Jul 1997 05:00:00 GMT');
+        ->header('Expires', 'Sat, 01 Jan 1990 00:00:00 GMT');
 })->name('logout');
-
 // ==================== ADMIN ROUTES ====================
 Route::prefix('admin')->name('admin.')->group(function () {
     Route::get('/', function () {

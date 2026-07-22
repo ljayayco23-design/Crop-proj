@@ -611,3 +611,13 @@ function reverseGeocode(lat, lng) {
         }
     });
 </script>
+
+<script>
+    window.addEventListener('pageshow', function (event) {
+        // If the page was loaded from the browser cache (like hitting the back arrow)
+        if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
+            // Force a hard reload from the server
+            window.location.reload();
+        }
+    });
+</script>
