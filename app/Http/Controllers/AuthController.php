@@ -12,18 +12,23 @@ class AuthController extends Controller
 {
     public function showLoginForm()
     {
-        if (Auth::check()) {
-            $user = Auth::user();
-            if ($user->role === 'admin') return redirect('/admin/dashboard');
-            if ($user->role === 'technician') return redirect('/technician/dashboard');
-            if ($user->role === 'farmer') return redirect('/farmer/dashboard');
-        }
+    // If the user is already logged in, redirect them to their role dashboard
+    if (auth()->check()) {
+        $role = auth()->user()->role;
+        return match ($role) {
+            'admin' => redirect()->route('admin.dashboard'),
+            'technician' => redirect()->route('technician.dashboard'),
+            'farmer' => redirect()->route('farmer.dashboard'),
+            default => redirect()->route('login'),
+        };
+    }
 
-        // ✅ FIX: Prevent browser caching to stop 419 Token Mismatch on shared devices
-        return response()->view('auth.login')
-            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-            ->header('Pragma', 'no-cache')
-            ->header('Expires', 'Sat, 26 Jul 1997 05:00:00 GMT');
+    // Return view with explicit anti-caching headers
+    return response()
+        ->view('auth.login') // Replace 'auth.login' with your exact login view path
+        ->header('Cache-Control', 'no-cache, no-store, max-age=0, must-revalidate')
+        ->header('Pragma', 'no-cache')
+        ->header('Expires', 'Sat, 01 Jan 1900 00:00:00 GMT');
     }
 
     public function login(Request $request)

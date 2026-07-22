@@ -601,3 +601,13 @@ function reverseGeocode(lat, lng) {
         });
 }
 </script>
+
+
+<script>
+    // Automatically force a fresh page reload if loaded from browser cache (BFCache)
+    window.addEventListener('pageshow', function (event) {
+        if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
+            window.location.reload();
+        }
+    });
+</script>
