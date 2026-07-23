@@ -14,11 +14,36 @@
     <meta http-equiv="Expires" content="0">
     <style>
         body { background: #0f172a; color: #e2e8f0; overflow-x: hidden; min-height: 100vh; font-family: system-ui, -apple-system, sans-serif; }
-        .sidebar-container { width: 250px; background: #1e2937; position: fixed; top: 0; left: 0; height: 100vh; overflow-y: auto; z-index: 1040; transition: all 0.3s; border-right: 1px solid #334155; }
-        .content-area { margin-left: 250px; padding: 20px; min-height: 100vh; transition: all 0.3s; }
-        body.sidebar-collapsed .sidebar-container { left: -250px; }
-        body.sidebar-collapsed .content-area { margin-left: 0; }
-        .main-header { background: rgba(30,41,59,0.98); backdrop-filter: blur(10px); border-bottom: 1px solid #334155; position: sticky; top: 0; z-index: 1030; border-radius: 8px; margin-bottom: 20px;}
+/* Sidebar is now hidden by default and floats above content */
+.sidebar-container { 
+    width: 250px; 
+    background: rgba(30,41,59,0.98); 
+    backdrop-filter: blur(30px);
+    position: fixed; 
+    top: 0; 
+    left: -250px; 
+    height: 100vh; 
+    overflow-y: auto; 
+    z-index: 1200; 
+    transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
+    border-right: 1px solid #334155; 
+}
+
+/* New class to slide the sidebar into view with a shadow */
+body.sidebar-show .sidebar-container { 
+    left: 0; 
+    box-shadow: 30px 0 80px rgba(0,0,0,0.6); 
+}
+
+/* Content area no longer has margin-left, preventing stretching/resizing */
+.content-area { 
+    margin-left: 0; 
+    padding: 20px; 
+    min-height: 100vh; 
+}
+
+
+.main-header { background: rgba(30,41,59,0.98); backdrop-filter: blur(10px); border-bottom: 1px solid #334155; position: sticky; top: 0; z-index: 1030; border-radius: 8px; margin-bottom: 20px;}
         .nav-link.active { background: #10b981 !important; color: white !important; border-radius: 5px; }
         
         .dropdown-menu { border: 1px solid #334155 !important; border-radius: 16px !important; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5) !important; background: rgba(30,41,59,0.98) !important; backdrop-filter: blur(20px) !important; }
@@ -80,7 +105,7 @@
 
     <div class="content-area" id="contentArea">
         <nav class="main-header navbar navbar-expand navbar-dark px-4 shadow-sm">
-            <button onclick="document.body.classList.toggle('sidebar-collapsed')" class="btn btn-link text-white p-0 me-4"><i class="fas fa-bars fs-5"></i></button>
+            <button id="sidebarToggleBtn" onclick="document.body.classList.toggle('sidebar-show'); event.stopPropagation();" class="btn btn-link text-white p-0 me-4"><i class="fas fa-bars fs-5"></i></button>
 
             <ul class="navbar-nav ms-auto d-flex align-items-center gap-3">
                 <li class="nav-item dropdown">
@@ -232,16 +257,27 @@
     }
 
     // --- 2. Click Outside to Close Panel ---
-    document.addEventListener('click', function(event) {
-        const panel = document.getElementById('floatingPanel');
-        const isClickInsidePanel = panel.contains(event.target);
-        const isClickingTrigger = event.target.closest('[onclick*="showProfilePanel"]');
-        
-        if (panel.classList.contains('show') && !isClickInsidePanel && !isClickingTrigger) {
-            panel.classList.remove('show');
-        }
-    });
+// --- 2. Click Outside to Close Panels (Profile & Sidebar) ---
+document.addEventListener('click', function(event) {
+    // 1. Floating Profile Panel Logic
+    const panel = document.getElementById('floatingPanel');
+    const isClickInsidePanel = panel.contains(event.target);
+    const isClickingTrigger = event.target.closest('[onclick*="showProfilePanel"]');
+    
+    if (panel.classList.contains('show') && !isClickInsidePanel && !isClickingTrigger) {
+        panel.classList.remove('show');
+    }
 
+    // 2. Floating Sidebar Logic
+    const sidebar = document.getElementById('farmerSidebar');
+    const isClickInsideSidebar = sidebar.contains(event.target);
+    const isClickingSidebarTrigger = event.target.closest('#sidebarToggleBtn');
+    
+    // If sidebar is open, and click is not inside sidebar or on the toggle button, close it
+    if (document.body.classList.contains('sidebar-show') && !isClickInsideSidebar && !isClickingSidebarTrigger) {
+        document.body.classList.remove('sidebar-show');
+    }
+});
     // --- 3. Instant UI Update Save Logic ---
     async function saveProfile(formId) {
         const form = document.getElementById(formId);
