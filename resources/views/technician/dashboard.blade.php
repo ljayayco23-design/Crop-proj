@@ -1,5 +1,5 @@
 @extends('layouts.technician')
-@section('title', 'Technician Dashboard • CROPSENSE AI')
+@section('title', 'Technician Dashboard • RICEGUARD AI')
 
 @php
     // Fetch dashboard statistics dynamically

@@ -41,4 +41,20 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
     ];
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::deleting(function ($user) {
+            // 1. Delete standard treatment records
+            \App\Models\TreatmentRecord::where('user_id', $user->id)->delete();
+            
+            // 2. Delete Groq treatment records 
+            // \Illuminate\Support\Facades\DB::table('groq_treatment_records')->where('user_id', $user->id)->delete();
+            
+            // 3. Delete the user's scan/detection history
+            \Illuminate\Support\Facades\DB::table('user_detections')->where('user_id', $user->id)->delete();
+        });
+    }
 }

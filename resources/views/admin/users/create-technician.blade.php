@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'RiceGuard AI • Create Technician')
+@section('title', 'RICEGUARD AI • Create Technician')
 
 @section('content')
 <div class="page-header">

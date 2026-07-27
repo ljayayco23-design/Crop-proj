@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Knowledge Management • RiceGuard AI')
+@section('title', 'Knowledge Management • RICEGUARD AI')
 
 @section('content')
 <div class="row mb-4">

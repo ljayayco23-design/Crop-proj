@@ -1,6 +1,6 @@
 @extends('layouts.farmer')
 
-@section('title', 'Live Messenger | CROPSENSE AI')
+@section('title', 'Live Messenger | RICEGUARD AI')
 
 @section('content')
 <style>

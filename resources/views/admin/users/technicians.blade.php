@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'RiceGuard AI • Manage Technicians')
+@section('title', 'RICEGUARD AI • Manage Technicians')
 
 @section('content')
 <div class="container-fluid">

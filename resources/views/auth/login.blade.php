@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'CROPSENSE AI • Login')
+@section('title', 'RICEGUARD AI • Login')
 
 @section('content')
 <div class="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
@@ -8,7 +8,7 @@
 
         <div class="text-center mb-8">
             <i class="fas fa-shield-alt text-5xl text-emerald-400 mb-4"></i>
-            <h1 class="text-3xl font-bold">CROPSENSE AI</h1>
+            <h1 class="text-3xl font-bold">RICEGUARD AI</h1>
             <p class="text-zinc-400">Login Portal</p>
         </div>
 
@@ -258,18 +258,31 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        let email = "{{ session('pending') }}";
+        // Safely inject email without Blade HTML escaping issues
+        let email = {!! json_encode(session('pending')) !!};
+        console.log("Checking approval status for:", email);
         
         let interval = setInterval(() => {
             let checkUrl = `{{ url('/check-status') }}?email=${encodeURIComponent(email)}&_t=${Date.now()}`;
             
-            fetch(checkUrl)
+            fetch(checkUrl, {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
                 .then(response => {
-                    if (!response.ok) throw new Error('Network response was not ok');
+                    if (!response.ok) {
+                        console.error('Server Error:', response.status);
+                        throw new Error('Network response failed.');
+                    }
                     return response.json();
                 })
                 .then(data => {
-                    if (data.status === 'approved') {
+                    console.log("Current Database Status:", data.status);
+                    let status = (data.status || 'none').toLowerCase();
+                    
+                    if (status === 'approved') {
                         clearInterval(interval);
                         
                         document.getElementById('pending-spinner').style.display = 'none';
@@ -278,10 +291,11 @@
                         document.getElementById('pending-desc').textContent = 'Maaari ka nang mag-login. Nire-redirect...';
                         
                         setTimeout(() => {
+                            // Clean redirect to clear session data
                             window.location.href = "{{ route('login') }}"; 
                         }, 2000);
                         
-                    } else if (data.status === 'declined') {
+                    } else if (status === 'declined') {
                         clearInterval(interval);
                         
                         document.getElementById('pending-spinner').style.display = 'none';
@@ -294,7 +308,7 @@
                         }, 2500);
                     }
                 })
-                .catch(error => console.error('Error checking status:', error));
+                .catch(error => console.error('Fetch Error:', error));
         }, 3000); 
     });
 </script>
@@ -306,52 +320,45 @@
 
 
 <script>
-    // --- Image to Base64 Logic ---
-// --- Image to Base64 Logic with Compression ---
+// --- Image to Base64 Logic with Compression (Synced with Farmer Detection) ---
+    async function compressImageFile(file) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            const objectUrl = URL.createObjectURL(file);
+            
+            img.onload = () => {
+                URL.revokeObjectURL(objectUrl);
+                const canvas = document.createElement('canvas');
+                
+                // Matches the detection side settings
+                const MAX_WIDTH = 512; 
+                const scale = Math.min(MAX_WIDTH / img.width, 1); 
+                
+                canvas.width = img.width * scale;
+                canvas.height = img.height * scale;
+
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                // Compress image to JPEG at 60% quality
+                resolve(canvas.toDataURL('image/jpeg', 0.6)); 
+            };
+            img.onerror = (err) => reject(err);
+            img.src = objectUrl;
+        });
+    }
+
     function setupBase64Conversion(fileInputId, hiddenInputId) {
         const fileInput = document.getElementById(fileInputId);
         if (fileInput) {
-            fileInput.addEventListener('change', function() {
+            fileInput.addEventListener('change', async function() {
                 const file = this.files[0];
                 if (file) {
-                    const reader = new FileReader();
-                    reader.onload = function(event) {
-                        const img = new Image();
-                        img.onload = function() {
-                            const canvas = document.createElement('canvas');
-                            
-                            // Set maximum dimensions to keep file size tiny
-                            const MAX_WIDTH = 800;
-                            const MAX_HEIGHT = 800;
-                            let width = img.width;
-                            let height = img.height;
-
-                            if (width > height) {
-                                if (width > MAX_WIDTH) {
-                                    height *= MAX_WIDTH / width;
-                                    width = MAX_WIDTH;
-                                }
-                            } else {
-                                if (height > MAX_HEIGHT) {
-                                    width *= MAX_HEIGHT / height;
-                                    height = MAX_HEIGHT;
-                                }
-                            }
-
-                            canvas.width = width;
-                            canvas.height = height;
-                            
-                            // Draw and compress
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(img, 0, 0, width, height);
-                            
-                            // Compress image to JPEG at 70% quality (Reduces size by 90%)
-                            const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-                            document.getElementById(hiddenInputId).value = dataUrl;
-                        };
-                        img.src = event.target.result;
-                    };
-                    reader.readAsDataURL(file);
+                    try {
+                        const compressedBase64 = await compressImageFile(file);
+                        document.getElementById(hiddenInputId).value = compressedBase64;
+                    } catch (error) {
+                        console.error("Compression error:", error);
+                    }
                 }
             });
         }
@@ -425,16 +432,33 @@ function updateFormDisplay() {
         });
     }
 
-    // --- SILENT Location Trigger on Final Submit ---
+// --- SILENT Location Trigger on Final Submit (Mobile Optimized) ---
     const signupForm = document.getElementById('signupForm');
     
     if (submitBtn) {
         submitBtn.addEventListener("click", function(e) {
-            e.preventDefault(); // Pause the submission for just a second to get coordinates
+            e.preventDefault(); 
             
+            // 1. Check if the form is valid first
             if (!validateStepInput()) return; 
 
-            // Request location silently (This triggers the mobile popup over your existing loading screen)
+            // 2. NEW FIX: Disable the button immediately to prevent double-clicks
+            submitBtn.disabled = true;
+            submitBtn.innerText = "Processing..."; 
+            // Optional: If you use Tailwind CSS, this makes the button look disabled
+            submitBtn.classList.add('opacity-50', 'cursor-not-allowed'); 
+
+            // 3. If we successfully pre-fetched it, submit immediately
+            if (document.getElementById('device-lat').value) {
+                if (typeof signupForm.requestSubmit === 'function') {
+                    signupForm.requestSubmit();
+                } else {
+                    signupForm.submit();
+                }
+                return;
+            }
+
+            // 4. Fallback: Request location (Mobile friendly settings)
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
@@ -442,7 +466,6 @@ function updateFormDisplay() {
                         document.getElementById('device-lat').value = position.coords.latitude;
                         document.getElementById('device-lng').value = position.coords.longitude;
                         
-                        // Fire your existing form submission (which triggers your admin loading screen)
                         if (typeof signupForm.requestSubmit === 'function') {
                             signupForm.requestSubmit();
                         } else {
@@ -450,7 +473,6 @@ function updateFormDisplay() {
                         }
                     },
                     (error) => {
-                        // If user denies permission, gracefully continue so your loading screen still works
                         console.warn("Location error:", error);
                         if (typeof signupForm.requestSubmit === 'function') {
                             signupForm.requestSubmit();
@@ -458,7 +480,8 @@ function updateFormDisplay() {
                             signupForm.submit();
                         }
                     },
-                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                    // MOBILE FIX: enableHighAccuracy set to false prevents timeouts on phones
+                    { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
                 );
             } else {
                 if (typeof signupForm.requestSubmit === 'function') {
@@ -469,7 +492,8 @@ function updateFormDisplay() {
             }
         });
     }
-</script>
+        
+    </script>
 
 
 <script>
@@ -496,11 +520,23 @@ function updateFormDisplay() {
         setupPasswordToggle('toggleSignupPassword', 'signup_password_input'); // Signup Form
     });
 
-    // Signup Modal Functions
+// Signup Modal Functions
     function showSignupModal() {
         document.getElementById('signupModal').classList.remove('hidden');
+
+        // MOBILE FIX: Pre-fetch location early while they are filling out the form
+        if (navigator.geolocation && !document.getElementById('device-lat').value) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    document.getElementById('device-lat').value = position.coords.latitude;
+                    document.getElementById('device-lng').value = position.coords.longitude;
+                },
+                (error) => console.warn("Early location fetch error:", error),
+                { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+            );
+        }
     }
-    function hideSignupModal() {
+        function hideSignupModal() {
         document.getElementById('signupModal').classList.add('hidden');
     }
 

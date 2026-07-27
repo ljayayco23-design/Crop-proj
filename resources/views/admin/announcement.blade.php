@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'CROPSENSE AI • Manage Announcements')
+@section('title', 'RICEGUARD AI • Manage Announcements')
 
 @section('content')
 <div class="container-fluid">

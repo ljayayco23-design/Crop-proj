@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'RiceGuard AI • Manage Farmers')
+@section('title', 'RICEGUARD AI • Manage Farmers')
 
 @section('content')
 <div class="container-fluid">
@@ -39,13 +39,13 @@
                             <td><strong>{{ $row->full_name }}</strong></td>
                             <td>{{ $row->email }}</td>
                             <td>{{ $row->address ?? 'N/A' }}</td>
-                          <td class="device-location" data-lat="{{ $row->device_latitude }}" data-lng="{{ $row->device_longitude }}">
-                            @if($row->device_latitude && $row->device_longitude)
-                                <span class="text-info"><i class="fas fa-spinner fa-spin me-1"></i> Resolving...</span>
-                            @else
-                                <span class="text-muted">Not Captured</span>
-                            @endif
-                        </td>
+                            <td class="device-location" data-lat="{{ $row->device_latitude }}" data-lng="{{ $row->device_longitude }}">
+                                @if($row->device_latitude && $row->device_longitude)
+                                    <span class="text-info"><i class="fas fa-spinner fa-spin me-1"></i> Resolving...</span>
+                                @else
+                                    <span class="text-muted">Not Captured</span>
+                                @endif
+                            </td>
                             <td>
                                 <span class="badge {{ $row->status == 'approved' ? 'bg-success' : ($row->status == 'declined' ? 'bg-danger' : 'bg-warning') }}">
                                     {{ ucfirst($row->status ?? 'pending') }}
@@ -117,11 +117,11 @@
 
 @section('scripts')
 <script>
-const locationCache = {};
+    const locationCache = {};
+    let infoModal;
 
     function resolveLocations() {
         document.querySelectorAll('.device-location').forEach(cell => {
-            // Skip if already resolved
             if (cell.classList.contains('resolved')) return;
 
             const lat = cell.getAttribute('data-lat');
@@ -130,14 +130,12 @@ const locationCache = {};
             if (lat && lng) {
                 const cacheKey = `${lat},${lng}`;
 
-                // Check if we already looked up this coordinate
                 if (locationCache[cacheKey]) {
                     cell.innerHTML = locationCache[cacheKey];
                     cell.classList.add('resolved');
                     return;
                 }
 
-                // If not in cache, fetch from API
                 fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
                     .then(res => res.json())
                     .then(data => {
@@ -150,7 +148,7 @@ const locationCache = {};
                         
                         cell.innerHTML = resultHtml;
                         cell.classList.add('resolved');
-                        locationCache[cacheKey] = resultHtml; // Save to cache for next 5-second refresh
+                        locationCache[cacheKey] = resultHtml;
                     })
                     .catch(error => {
                         cell.innerHTML = `<span class="text-danger">Error resolving</span>`;
@@ -159,36 +157,66 @@ const locationCache = {};
         });
     }
 
-    // 2. Run immediately on page load
+    // Run on initial load
     document.addEventListener("DOMContentLoaded", () => {
         resolveLocations();
-        infoModal = new bootstrap.Modal(document.getElementById('farmerInfoModal'));
+        const modalElement = document.getElementById('farmerInfoModal');
+        if (modalElement) {
+            infoModal = new bootstrap.Modal(modalElement);
+        }
     });
 
-    // 3. Update the 5-second refresh interval
-    setInterval(function() {
-        fetch(window.location.href) 
-            .then(response => response.text())
-            .then(html => {
-                let parser = new DOMParser();
-                let doc = parser.parseFromString(html, 'text/html');
-                let newTableBody = doc.querySelector('#farmers-table-body');
+// 5-Second Silent Refresh with Clean URL Routing
+setInterval(function() {
+    const fetchUrl = new URL(window.location.origin + window.location.pathname);
+    fetchUrl.searchParams.set('_t', Date.now());
+
+    fetch(fetchUrl.toString(), {
+        cache: 'no-store',
+        credentials: 'same-origin', // FIX 1: Ensures the admin session cookie is sent with the request
+        headers: { 
+            'X-Requested-With': 'XMLHttpRequest',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
+    }) 
+    .then(response => {
+        if (!response.ok) throw new Error("Network response failed");
+        return response.text();
+    })
+    .then(html => {
+        let parser = new DOMParser();
+        let doc = parser.parseFromString(html, 'text/html');
+        
+        let newTableBody = doc.querySelector('#farmers-table-body');
+        let currentTableBody = document.querySelector('#farmers-table-body');
+        
+        if (newTableBody && currentTableBody) {
+            
+            // FIX 2: Clone the table and strip the dynamic location text before comparing 
+            // so we don't trigger false-positive refreshes.
+            let getStaticContent = (tbody) => {
+                let clone = tbody.cloneNode(true);
+                clone.querySelectorAll('.device-location').forEach(el => el.innerHTML = '');
+                return clone.innerHTML;
+            };
+            
+            // Only rewrite the HTML if a new user was actually added or a status changed
+            if (getStaticContent(currentTableBody) !== getStaticContent(newTableBody)) {
+                currentTableBody.innerHTML = newTableBody.innerHTML;
                 
-                if (newTableBody) {
-                    document.getElementById('farmers-table-body').innerHTML = newTableBody.innerHTML;
-                    
-                    // RE-RUN THE GEOCODING ON THE NEW HTML!
-                    resolveLocations();
-                }
-            })
-            .catch(error => console.error('Error fetching updates:', error));
-    }, 5000); 
-
-    let infoModal;
-
-function viewFarmerInfo(userId) {
-    infoModal.show();
-    document.getElementById('info_name').innerText = 'Loading...';
+                // Re-run the map geocoding for the newly added farmer
+                resolveLocations();
+            }
+        }
+    })
+    .catch(error => console.error('Error fetching updates:', error));
+}, 5000);
+    
+    function viewFarmerInfo(userId) {
+        if (infoModal) {
+            infoModal.show();
+        }
+        document.getElementById('info_name').innerText = 'Loading...';
 
         const fetchUrl = `{{ url('admin/users') }}/${userId}/info`;
 
@@ -242,35 +270,11 @@ function viewFarmerInfo(userId) {
             };
 
             renderImage(document.getElementById('info_doc_img'), document.getElementById('no_doc'), user.document_photo);
-            // Removed selfie render since we deleted the column
         })
         .catch(error => {
             console.error('Error:', error);
             document.getElementById('info_name').innerText = 'Failed to load user info.';
         });
-}
-
-// Reverse geocode all device locations on page load
-document.addEventListener("DOMContentLoaded", () => {
-    document.querySelectorAll('.device-location').forEach(cell => {
-        const lat = cell.getAttribute('data-lat');
-        const lng = cell.getAttribute('data-lng');
-        
-        if (lat && lng) {
-            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (data && data.display_name) {
-                        cell.innerHTML = `<span class="text-success" style="font-size: 0.85rem;"><i class="fas fa-map-marker-alt me-1"></i> ${data.display_name}</span>`;
-                    } else {
-                        cell.innerHTML = `<span class="text-warning">Location not found</span>`;
-                    }
-                })
-                .catch(error => {
-                    cell.innerHTML = `<span class="text-danger">Error resolving</span>`;
-                });
-        }
-    });
-});
+    }
 </script>
 @endsection

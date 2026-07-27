@@ -3,59 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>@yield('title', 'CROPSENSE AI • Farmer Dashboard')</title>
+    <title>@yield('title', 'RICEGUARD AI • Farmer Dashboard')</title>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-
 
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <style>
         body { background: #0f172a; color: #e2e8f0; overflow-x: hidden; min-height: 100vh; font-family: system-ui, -apple-system, sans-serif; }
-/* Sidebar is now hidden by default and floats above content */
-.sidebar-container { 
-    width: 250px; 
-    background: rgba(30,41,59,0.98); 
-    backdrop-filter: blur(30px);
-    position: fixed; 
-    top: 0; 
-    left: -250px; 
-    height: 100vh; 
-    overflow-y: auto; 
-    z-index: 1200; 
-    transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
-    border-right: 1px solid #334155; 
-}
+        .sidebar-container { 
+            width: 250px; 
+            background: rgba(30,41,59,0.98); 
+            backdrop-filter: blur(30px);
+            position: fixed; 
+            top: 0; 
+            left: -250px; 
+            height: 100vh; 
+            overflow-y: auto; 
+            z-index: 1200; 
+            transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
+            border-right: 1px solid #334155; 
+        }
 
-/* New class to slide the sidebar into view with a shadow */
-body.sidebar-show .sidebar-container { 
-    left: 0; 
-    box-shadow: 30px 0 80px rgba(0,0,0,0.6); 
-}
+        body.sidebar-show .sidebar-container { 
+            left: 0; 
+            box-shadow: 30px 0 80px rgba(0,0,0,0.6); 
+        }
 
-/* Content area no longer has margin-left, preventing stretching/resizing */
-.content-area { 
-    margin-left: 0; 
-    padding: 20px; 
-    min-height: 100vh; 
-}
+        .content-area { 
+            margin-left: 0; 
+            padding: 20px; 
+            min-height: 100vh; 
+        }
 
-
-.main-header { background: rgba(30,41,59,0.98); backdrop-filter: blur(10px); border-bottom: 1px solid #334155; position: sticky; top: 0; z-index: 1030; border-radius: 8px; margin-bottom: 20px;}
+        .main-header { background: rgba(30,41,59,0.98); backdrop-filter: blur(10px); border-bottom: 1px solid #334155; position: sticky; top: 0; z-index: 1030; border-radius: 8px; margin-bottom: 20px;}
         .nav-link.active { background: #10b981 !important; color: white !important; border-radius: 5px; }
         
         .dropdown-menu { border: 1px solid #334155 !important; border-radius: 16px !important; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5) !important; background: rgba(30,41,59,0.98) !important; backdrop-filter: blur(20px) !important; }
         .dropdown-item:hover { background: rgba(255,255,255,0.08) !important; color: white !important; }
         
-        /* Updated Floating Panel for Responsiveness */
         .floating-panel { 
             position: fixed; 
             top: 0; 
             right: -550px; 
-            width: 100%;             /* Allow it to be fully flexible */
-            max-width: 480px;        /* Cap the size on desktop */
+            width: 100%;             
+            max-width: 480px;        
             height: 100vh; 
             background: rgba(30,41,59,0.98); 
             backdrop-filter: blur(30px); 
@@ -66,15 +60,36 @@ body.sidebar-show .sidebar-container {
             padding: 32px; 
         }
 
-        /* Media query for small phones */
         @media (max-width: 576px) {
             .floating-panel { padding: 20px; }
         }
 
         .floating-panel.show { right: 0; box-shadow: -30px 0 80px rgba(0,0,0,0.6); }
         .profile-photo { width: 140px; height: 140px; object-fit: cover; border: 5px solid rgba(16,185,129,0.5); border-radius: 50%; }
-        
         .prodigy-label { color: #94a3b8; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem; }
+
+        /* Responsive Global Chat Window Styles */
+        .chat-window {
+            width: 380px; 
+            height: 520px; 
+            border: 1px solid #334155; 
+            z-index: 1250;
+            bottom: 30px; 
+            right: 30px;
+        }
+
+        @media (max-width: 576px) {
+            .chat-window {
+                width: 100% !important;
+                height: 100dvh !important;
+                margin: 0 !important;
+                bottom: 0 !important;
+                right: 0 !important;
+                border-radius: 0 !important;
+                z-index: 9999;
+            }
+            .chat-header { border-radius: 0 !important; }
+        }
     </style>
 </head>
 <body data-bs-theme="dark">
@@ -83,14 +98,12 @@ body.sidebar-show .sidebar-container {
         $user = Auth::user();
         $userFullName = $user->full_name ?? $user->name ?? 'Farmer';
         
-        // Base64 Image Handling (matching admin logic)
         if (!empty($user->profile_photo)) {
             $profile_pic = $user->profile_photo;
         } else {
             $profile_pic = 'https://ui-avatars.com/api/?name=' . urlencode($userFullName) . '&background=10b981&color=fff&size=140&bold=true';
         }
         
-        // Notifications
         $total_notifications = 0;
         try {
             $total_notifications = DB::table('messages')->where('to_user_id', $user->id)->count();
@@ -159,7 +172,7 @@ body.sidebar-show .sidebar-container {
                         <a class="dropdown-item py-2 text-white" href="#" onclick="showProfilePanel(0)"><i class="fas fa-user me-3 text-success"></i>Profile Details</a>
                         <a class="dropdown-item py-2 text-white" href="#" onclick="showProfilePanel(1)"><i class="fas fa-cog me-3 text-info"></i>Account Center</a>
                         <hr class="border-secondary">
-                        <form method="POST" action="{{ route('logout') }}">
+                        <form id="logout-form" method="POST" action="{{ route('logout') }}">
                             @csrf
                             <button type="submit" class="dropdown-item py-2 text-danger fw-bold"><i class="fas fa-sign-out-alt me-3"></i>Sign Out</button>
                         </form>
@@ -168,6 +181,7 @@ body.sidebar-show .sidebar-container {
             </ul>
         </nav>
 
+        <!-- Floating Profile Panel -->
         <div id="floatingPanel" class="floating-panel">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h4 id="panelTitle" class="fw-bold text-white mb-0">My Profile</h4>
@@ -229,7 +243,7 @@ body.sidebar-show .sidebar-container {
                         <label class="form-label prodigy-label">Confirm Password</label>
                         <input type="password" name="new_password_confirmation" class="form-control bg-dark border-secondary text-white" required>
                     </div>
-                        <button type="button" onclick="savePassword('passwordForm')" class="btn btn-success w-100 py-3 fw-bold shadow">Change Password</button>
+                    <button type="button" onclick="savePassword('passwordForm')" class="btn btn-success w-100 py-3 fw-bold shadow">Change Password</button>
                 </form>
             </div>
         </div>
@@ -237,9 +251,23 @@ body.sidebar-show .sidebar-container {
         @yield('content')
     </div>
 
+    <!-- Global Floating Chat Window -->
+    <div id="chat-window" class="position-fixed bg-dark rounded-4 shadow-lg chat-window" style="display:none;flex-direction:column;">
+        <div class="chat-header d-flex justify-content-between align-items-center p-3 bg-success text-white rounded-top-4">
+            <h5 class="mb-0 fw-bold">RICEGUARD AI Assistant 🌾</h5>
+            <button id="chat-close" class="btn-close btn-close-white"></button>
+        </div>
+        <div id="chat-messages" class="flex-grow-1 p-3 overflow-auto" style="background:#1e2937;"></div>
+        <div class="p-3 border-top border-secondary">
+            <div class="input-group">
+                <input id="chat-input" type="text" autocomplete="off" class="form-control bg-dark text-white border-secondary" placeholder="Ask about rice farming...">
+                <button id="chat-send" class="btn btn-success"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-    // --- 1. Tab Switching Logic ---
     function showProfilePanel(tab) { 
         document.getElementById('floatingPanel').classList.add('show'); 
         switchTab(tab); 
@@ -256,29 +284,24 @@ body.sidebar-show .sidebar-container {
         document.getElementById('tab-settings').style.display = tab === 1 ? 'block' : 'none';
     }
 
-    // --- 2. Click Outside to Close Panel ---
-// --- 2. Click Outside to Close Panels (Profile & Sidebar) ---
-document.addEventListener('click', function(event) {
-    // 1. Floating Profile Panel Logic
-    const panel = document.getElementById('floatingPanel');
-    const isClickInsidePanel = panel.contains(event.target);
-    const isClickingTrigger = event.target.closest('[onclick*="showProfilePanel"]');
-    
-    if (panel.classList.contains('show') && !isClickInsidePanel && !isClickingTrigger) {
-        panel.classList.remove('show');
-    }
+    document.addEventListener('click', function(event) {
+        const panel = document.getElementById('floatingPanel');
+        const isClickInsidePanel = panel.contains(event.target);
+        const isClickingTrigger = event.target.closest('[onclick*="showProfilePanel"]');
+        
+        if (panel.classList.contains('show') && !isClickInsidePanel && !isClickingTrigger) {
+            panel.classList.remove('show');
+        }
 
-    // 2. Floating Sidebar Logic
-    const sidebar = document.getElementById('farmerSidebar');
-    const isClickInsideSidebar = sidebar.contains(event.target);
-    const isClickingSidebarTrigger = event.target.closest('#sidebarToggleBtn');
-    
-    // If sidebar is open, and click is not inside sidebar or on the toggle button, close it
-    if (document.body.classList.contains('sidebar-show') && !isClickInsideSidebar && !isClickingSidebarTrigger) {
-        document.body.classList.remove('sidebar-show');
-    }
-});
-    // --- 3. Instant UI Update Save Logic ---
+        const sidebar = document.getElementById('farmerSidebar');
+        const isClickInsideSidebar = sidebar.contains(event.target);
+        const isClickingSidebarTrigger = event.target.closest('#sidebarToggleBtn');
+        
+        if (document.body.classList.contains('sidebar-show') && !isClickInsideSidebar && !isClickingSidebarTrigger) {
+            document.body.classList.remove('sidebar-show');
+        }
+    });
+
     async function saveProfile(formId) {
         const form = document.getElementById(formId);
         const formData = new FormData(form);
@@ -292,18 +315,12 @@ document.addEventListener('click', function(event) {
             const res = await fetch(form.action, { 
                 method: 'POST', 
                 body: formData,
-                headers: { 
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Accept': 'application/json' 
-                }
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
             });
-
             const data = await res.json();
 
             if (res.ok) { 
                 alert(data.message || 'Profile updated successfully!'); 
-                
-                // Instantly update UI with the Base64 string/name from the backend response
                 if(data.user) {
                     const newPic = data.user.profile_photo_url;
                     document.getElementById('navbar-profile-pic').src = newPic;
@@ -314,16 +331,13 @@ document.addEventListener('click', function(event) {
             } else {
                 if (res.status === 422 && data.errors) {
                     let errorMsg = 'Could not save. Please fix these errors:\n\n';
-                    for (const key in data.errors) {
-                        errorMsg += `- ${data.errors[key][0]}\n`;
-                    }
+                    for (const key in data.errors) { errorMsg += `- ${data.errors[key][0]}\n`; }
                     alert(errorMsg);
                 } else {
                     alert(data.message || 'Failed to update. Server error occurred.');
                 }
             }
         } catch(e) { 
-            console.error("Save Error:", e);
             alert('A network error occurred. Please try again.');
         } finally {
             btn.innerHTML = originalText;
@@ -331,9 +345,6 @@ document.addEventListener('click', function(event) {
         }
     }
 
-
-
-    // --- 4. Password Update Save Logic ---
     async function savePassword(formId) {
         const form = document.getElementById(formId);
         const formData = new FormData(form);
@@ -347,39 +358,155 @@ document.addEventListener('click', function(event) {
             const res = await fetch(form.action, { 
                 method: 'POST', 
                 body: formData,
-                headers: { 
-                    'X-Requested-With': 'XMLHttpRequest', // Tells Laravel to return JSON errors
-                    'Accept': 'application/json' 
-                }
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
             });
-
             const data = await res.json();
 
             if (res.ok && data.success) { 
-                // Success popup
                 alert(data.message || 'Password updated successfully!'); 
-                form.reset(); // Clear the password fields so they aren't left filled in
+                form.reset(); 
             } else {
-                // Handle Laravel validation errors (e.g., passwords don't match, too short)
                 if (res.status === 422 && data.errors) {
                     let errorMsg = 'Could not update password:\n\n';
-                    for (const key in data.errors) {
-                        errorMsg += `- ${data.errors[key][0]}\n`;
-                    }
+                    for (const key in data.errors) { errorMsg += `- ${data.errors[key][0]}\n`; }
                     alert(errorMsg);
                 } else {
-                    // Handle custom errors from your controller (e.g., "Current password is incorrect")
                     alert(data.message || 'Failed to update password.');
                 }
             }
         } catch(e) { 
-            console.error("Password Update Error:", e);
             alert('A network error occurred. Please try again.');
         } finally {
             btn.innerHTML = originalText;
             btn.disabled = false;
         }
     }
+
+    // --- Chatbot Global Layout Logic ---
+    function initChat() {
+        const sidebarChatBtn = document.getElementById('sidebar-chat-btn');
+        const chatWindow = document.getElementById('chat-window');
+        const closeBtn = document.getElementById('chat-close');
+        const sendBtn = document.getElementById('chat-send');
+        const input = document.getElementById('chat-input');
+
+        if (sidebarChatBtn) {
+            sidebarChatBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                chatWindow.style.display = 'flex';
+                document.body.classList.remove('sidebar-show'); // Auto-close sidebar on mobile/desktop selection
+            });
+        }
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => chatWindow.style.display = 'none');
+        }
+        if (sendBtn) {
+            sendBtn.addEventListener('click', sendChatQuery);
+        }
+        if (input) {
+            input.addEventListener('keypress', e => { if (e.key === 'Enter') sendChatQuery(); });
+        }
+
+        const msgContainer = document.getElementById('chat-messages');
+        if (msgContainer && msgContainer.children.length === 0) {
+            addChatMessage("Hello! 🌾 Ask me anything about rice farming.", false);
+        }
+    }
+
+  async function sendChatQuery() {
+    const input = document.getElementById('chat-input');
+    const query = input.value.trim();
+    if (!query) return;
+
+    addChatMessage(query, true);
+    input.value = '';
+
+    const typing = document.createElement('div');
+    typing.id = 'typing-indicator';
+    typing.className = 'd-flex justify-content-start mt-2';
+    typing.innerHTML = `<div class="bg-secondary bg-opacity-25 text-white px-3 py-2 rounded"><i class="fa-solid fa-spinner fa-spin"></i> Thinking...</div>`;
+    document.getElementById('chat-messages').appendChild(typing);
+
+    try {
+        const langSelector = document.getElementById('language-selector');
+        
+        // Debug log to check payload before sending
+        console.log("Sending chat query to server...");
+
+        const response = await fetch("{{ route('farmer.chat.query') }}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                "X-CSRF-TOKEN": "{{ csrf_token() }}" 
+            },
+            body: JSON.stringify({ 
+                language: langSelector ? langSelector.value : 'tagalog',
+                message: query 
+            })
+        });
+
+        const rawText = await response.text();
+        console.log("Raw Server Response:", rawText);
+
+        const typingIndicator = document.getElementById('typing-indicator');
+        if (typingIndicator) typingIndicator.remove();
+
+        // Check if response is valid JSON
+        let data;
+        try {
+            data = JSON.parse(rawText);
+        } catch (e) {
+            // If it's not JSON, Laravel likely returned an HTML error page (like a 404 or 500 stack trace)
+            addChatMessage(`⚠️ Server HTML Error (HTTP ${response.status}): Check your route or controller.`, false);
+            return;
+        }
+
+        if (response.ok && data.response) {
+            addChatMessage(data.response, false);
+        } else {
+            addChatMessage(`⚠️ API Error: ${data.error || data.message || 'Unknown server error'}`, false);
+        }
+
+    } catch (error) {
+        const typingIndicator = document.getElementById('typing-indicator');
+        if (typingIndicator) typingIndicator.remove();
+        
+        console.error("Network/Fetch Exception:", error);
+        addChatMessage(`⚠️ Network Connection Failed: ${error.message}`, false);
+    }
+}
+    function addChatMessage(text, isUser = false) {
+        const container = document.getElementById('chat-messages');
+        if (!container) return;
+        const msg = document.createElement('div');
+        msg.className = `d-flex mt-2 ${isUser ? 'justify-content-end' : 'justify-content-start'}`;
+        msg.innerHTML = `<div class="${isUser ? 'bg-success' : 'bg-secondary bg-opacity-25'} text-white px-3 py-2 rounded">${text}</div>`;
+        container.appendChild(msg);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initChat();
+
+        const logoutForm = document.getElementById('logout-form');
+        if (logoutForm) {
+            logoutForm.addEventListener('submit', function (e) {
+                if (!navigator.onLine) {
+                    e.preventDefault();
+                    alert("📡 You are currently offline. Please reconnect to the internet to log out securely.");
+                }
+            });
+        }
+    });
+
+    window.addEventListener('load', () => {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('{{ asset("sw.js") }}').catch(err => console.error('Service Worker Registration Failed!', err));
+        }
+    });
     </script>
     @yield('scripts')
 </body>

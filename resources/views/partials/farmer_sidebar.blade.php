@@ -1,7 +1,6 @@
 <aside class="farmer-sidebar" id="farmerSidebar">
     <div class="p-4 border-bottom border-secondary">
-        <span class="text-success fw-bold mb-0"><strong>🌾CROPSENSE</strong> AI</span>
-
+        <span class="text-success fw-bold mb-0"><strong>🌾RICEGUARD</strong> AI</span>
     </div>
     <nav class="p-3">
         <ul class="nav flex-column">
@@ -38,6 +37,12 @@
             <li class="nav-item mb-2">
                 <a href="{{ route('farmer.field_map') }}" class="nav-link {{ request()->routeIs('farmer.field_map') ? 'active' : '' }}">
                     <i class="fas fa-map-location-dot me-2"></i> Field Map & Weather
+                </a>
+            </li>
+            <!-- Chatbot Sidebar Navigation Trigger Button -->
+            <li class="nav-item mb-2">
+                <a href="#" id="sidebar-chat-btn" class="nav-link">
+                    <i class="fas fa-comment-dots me-2"></i> AI Assistant
                 </a>
             </li>
         </ul>

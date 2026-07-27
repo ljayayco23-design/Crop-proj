@@ -84,15 +84,26 @@ class AdminUserController extends Controller
         return redirect()->route($route)->with('success', ucfirst($user->role) . ' declined.');
     }
 
-    public function delete($id)
-    {
-        $user = User::whereIn('role', ['farmer', 'technician'])->findOrFail($id);
-        $role = $user->role;
-        $user->delete();
+public function delete($id)
+{
+    $user = User::whereIn('role', ['farmer', 'technician'])->findOrFail($id);
+    $role = $user->role;
 
-        $route = $role === 'farmer' ? 'admin.farmers' : 'admin.technicians';
-        return redirect()->route($route)->with('success', ucfirst($role) . ' deleted successfully.');
-    }
+    // 1. Delete standard treatment records
+    \App\Models\TreatmentRecord::where('user_id', $user->id)->delete();
+
+    // 2. Delete Groq treatment records (if they are tied to the user)
+    // \Illuminate\Support\Facades\DB::table('groq_treatment_records')->where('user_id', $user->id)->delete();
+
+    // 3. Delete the detection history (the root of the issue)
+    \Illuminate\Support\Facades\DB::table('user_detections')->where('user_id', $user->id)->delete();
+
+    // 4. Finally, delete the user account
+    $user->delete();
+
+    $route = $role === 'farmer' ? 'admin.farmers' : 'admin.technicians';
+    return redirect()->route($route)->with('success', ucfirst($role) . ' and all associated history were deleted successfully.');
+}
 
     public function getUserInfo($id)
     {

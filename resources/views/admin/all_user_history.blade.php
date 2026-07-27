@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'CROPSENSE AI • All Users History')
+@section('title', 'RICEGUARD AI • All Users History')
 
 @section('content')
 <style>
@@ -122,13 +122,40 @@
                                     @php $pests = array_filter($userData['detectionData'], fn($d) => $d['is_pest'] == 1); @endphp
                                     
                                     @forelse($pests as $det)
-                                        @php $kb = $knowledgeBase[$det['class_key']] ?? []; @endphp
-                                        <div class="detection-card p-4 rounded-4 mb-4 border-warning border-opacity-50">
+                                            @php 
+                                                $kb = $knowledgeBase[$det['class_key']] ?? []; 
+                                                
+                                                // Severity Logic
+                                                $severityMap = [
+                                                    'healthy_rice_plant' => 0, 'bacterial_leaf_blight' => 60, 'leaf_blast' => 80, 
+                                                    'rice_false_smut' => 30, 'sheath_blight' => 40, 'tungro_virus' => 85, 
+                                                    'brown_planthopper' => 90, 'leaf_folders' => 20, 'leafhopper' => 30, 
+                                                    'rice_bug' => 80, 'rice_gall_midge' => 40, 'rice_leaf_roller' => 20, 
+                                                    'rice_stem_borer' => 30, 'snail' => 75
+                                                ];
+                                                $severityVal = $severityMap[$det['class_key']] ?? 'N/A';
+                                                
+                                                $sevColor = 'bg-secondary text-light';
+                                                if($severityVal === 0) $sevColor = 'bg-success text-white';
+                                                elseif($severityVal !== 'N/A' && $severityVal <= 30) $sevColor = 'bg-info text-dark';
+                                                elseif($severityVal !== 'N/A' && $severityVal <= 50) $sevColor = 'bg-warning text-dark';
+                                                elseif($severityVal !== 'N/A' && $severityVal > 50) $sevColor = 'bg-danger text-white';
+                                            @endphp                                        <div class="detection-card p-4 rounded-4 mb-4 border-warning border-opacity-50">
                                             <div class="d-flex align-items-center gap-3 mb-4">
-                                                <div class="bg-warning bg-opacity-25 text-warning rounded-3 d-flex align-items-center justify-content-center" style="width: 55px; height: 55px; font-size: 28px;">🐛</div>
+                                                <!-- Icon -->
+                                                <div class="bg-warning bg-opacity-25 text-warning rounded-3 d-flex align-items-center justify-content-center" style="width: 55px; height: 55px; font-size: 28px;">
+                                                    {{ $det['is_pest'] == 1 ? '🐛' : '🌾' }}
+                                                </div>
                                                 <div>
                                                     <h5 class="fw-bold text-white mb-1">{{ $det['class_name'] }}</h5>
-                                                    <span class="badge bg-warning text-dark">PEST</span>
+                                                    <div class="d-flex gap-2">
+                                                        <span class="badge {{ $det['is_pest'] == 1 ? 'bg-warning text-dark' : 'bg-success' }}">
+                                                            {{ $det['is_pest'] == 1 ? 'PEST' : 'DISEASE' }}
+                                                        </span>
+                                                        <span class="badge {{ $sevColor }}">
+                                                            Severity: {{ $severityVal }}{{ $severityVal !== 'N/A' ? '%' : '' }}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
 

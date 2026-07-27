@@ -1,6 +1,6 @@
 @extends('layouts.technician')
 
-@section('title', 'Farmers Records • CROPSENSE AI')
+@section('title', 'Farmers Records • RICEGUARD AI')
 
 @section('content')
 <style>
@@ -23,6 +23,17 @@
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
     </div>
 @endif
+
+@php
+    // --- AGRONOMIC DATA MAP FOR SEVERITY ---
+    $severityMap = [
+        'healthy_rice_plant' => 0, 'bacterial_leaf_blight' => 60, 'leaf_blast' => 80, 
+        'rice_false_smut' => 30, 'sheath_blight' => 40, 'tungro_virus' => 85, 
+        'brown_planthopper' => 90, 'leaf_folders' => 20, 'leafhopper' => 30, 
+        'rice_bug' => 80, 'rice_gall_midge' => 40, 'rice_leaf_roller' => 20, 
+        'rice_stem_borer' => 30, 'snail' => 75
+    ];
+@endphp
 
 @foreach($allUsersData as $userData)
     <div class="card bg-dark border-secondary shadow-sm mb-5">
@@ -48,6 +59,16 @@
                         $isGroq = (isset($kb['is_groq']) && $kb['is_groq']) || 
                                   str_contains(strtolower($kb['updated_by'] ?? ''), 'groq') || 
                                   (isset($det['source']) && strtolower($det['source']) === 'groq');
+
+                        // Severity calculation matching farmer side implementation[cite: 7]
+                        $severityVal = $severityMap[$det['class_key']] ?? 'N/A';
+                        $sevColor = 'text-light';
+                        if($severityVal === 0) $sevColor = 'text-success';
+                        elseif($severityVal !== 'N/A' && $severityVal <= 30) $sevColor = 'text-info';
+                        elseif($severityVal !== 'N/A' && $severityVal <= 50) $sevColor = 'text-warning';
+                        elseif($severityVal !== 'N/A' && $severityVal > 50) $sevColor = 'text-danger';
+                        
+                        $severityDisplay = $severityVal !== 'N/A' ? $severityVal . '%' : 'N/A';
                     @endphp
                     <div class="col-lg-6">
                         <div class="card bg-secondary bg-opacity-10 border-secondary h-100 position-relative">
@@ -75,9 +96,10 @@
                                     <div class="fs-2">{{ $isPest ? '🐛' : '🌾' }}</div>
                                     <div>
                                         <h5 class="mb-1 fw-bold text-white">{{ $det['class_name'] }}</h5>
-                                        <div class="d-flex gap-2 align-items-center">
+                                        <div class="d-flex gap-2 align-items-center flex-wrap">
                                             <span class="badge {{ $isPest ? 'bg-warning text-dark' : 'bg-success' }}">{{ $isPest ? 'PEST' : 'DISEASE' }}</span>
                                             <span class="badge bg-secondary bg-opacity-50 border border-secondary text-light">Confidence: {{ $det['confidence'] ?? 'N/A' }}%</span>
+                                            <span class="badge bg-secondary bg-opacity-50 border border-secondary {{ $sevColor }}">Severity: {{ $severityDisplay }}</span>
                                         </div>
                                     </div>
                                 </div>

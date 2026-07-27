@@ -6,7 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\ValidationException; // ✅ Added for clean validation handling
+use Illuminate\Validation\ValidationException; 
 
 class AuthController extends Controller
 {
@@ -25,7 +25,7 @@ class AuthController extends Controller
 
     // Return view with explicit anti-caching headers
     return response()
-        ->view('auth.login') // Replace 'auth.login' with your exact login view path
+        ->view('auth.login') 
         ->header('Cache-Control', 'no-cache, no-store, max-age=0, must-revalidate')
         ->header('Pragma', 'no-cache')
         ->header('Expires', 'Sat, 01 Jan 1900 00:00:00 GMT');
@@ -33,7 +33,7 @@ class AuthController extends Controller
 
     public function login(Request $request)
     {
-        // ✅ FIX: Gracefully clear old active session if user submits form while logged in
+        // Gracefully clear old active session if user submits form while logged in
         if (Auth::check()) {
             Auth::logout();
             $request->session()->invalidate();
@@ -78,7 +78,7 @@ class AuthController extends Controller
                     ->withInput($request->except(['document_photo_base64']));
             }
 
-            // ✅ FIX: Handle DB errors gracefully without crashing Vercel with a huge error page payload
+            // Handle DB errors gracefully without crashing Vercel
             try {
                 User::create([
                     'full_name' => $request->full_name,
@@ -100,6 +100,62 @@ class AuthController extends Controller
                     'device_latitude' => $request->device_latitude, 
                     'device_longitude' => $request->device_longitude,
                 ]);
+
+                // ==========================================
+                // EMAIL NOTIFICATION FOR NEW REGISTRATION
+                // ==========================================
+                $api_key = env('BREVO_API_KEY');
+                $admin_email = 'jfconco604@gmail.com';
+
+                $html_content = '<!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                </head>
+                <body style="background-color: #f1f5f9; padding: 20px; margin: 0; font-family: system-ui, -apple-system, sans-serif;">
+                    <div style="max-width: 600px; margin: 0 auto; padding: 30px; background-color: #0f172a; color: #ffffff; border-radius: 20px;">
+                        <h1 style="color: #10b981; margin-bottom: 20px; margin-top: 0;">RiceGuard AI</h1>
+                        <h2 style="color: #ffffff; margin-top: 0;">New Farmer Registration</h2>
+                        <p style="color: #e2e8f0;">Hello Admin,</p>
+                        <p style="color: #e2e8f0;">A new farmer has just registered and is awaiting your approval.</p>
+                        
+                        <div style="margin: 30px 0; background-color: #1e293b; padding: 20px; border-radius: 12px;">
+                            <p style="margin: 5px 0;"><strong style="color: #10b981;">Name:</strong> ' . htmlspecialchars($request->full_name) . '</p>
+                            <p style="margin: 5px 0;"><strong style="color: #10b981;">Email:</strong> ' . htmlspecialchars($request->email) . '</p>
+                            <p style="margin: 5px 0;"><strong style="color: #10b981;">Farm Name:</strong> ' . htmlspecialchars($request->farm_name) . '</p>
+                            <p style="margin: 5px 0;"><strong style="color: #10b981;">Phone:</strong> ' . htmlspecialchars($request->mobile) . '</p>
+                        </div>
+                        
+                        <p style="color: #e2e8f0;">Please log in to your Admin Dashboard to review their documents and approve the account.</p>
+                        <hr style="border: none; border-top: 1px solid #334155; margin: 30px 0;">
+                        <p style="color: #94a3b8; font-size: 14px; margin-bottom: 0;">System Notification<br>RiceGuard AI Team</p>
+                    </div>
+                </body>
+                </html>';
+
+                $data = [
+                    "sender" => ["name" => "RiceGuard AI System", "email" => $admin_email],
+                    "to" => [["email" => $admin_email]],
+                    "subject" => "Action Required: New Farmer Registration",
+                    "htmlContent" => $html_content
+                ];
+
+                $ch = curl_init('https://api.brevo.com/v3/smtp/email');
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+                curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                    'accept: application/json',
+                    'Content-Type: application/json',
+                    'api-key: ' . $api_key
+                ]);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                curl_exec($ch);
+                curl_close($ch);
+                // ==========================================
+                
             } catch (\Exception $e) {
                 return back()
                     ->with('error', 'Database Error: ' . $e->getMessage())
@@ -234,23 +290,22 @@ class AuthController extends Controller
             return back()->with('error', $errorMessage);
         }
     }
-    // Add this inside AuthController class in AuthController.php
 
-public function logout(Request $request)
-{
-    // 1. Log out the authenticated user
-    Auth::logout();
+    public function logout(Request $request)
+    {
+        // 1. Log out the authenticated user
+        Auth::logout();
 
-    // 2. Invalidate user's session and clear session data
-    $request->session()->invalidate();
+        // 2. Invalidate user's session and clear session data
+        $request->session()->invalidate();
 
-    // 3. Regenerate CSRF token for the next request
-    $request->session()->regenerateToken();
+        // 3. Regenerate CSRF token for the next request
+        $request->session()->regenerateToken();
 
-    // 4. Redirect to login with cache-prevention headers
-    return redirect()->route('login')
-        ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-        ->header('Pragma', 'no-cache')
-        ->header('Expires', 'Sat, 26 Jul 1997 05:00:00 GMT');
-}
+        // 4. Redirect to login with cache-prevention headers
+        return redirect()->route('login')
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', 'Sat, 26 Jul 1997 05:00:00 GMT');
+    }
 }

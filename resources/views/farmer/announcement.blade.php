@@ -1,6 +1,6 @@
 @extends('layouts.farmer')
 
-@section('title', 'CROPSENSE AI • Announcements')
+@section('title', 'RICEGUARD AI • Announcements')
 
 @section('content')
 <div class="container-fluid">

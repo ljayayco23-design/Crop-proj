@@ -1,54 +1,13 @@
 @extends('layouts.farmer')
 
-@section('title', 'CROPSENSE AI • Rice Disease & Pest Detector')
+@section('title', 'RICEGUARD AI • Rice Disease & Pest Detector')
 
 @section('content')
 <style>
     .hidden { display: none !important; }
 
-    /* Responsive Chat Toggle */
-    .chat-toggle-btn {
-        width: 60px; 
-        height: 60px; 
-        font-size: 28px; 
-        z-index: 1045;
-        bottom: 30px; /* Anchors to the bottom of the screen */
-        right: 30px;  /* Anchors to the right of the screen */
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    /* Responsive Chat Window */
-    .chat-window {
-        width: 380px; 
-        height: 520px; 
-        border: 1px solid #334155; 
-        z-index: 1050;
-        bottom: 100px; /* Floats right above the chat button */
-        right: 30px;
-    }
-
     /* Mobile Device Adjustments */
     @media (max-width: 576px) {
-        /* Make chat full-screen on phones */
-        .chat-window {
-            width: 100% !important;
-            height: 100dvh !important; /* Uses dynamic viewport height */
-            margin: 0 !important;
-            bottom: 0 !important;
-            right: 0 !important;
-            border-radius: 0 !important;
-            z-index: 9999;
-        }
-        .chat-header { border-radius: 0 !important; }
-        
-        /* Adjust chat button position on small screens */
-        .chat-toggle-btn {
-            bottom: 20px !important;
-            right: 20px !important;
-        }
-
         /* Shrink drop zone so it fits without scrolling */
         #drop-zone {
             padding: 1.5rem !important;
@@ -182,24 +141,6 @@
         </div>
     </div>
 </div>
-
-<button id="chat-toggle" class="btn btn-success rounded-circle position-fixed chat-toggle-btn shadow-lg">
-    <i class="fa-solid fa-comment-dots"></i>
-</button>
-
-<div id="chat-window" class="position-fixed bg-dark rounded-4 shadow-lg chat-window" style="display:none;flex-direction:column;">
-    <div class="chat-header d-flex justify-content-between align-items-center p-3 bg-success text-white rounded-top-4">
-        <h5 class="mb-0 fw-bold">CROPSENSE AI Assistant 🌾</h5>
-        <button id="chat-close" class="btn-close btn-close-white"></button>
-    </div>
-    <div id="chat-messages" class="flex-grow-1 p-3 overflow-auto" style="background:#1e2937;"></div>
-    <div class="p-3 border-top border-secondary">
-        <div class="input-group">
-            <input id="chat-input" type="text" autocomplete="off" class="form-control bg-dark text-white border-secondary" placeholder="Ask about rice farming...">
-            <button id="chat-send" class="btn btn-success"><i class="fa-solid fa-paper-plane"></i></button>
-        </div>
-    </div>
-</div>
 @endsection
 
 @section('scripts')
@@ -218,17 +159,15 @@ const metadataURL = "{{ asset('model/metadata.json') }}";
 let model = null;
 let currentImage = null;
 let currentObjectURL = null;
-let currentBase64 = null; 
 let lastClassKey = null;
 let lastConfidence = 65;
 let isModelReady = false;
-let compressedBase64 = null;
-let currentGroqData = null; // TRACKS GROQ AI GENERATED DATA
+window.compressedBase64 = null; // Global reference for chatbot image analysis context
+let currentGroqData = null; 
 
 let lastPredictions = null;
 let isShowingFallback = false;
 
-// Add this translation dictionary
 const uiTranslations = {
     english: { description: "Description / About", treatment: "Treatment", causes: "Causes", prevention: "Prevention", nutrient: "Nutrient / Deficiency", grain: "Grain Impact", damage: "Damage Symptoms", naturalEnemies: "Natural Enemies" },
     tagalog: { description: "Paglalarawan / Tungkol dito", treatment: "Paggamot", causes: "Mga Sanhi", prevention: "Pag-iwas", nutrient: "Kakulangan sa Nutrisyon", grain: "Epekto sa Butil", damage: "Sintomas ng Pinsala", naturalEnemies: "Mga Likas na Kaaway" },
@@ -236,12 +175,13 @@ const uiTranslations = {
     hiligaynon: { description: "Paglaragway / Tuhoy Diri", treatment: "Pagbulong", causes: "Mga Rason", prevention: "Pagpangamlig", nutrient: "Kulang sa Nutrisyon", grain: "Epekto sa Uhay", damage: "Sintomas sang Halit", naturalEnemies: "Mga Natural nga Kontra" }
 };
 
-// ==================== COMPRESSION ====================
-async function compressImage(base64Image) {
-    return new Promise((resolve) => {
+async function compressImageFile(file) {
+    return new Promise((resolve, reject) => {
         const img = new Image();
-        img.src = base64Image;
+        const objectUrl = URL.createObjectURL(file);
+        
         img.onload = () => {
+            URL.revokeObjectURL(objectUrl);
             const canvas = document.createElement('canvas');
             const MAX_WIDTH = 512; 
             const scale = Math.min(MAX_WIDTH / img.width, 1); 
@@ -251,13 +191,13 @@ async function compressImage(base64Image) {
 
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
             resolve(canvas.toDataURL('image/jpeg', 0.6)); 
         };
+        img.onerror = (err) => reject(err);
+        img.src = objectUrl;
     });
 }
 
-// ==================== MODEL LOADING ====================
 async function loadModel() {
     const statusEl = document.getElementById('status');
     statusEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Loading TF model...`;
@@ -267,13 +207,11 @@ async function loadModel() {
         statusEl.className = "badge bg-success text-white";
         isModelReady = true;
     } catch (e) {
-        console.error("TF Model failed to load:", e);
         statusEl.innerHTML = `<i class="fa-solid fa-bolt"></i> Groq Only Mode`;
         statusEl.className = "badge bg-primary text-white";
     }
 }
 
-// ==================== UPLOAD & CLASSIFICATION ====================
 window.browsePhoto = function() { document.getElementById('file-input').click(); };
 
 function setupUpload() {
@@ -296,25 +234,24 @@ function setupUpload() {
 async function handleFile(file) {
     if (!file.type.startsWith('image/')) return alert('Please select a valid image file');
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        currentBase64 = e.target.result; 
-        compressedBase64 = await compressImage(currentBase64); 
+    try {
+        window.compressedBase64 = await compressImageFile(file); 
         
-        document.getElementById('preview-image').src = currentBase64;
+        document.getElementById('preview-image').src = window.compressedBase64;
         document.getElementById('preview-container').classList.remove('hidden');
 
         currentImage = new Image();
-        currentImage.src = currentBase64;
+        currentImage.src = window.compressedBase64;
         currentImage.onload = () => document.getElementById('classify-btn').disabled = false;
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+        alert("Failed to process the image.");
+    }
 }
 
 function clearPreview() {
     document.getElementById('preview-container').classList.add('hidden');
     document.getElementById('classify-btn').disabled = true;
-    currentBase64 = null;
+    window.compressedBase64 = null;
     currentImage = null;
     currentGroqData = null;
     document.getElementById('results-panel').classList.add('hidden');
@@ -322,7 +259,7 @@ function clearPreview() {
 }
 
 window.classifyCurrentImage = async function() {
-    if (!currentImage || !compressedBase64) return alert("No image selected.");
+    if (!currentImage || !window.compressedBase64) return alert("No image selected.");
 
     const btn = document.getElementById('classify-btn');
     const original = btn.innerHTML;
@@ -344,8 +281,8 @@ window.classifyCurrentImage = async function() {
                 'X-CSRF-TOKEN': '{{ csrf_token() }}'
             },
            body: JSON.stringify({ 
-                image_base64: compressedBase64,
-                language: document.getElementById('language-selector').value // Pass language to Groq
+                image_base64: window.compressedBase64,
+                language: document.getElementById('language-selector').value
             })
         });
 
@@ -357,43 +294,33 @@ window.classifyCurrentImage = async function() {
 
        const rawText = await response.text(); 
         let result;
-        
         try {
             result = JSON.parse(rawText);
         } catch (parseError) {
-            console.error("🚨 Server returned invalid JSON. Raw output:", rawText);
-            throw new Error("Server crashed or returned non-JSON data. Check logs.");
+            throw new Error("Server crashed or returned non-JSON data.");
         }
-        // ------------------------------------
 
         if (result.success && result.data && result.data.class_key) {
             statusEl.innerHTML = `<i class="fa-solid fa-bolt"></i> Groq Ready`;
             statusEl.className = "badge bg-primary text-white";
             displayGroqResults(result.data);
-            
             btn.disabled = false;
             btn.innerHTML = original;
             return; 
         } else {
-            const exactReason = result.message || "Unknown API Error";
-            console.error("🚨 GROQ API CULPRIT: 🚨", exactReason, result.debug_info || "");
-            throw new Error(exactReason);
+            throw new Error(result.message || "Unknown API Error");
         }
-
     } catch (err) {
-        console.warn("Groq sequence failed, falling back to local model...", err);
-        
         statusEl.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> Groq failed. Using Fallback...`;
         statusEl.className = "badge bg-warning text-dark";
 
         if (!isModelReady) {
-            alert("Both AI and Fallback Model failed. Please check the browser console for details.");
+            alert("Both AI and Fallback Model failed.");
             statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> Scan Failed`;
             statusEl.className = "badge bg-danger text-white";
         } else {
             const predictions = await model.predict(currentImage);
             displayResults(predictions);
-            
             setTimeout(() => {
                 statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> Model ready`;
                 statusEl.className = "badge bg-success text-white";
@@ -405,7 +332,6 @@ window.classifyCurrentImage = async function() {
     }
 };
 
-// ==================== DISPLAY GROQ RESULTS ====================
 function displayGroqResults(data) {
     currentGroqData = data;
     isShowingFallback = false;
@@ -460,7 +386,6 @@ function displayGroqResults(data) {
     }
 }
 
-// ==================== DISPLAY LOCAL FALLBACK RESULTS ====================
 function displayResults(predictions) {
     lastPredictions = predictions;
     isShowingFallback = true;
@@ -480,9 +405,46 @@ function displayResults(predictions) {
     lastClassKey = className;
     lastConfidence = Math.round(top.probability * 100);
 
+    // --- AGRONOMIC DATA SEVERITY ESTIMATES ---
+    // These reflect real-world potential yield loss/damage for each pest or disease
+    const severityEstimates = {
+        'healthy_rice_plant': { label: 'HEALTHY', percent: 0, message: 'The plant appears to be in good condition.' },
+        'bacterial_leaf_blight': { label: 'SEVERE', percent: 60, message: 'Can cause up to 60% yield loss if left untreated during the tillering stage.' },
+        'leaf_blast': { label: 'SEVERE', percent: 80, message: 'Highly destructive; neck blast infections can cause up to 80% yield loss.' },
+        'rice_false_smut': { label: 'MODERATE', percent: 30, message: 'Generally causes 10-30% yield loss depending on weather and severity.' },
+        'sheath_blight': { label: 'MODERATE', percent: 40, message: 'Often causes 20-50% yield loss, especially in dense, high-fertilizer canopies.' },
+        'tungro_virus': { label: 'SEVERE', percent: 85, message: 'Can wipe out crops entirely if infection happens early in the vegetative stage.' },
+        'brown_planthopper': { label: 'SEVERE', percent: 90, message: 'Causes severe hopperburn, leading to massive or complete yield loss.' },
+        'leaf_folders': { label: 'LOW', percent: 20, message: 'Damage looks severe but usually only results in minor yield loss (up to 20%).' },
+        'leafhopper': { label: 'MODERATE', percent: 30, message: 'Direct damage is moderate, but they are dangerous vectors for viral diseases.' },
+        'rice_bug': { label: 'SEVERE', percent: 80, message: 'Sucks sap from developing grains, capable of causing up to 80% empty grains.' },
+        'rice_gall_midge': { label: 'MODERATE', percent: 40, message: 'Damages tillers (onion shoots), causing moderate yield reduction.' },
+        'rice_leaf_roller': { label: 'LOW', percent: 20, message: 'Similar to leaf folders; rarely causes total crop failure.' },
+        'rice_stem_borer': { label: 'MODERATE', percent: 30, message: 'Causes deadhearts and whiteheads; typically results in 10-30% yield loss.' },
+        'snail': { label: 'SEVERE', percent: 75, message: 'Golden apple snails can completely destroy young seedlings and seedbeds quickly.' }
+    };
+
+    const estimate = severityEstimates[className] || { label: 'UNKNOWN', percent: 0, message: 'Severity estimate data unavailable.' };
+
+    let color = "text-secondary";
+    if (estimate.label === 'HEALTHY') color = "text-success";
+    else if (estimate.label === 'LOW') color = "text-info";
+    else if (estimate.label === 'MODERATE') color = "text-warning";
+    else if (estimate.label === 'SEVERE') color = "text-danger";
+
+    const severityLabelEl = document.getElementById('severity-label');
+    if (severityLabelEl) {
+        severityLabelEl.textContent = estimate.label;
+        severityLabelEl.className = `h4 mb-1 fw-bold ${color}`;
+    }
+    safeSet('severity-percent', estimate.percent + "%");
+    safeSet('severity-message', estimate.message);
+    // -----------------------------------------
+
     const isPest = Object.keys(pestNames).includes(className);
     const nameMap = isPest ? pestNames : diseaseNames;
 
+    // Display model confidence for NAME identification
     document.getElementById('top-label').textContent = nameMap[className] || top.className;
     document.getElementById('top-confidence').innerHTML = `${lastConfidence}%`;
 
@@ -495,7 +457,6 @@ function displayResults(predictions) {
 
     const kb = knowledgeBase[className] || {};
     
-    // Note: kb data remains untouched, only labels change
     safeSet('description', `<strong class="text-white"><i class="fa-solid fa-circle-info me-2"></i>${t.description}:</strong><p class="mt-2 mb-0">${kb.description || '—'}</p>`);
     safeSet('treatment', `<strong class="text-success"><i class="fa-solid fa-spray-can-sparkles me-2"></i>${t.treatment}:</strong><p class="mt-2 mb-0">${kb.treatments || '—'}</p>`);
     safeSet('causes', `<strong class="text-warning"><i class="fa-solid fa-question-circle me-2"></i>${t.causes}:</strong><p class="mt-2 mb-0">${kb.causes || '—'}</p>`);
@@ -529,7 +490,6 @@ function displayResults(predictions) {
     };
 }
 
-// Add the event listener to auto-update UI labels when language is toggled
 document.getElementById('language-selector').addEventListener('change', function() {
     if (!document.getElementById('results-panel').classList.contains('hidden')) {
         if (!isShowingFallback && currentGroqData) {
@@ -540,140 +500,81 @@ document.getElementById('language-selector').addEventListener('change', function
     }
 });
 
-
-
-// ==================== SAVE HISTORY ====================
-// ==================== SAVE HISTORY ====================
-async function saveCurrentDetection() {
-    if (!lastClassKey || !compressedBase64) return alert("No detection to save.");
+window.saveCurrentDetection = async function() {
+    if (!lastClassKey || !window.compressedBase64) {
+        alert("No detection to save.");
+        return;
+    }
     
+    const payload = {
+        user_id: {{ Auth::id() }},
+        class_key: lastClassKey,
+        confidence: lastConfidence,
+        image_base64: window.compressedBase64,
+        groq_data: currentGroqData 
+    };
+
+    const success = await sendToServer(payload);
+    if (success) {
+        alert("✅ Detection saved successfully to your history!");
+    } else {
+        try {
+            await saveLocally(payload);
+            alert("📱 Network unavailable. Detection saved locally to your device!");
+        } catch (e) {
+            alert("An error occurred saving offline.");
+        }
+    }
+};
+
+window.sendToServer = async function(payload) {
     try {
         const response = await fetch("{{ route('farmer.history.save') }}", {
             method: 'POST',
-            credentials: 'same-origin', // <-- CRITICAL FIX: Sends login session
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json', // Force Laravel to return JSON errors
+                'Accept': 'application/json',
                 'X-CSRF-TOKEN': '{{ csrf_token() }}'
             },
-            body: JSON.stringify({
-                class_key: lastClassKey,
-                confidence: lastConfidence,
-                image_base64: compressedBase64,
-                groq_data: currentGroqData 
-            })
+            body: JSON.stringify(payload)
         });
-
-        // Handle expired login session gracefully
-        if (response.status === 401 || response.status === 419) {
-            alert("Your login session has expired. Please log in again.");
-            window.location.reload();
-            return;
-        }
-
-        if (!response.ok) {
-            const errText = await response.text();
-            console.error("🚨 LARAVEL ERROR 🚨:", errText);
-            throw new Error(`Server returned ${response.status}. Check browser console.`);
-        }
-        
-        const data = await response.json();
-        if(data.success) {
-            alert("✅ Detection saved to history successfully!");
-        } else {
-            alert("❌ Failed to save detection.");
-        }
-    } catch(e) {
-        console.error("Network or parsing error:", e);
-        alert("Server connection failed. Check console.");
-    }
-}
-
-// ==================== CHATBOT ====================
-function initChat() {
-    const toggleBtn = document.getElementById('chat-toggle');
-    const chatWindow = document.getElementById('chat-window');
-    const closeBtn = document.getElementById('chat-close');
-    const sendBtn = document.getElementById('chat-send');
-    const input = document.getElementById('chat-input');
-
-    toggleBtn.addEventListener('click', () => chatWindow.style.display = 'flex');
-    closeBtn.addEventListener('click', () => chatWindow.style.display = 'none');
-    sendBtn.addEventListener('click', sendChatQuery);
-    input.addEventListener('keypress', e => { if (e.key === 'Enter') sendChatQuery(); });
-
-    addChatMessage("Hello! 🌾 Ask me anything about rice farming.", false);
-}
-
-async function sendChatQuery() {
-    const input = document.getElementById('chat-input');
-    const query = input.value.trim();
-    if (!query) return;
-
-    addChatMessage(query, true);
-    input.value = '';
-
-    const typing = document.createElement('div');
-    typing.id = 'typing-indicator';
-    typing.className = 'd-flex justify-content-start mt-2';
-    typing.innerHTML = `<div class="bg-secondary bg-opacity-25 text-white px-3 py-2 rounded"><i class="fa-solid fa-spinner fa-spin"></i> Thinking...</div>`;
-    document.getElementById('chat-messages').appendChild(typing);
-
-    try {
-        const response = await fetch("{{ route('farmer.detection') }}", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                "X-CSRF-TOKEN": "{{ csrf_token() }}" 
-            },
-           body: JSON.stringify({ 
-                image_base64: compressedBase64,
-                language: document.getElementById('language-selector').value
-            })
-        });
-
-        const data = await response.json();
-        document.getElementById('typing-indicator').remove();
-        
-        if (data && data.response) {
-            addChatMessage(data.response, false);
-        } else {
-            addChatMessage("I'm sorry, I couldn't get a response right now.", false);
-        }
-
+        return response.ok; 
     } catch (error) {
-        document.getElementById('typing-indicator').remove();
-        addChatMessage("I'm having trouble connecting right now.", false);
+        return false; 
     }
+};
+
+const dbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open('CropSenseDB', 1);
+    request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains('offline_history')) {
+            db.createObjectStore('offline_history', { keyPath: 'id', autoIncrement: true });
+        }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+});
+
+async function saveLocally(payload) {
+    const db = await dbPromise;
+    const tx = db.transaction('offline_history', 'readwrite');
+    tx.objectStore('offline_history').add(payload);
+    return tx.complete;
 }
 
-function addChatMessage(text, isUser = false) {
-    const container = document.getElementById('chat-messages');
-    const msg = document.createElement('div');
-    msg.className = `d-flex mt-2 ${isUser ? 'justify-content-end' : 'justify-content-start'}`;
-    msg.innerHTML = `<div class="${isUser ? 'bg-success' : 'bg-secondary bg-opacity-25'} text-white px-3 py-2 rounded">${text}</div>`;
-    container.appendChild(msg);
-    container.scrollTop = container.scrollHeight;
-}
-
-// ==================== INITIALIZATION ====================
 window.onload = async () => {
     await loadModel();
     setupUpload();
-    initChat();
 
     const savedCameraImage = sessionStorage.getItem('capturedImage');
     if (savedCameraImage) {
         sessionStorage.removeItem('capturedImage');
-        
         fetch(savedCameraImage)
             .then(res => res.blob())
             .then(blob => {
                 const file = new File([blob], "camera_capture.jpg", { type: "image/jpeg" });
                 handleFile(file);
-                
                 setTimeout(() => {
                     if(document.getElementById('classify-btn').disabled === false) {
                         classifyCurrentImage();

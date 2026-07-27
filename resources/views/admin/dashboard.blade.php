@@ -1,5 +1,5 @@
 @extends('layouts.admin')
-@section('title', 'Admin Analytics Dashboard • CROPSENSE AI')
+@section('title', 'Admin Analytics Dashboard • RICEGUARD AI')
 
 @section('content')
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -13,7 +13,7 @@
 </style>
 
 <div class="mb-4">
-    <h4 class="fw-bold text-white mb-1">CROPSENSE AI • Admin Analytics Dashboard</h4>
+    <h4 class="fw-bold text-white mb-1">RICEGUARD AI • Admin Analytics Dashboard</h4>
     <p class="text-secondary mb-0">Real-time overview • {{ \Carbon\Carbon::now()->format('F j, Y') }}</p>
 </div>
 

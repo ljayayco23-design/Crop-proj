@@ -1,7 +1,7 @@
 <aside class="main-sidebar sidebar-dark-primary elevation-4" id="adminSidebar" style="width: 250px; transition: width 0.3s; background: #1e2937; position: fixed; height: 100vh; overflow-y: auto; z-index: 1040;">
     
     <a href="{{ route('admin.dashboard') }}" class="brand-link text-decoration-none text-white d-block p-3 border-bottom border-secondary">
-        <span class="brand-text font-weight-light fs-5"><strong>CROPSENSE</strong> AI</span>
+        <span class="brand-text font-weight-light fs-5"><strong>RICEGUARD</strong> AI</span>
     </a>
 
     <div class="sidebar mt-3 px-2">

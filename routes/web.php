@@ -12,6 +12,9 @@ use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\FieldMapController; // ✅ Added New Field Map Controller
 use Illuminate\Support\Facades\Artisan;
+use App\Http\Controllers\FarmerChatController; // Or your current controller
+
+Route::post('/farmer/chat-query', [FarmerChatController::class, 'handleChat'])->name('farmer.chat.query');
 
 
 // ============================================

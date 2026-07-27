@@ -1,5 +1,5 @@
 @extends('layouts.farmer') 
-@section('title', 'Field Map & Weather • CROPSENSE AI')
+@section('title', 'Field Map & Weather • RICEGUARD AI')
 
 @section('content')
 <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -73,7 +73,7 @@
         <header class="h-14 border-b border-panelBorder bg-darkBg flex items-center justify-between px-4 lg:px-6 shrink-0 z-20 relative">
             <div class="flex items-center gap-3">
                 <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-white shadow-lg shadow-accent/20"><i class="ph-fill ph-plant text-xl"></i></div>
-                <div><h1 class="font-bold text-gray-100 text-base lg:text-lg leading-tight flex items-center gap-2">CROPSENSE AI</h1><p class="text-[10px] lg:text-[11px] text-gray-400 hidden sm:block">High-Resolution Precision Agriculture</p></div>
+                <div><h1 class="font-bold text-gray-100 text-base lg:text-lg leading-tight flex items-center gap-2">RICEGUARD AI</h1><p class="text-[10px] lg:text-[11px] text-gray-400 hidden sm:block">High-Resolution Precision Agriculture</p></div>
             </div>
             <div class="flex items-center gap-4 text-gray-400 text-xs">
                 <div class="hidden sm:flex items-center gap-2"><i class="ph ph-globe"></i> Global Coverage</div>

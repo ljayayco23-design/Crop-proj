@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Knowledge Modifier History • RiceGuard AI')
+@section('title', 'Knowledge Modifier History • RICEGUARD AI')
 
 @section('content')
 <style>

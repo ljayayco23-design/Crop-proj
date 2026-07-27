@@ -1,6 +1,6 @@
 @extends('layouts.technician') {{-- Fixed layout inheritance --}}
 
-@section('title', 'CROPSENSE AI • Verified Documents')
+@section('title', 'RICEGUARD AI • Verified Documents')
 
 @section('content')
 <style>

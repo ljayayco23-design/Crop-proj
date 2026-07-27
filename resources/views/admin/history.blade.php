@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'CROPSENSE AI • Detection History')
+@section('title', 'RICEGUARD AI • Detection History')
 
 @section('content')
 <div class="container-fluid">
@@ -11,6 +11,17 @@
         </div>
     </div>
 
+    @php
+        // Severity Map matching the farmer side implementation
+        $severityMap = [
+            'healthy_rice_plant' => 0, 'bacterial_leaf_blight' => 60, 'leaf_blast' => 80, 
+            'rice_false_smut' => 30, 'sheath_blight' => 40, 'tungro_virus' => 85, 
+            'brown_planthopper' => 90, 'leaf_folders' => 20, 'leafhopper' => 30, 
+            'rice_bug' => 80, 'rice_gall_midge' => 40, 'rice_leaf_roller' => 20, 
+            'rice_stem_borer' => 30, 'snail' => 75
+        ];
+    @endphp
+
     <div class="card bg-dark border border-secondary shadow-sm">
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -20,6 +31,7 @@
                             <th class="text-secondary">Date & Time</th>
                             <th class="text-secondary">Farmer</th>
                             <th class="text-secondary">Detection Result</th>
+                            <th class="text-secondary">Severity</th>
                             <th class="text-secondary">Confidence</th>
                             <th class="text-secondary text-end">Action</th>
                         </tr>
@@ -42,6 +54,18 @@
                                         $processedImg = asset($history->image_url);
                                     }
                                 }
+
+                                // Calculate Severity Value and Badge Color
+                                $cKey = $history->class_key ?? str_replace(' ', '_', strtolower($history->readable_name));
+                                $severityVal = $severityMap[$cKey] ?? 'N/A';
+                                
+                                $sevColor = 'bg-secondary text-light';
+                                if($severityVal === 0) $sevColor = 'bg-success text-white';
+                                elseif($severityVal !== 'N/A' && $severityVal <= 30) $sevColor = 'bg-info text-dark';
+                                elseif($severityVal !== 'N/A' && $severityVal <= 50) $sevColor = 'bg-warning text-dark';
+                                elseif($severityVal !== 'N/A' && $severityVal > 50) $sevColor = 'bg-danger text-white';
+                                
+                                $severityDisplay = $severityVal !== 'N/A' ? $severityVal . '%' : 'N/A';
                             @endphp
                             <tr>
                                 <td>{{ \Carbon\Carbon::parse($history->created_at ?? now())->format('M d, Y h:i A') }}</td>
@@ -50,6 +74,9 @@
                                     <small class="text-secondary">{{ $history->user_email ?? 'No email' }}</small>
                                 </td>
                                 <td><span class="badge bg-primary">{{ $history->readable_name ?? 'N/A' }}</span></td>
+                                <td>
+                                    <span class="badge {{ $sevColor }}">{{ $severityDisplay }}</span>
+                                </td>
                                 <td>{{ $history->confidence ?? 0 }}%</td>
                                 <td class="text-end">
                                     <button class="btn btn-sm btn-info text-dark fw-bold shadow-sm" 
@@ -58,7 +85,8 @@
                                             '{{ addslashes($history->readable_name ?? 'N/A') }}',
                                             '{{ $history->confidence ?? 0 }}%',
                                             '{{ \Carbon\Carbon::parse($history->created_at ?? now())->format('F j, Y h:i A') }}',
-                                            '{{ addslashes($processedImg) }}'
+                                            '{{ addslashes($processedImg) }}',
+                                            `<span class='badge {{ $sevColor }}'>{{ $severityDisplay }}</span>`
                                         )">
                                         <i class="fas fa-eye me-1"></i> View
                                     </button>
@@ -66,7 +94,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="text-center py-5 text-secondary">
+                                <td colspan="6" class="text-center py-5 text-secondary">
                                     <i class="fas fa-history fs-1 mb-3 opacity-50"></i>
                                     <br>No detection history found.
                                 </td>
@@ -105,6 +133,10 @@
                         <span id="modalDiagnosis" class="fw-bold text-primary text-end"></span>
                     </div>
                     <div class="d-flex justify-content-between border-bottom border-secondary pb-2 mb-2">
+                        <span class="text-secondary">Severity Level</span>
+                        <span id="modalSeverity" class="fw-bold text-end"></span>
+                    </div>
+                    <div class="d-flex justify-content-between border-bottom border-secondary pb-2 mb-2">
                         <span class="text-secondary">Confidence Score</span>
                         <span id="modalConfidence" class="fw-bold text-success text-end"></span>
                     </div>
@@ -125,10 +157,11 @@
 
 @section('scripts')
 <script>
-function viewDetection(farmer, diagnosis, confidence, date, imageUrl) {
-    // 1. Fill the text data
+function viewDetection(farmer, diagnosis, confidence, date, imageUrl, severityHtml) {
+    // 1. Fill the text and HTML data
     document.getElementById('modalFarmer').innerText = farmer;
     document.getElementById('modalDiagnosis').innerText = diagnosis;
+    document.getElementById('modalSeverity').innerHTML = severityHtml;
     document.getElementById('modalConfidence').innerText = confidence;
     document.getElementById('modalDate').innerText = date;
 

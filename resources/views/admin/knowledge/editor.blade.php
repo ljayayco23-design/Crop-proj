@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', isset($record) ? 'Edit Knowledge Entry • CROPSENSE AI' : 'Knowledge Editor • CROPSENSE AI')
+@section('title', isset($record) ? 'Edit Knowledge Entry • RICEGUARD AI' : 'Knowledge Editor • RICEGUARD AI')
 
 @section('content')
 <div class="row mb-4">

@@ -1,6 +1,6 @@
 @extends('layouts.farmer')
 
-@section('title', 'Live Camera • CROPSENSE AI')
+@section('title', 'Live Camera • RICEGUARD AI')
 
 @section('content')
 <style>
@@ -9,7 +9,7 @@
 
 <div class="page-header mb-4">
     <div class="page-header-title">
-        <h4 class="m-b-10 fw-bold">Live Camera • CROPSENSE AI</h4>
+        <h4 class="m-b-10 fw-bold">Live Camera • RICEGUARD AI</h4>
     </div>
 </div>
 

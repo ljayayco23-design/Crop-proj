@@ -1,5 +1,5 @@
 @extends('layouts.farmer')
-@section('title', 'Farmer Dashboard • CROPSENSE AI')
+@section('title', 'Farmer Dashboard • RICEGUARD AI')
 
 @php
     $user = Auth::user();
@@ -40,7 +40,7 @@
 </style>
 
 <div class="page-header mb-4">
-    <h4 class="fw-bold text-white mb-1">🌾 CROPSENSE AI Dashboard</h4>
+    <h4 class="fw-bold text-white mb-1">🌾 RICEGUARD AI Dashboard</h4>
     <p class="text-secondary mb-0">Welcome back, {{ $user->full_name }} • Real-time farm overview</p>
 </div>
 
@@ -268,5 +268,33 @@ fetch(`{{ route('farmer.field_map.weather') }}?lat=${farmLat}&lon=${farmLng}`)
     });
 
 setTimeout(() => { dashMap.invalidateSize(); }, 400);
+</script>
+
+<script>
+window.addEventListener('load', () => {
+    // Run the cache warm-up script if online
+    if ('caches' in window && navigator.onLine) {
+        const offlinePages = [
+            "{{ route('farmer.dashboard') }}",
+            "{{ route('farmer.announcement') }}",
+            "{{ route('farmer.camera') }}",
+            "{{ route('farmer.detection') }}",
+            "{{ route('farmer.history') }}",
+            "{{ route('farmer.live_com') }}",
+            "{{ route('farmer.field_map') }}"
+        ];
+
+        caches.open('cropsense-offline-v4').then(cache => {
+            offlinePages.forEach(page => {
+                fetch(page).then(response => {
+                    if(response.ok) {
+                        cache.put(page, response);
+                    }
+                }).catch(err => console.warn('Failed to cache page:', page));
+            });
+            console.log('[SW] Offline cache successfully warmed up from Dashboard!');
+        });
+    }
+});
 </script>
 @endsection

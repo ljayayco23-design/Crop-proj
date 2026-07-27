@@ -221,7 +221,7 @@ class FarmerHistoryController extends Controller
         return response()->json(['success' => false]);
     }
 
-public function analyzeImageWithGroq(Request $request)
+    public function analyzeImageWithGroq(Request $request)
     {
         ini_set('max_execution_time', 120);
         ini_set('memory_limit', '256M');
@@ -245,8 +245,13 @@ public function analyzeImageWithGroq(Request $request)
         $diseaseKeys = implode(", ", ['healthy_rice_plant', 'bacterial_leaf_blight', 'leaf_blast', 'rice_false_smut', 'sheath_blight', 'tungro_virus']);
         $pestKeys = implode(", ", ['brown_planthopper', 'leaf_folders', 'leafhopper', 'rice_bug', 'rice_gall_midge', 'rice_leaf_roller', 'rice_stem_borer', 'snail']);
 
-        $prompt = "You are an expert agronomist. Analyze this rice plant image. 
-        You MUST output ONLY a valid JSON object. Do not add any introductory text.
+$prompt = "You are an expert senior agronomist and crop pathologist. Perform a rigorous, detail-oriented visual analysis of this rice plant image. Look closely at specific symptoms visible in the photo—such as lesion shapes, color gradients, chlorosis, necrosis, pest markings, or tissue damage—and base your diagnosis directly on these visual markers.
+        
+        You MUST output ONLY a valid JSON object. 
+
+        CRITICAL INSTRUCTION: DO NOT use <think> tags. DO NOT output any reasoning, thinking, or step-by-step logic. Start your response immediately with the '{' character.
+        
+        CRITICAL CONTENT & LENGTH RULE: Provide high-grade, practical agronomic information. Make the text for 'description', 'treatments', 'causes', 'prevention', etc., concise yet comprehensive, limited strictly to 2 to 3 information-dense sentences each to prevent token overflow. Ensure the description specifically references what is visibly happening in the plant photo.
 
         CRITICAL LANGUAGE RULE:
         You MUST generate the content values for 'description', 'treatments', 'causes', 'nutrient_deficiency', 'grain_damage', 'prevention', and 'natural_enemies' strictly in the {$language} language. The JSON keys themselves MUST remain in English.
@@ -270,41 +275,56 @@ public function analyzeImageWithGroq(Request $request)
             \"grain_damage\": \"string\",
             \"natural_enemies\": \"string\",
             \"prevention\": \"string\"
-            
         }";
 
         try {
-            $response = Http::withoutVerifying()
+$response = Http::withoutVerifying()
                 ->withHeaders([
                     'Authorization' => 'Bearer ' . $apiKey,
                     'Content-Type' => 'application/json',
                 ])
                 ->timeout(60)
                 ->post('https://api.groq.com/openai/v1/chat/completions', [
-                    'model' => 'meta-llama/llama-4-scout-17b-16e-instruct',
+                    'model' => 'qwen/qwen3.6-27b', 
                     'messages' => [
                         [
                             'role' => 'user',
                             'content' => [
-                                ['type' => 'text', 'text' => $prompt],
-                                ['type' => 'image_url', 'image_url' => ['url' => $base64Image]]
+                                [
+                                    'type' => 'text', 
+                                    'text' => $prompt . "\n\nCRITICAL: Return ONLY raw, valid JSON. Do not wrap the response in markdown code blocks like ```json."
+                                ],
+                                [
+                                    'type' => 'image_url', 
+                                    'image_url' => ['url' => $base64Image]
+                                ]
                             ]
                         ]
                     ],
-                    'temperature' => 0.0,
-                    'max_tokens' => 800,
+                    'temperature' => 0.0, 
+                    'max_tokens' => 1024, 
+                    'response_format' => ['type' => 'json_object'],
+                    'reasoning_effort' => 'none', // 🚨 Disables Qwen's thinking mode to pass JSON validation
                 ]);
-
-            if ($response->successful()) {
+                
+                if ($response->successful()) {
                 $jsonData = $response->json();
                 
                 if (isset($jsonData['choices'][0]['message']['content'])) {
                     $content = $jsonData['choices'][0]['message']['content'];
                     
-                    if (preg_match('/\{.*\}/s', $content, $matches)) {
+                    // BULLETPROOFING: Forcefully remove any <think> blocks if the model ignores the prompt
+                    $content = preg_replace('/<think>.*?<\/think>/s', '', $content);
+                    
+                    // Clean markdown formatting if the AI wraps it in ```json ... ```
+                    $content = str_replace(['```json', '```'], '', $content);
+                    
+                    // Match ONLY from the first '{' to the last '}'
+                    if (preg_match('/\{.*\}/s', trim($content), $matches)) {
                         $jsonString = $matches[0];
                         $parsedData = json_decode($jsonString, true);
 
+                        // If it parses cleanly, return the success payload
                         if (json_last_error() === JSON_ERROR_NONE && isset($parsedData['class_key'])) {
                             return response()->json(['success' => true, 'data' => $parsedData]);
                         }
@@ -312,17 +332,31 @@ public function analyzeImageWithGroq(Request $request)
                 }
             }
             
+// ... (Inside the try block, right after the if($response->successful()) block) ...
+
+            // 🚨 ENHANCED ERROR HANDLING: Extract the exact Groq error message
+            $errorData = $response->json();
+            $exactGroqError = 'Unknown Groq Error';
+            
+            if (isset($errorData['error']['message'])) {
+                $exactGroqError = $errorData['error']['message'];
+            } elseif (isset($errorData['error'])) {
+                $exactGroqError = is_string($errorData['error']) ? $errorData['error'] : json_encode($errorData['error']);
+            }
+
             return response()->json([
                 'success' => false, 
-                'message' => 'Groq API Error or Invalid Response',
-                'debug_info' => $response->json()
+                'message' => 'Groq API Error: ' . $exactGroqError,
+                'status_code' => $response->status(),
+                'debug_info' => $errorData
             ]);
 
         // Catch Throwable to prevent fatal TypeErrors from breaking the JSON response
         } catch (\Throwable $e) { 
             return response()->json([
                 'success' => false, 
-                'message' => 'Server Error: ' . $e->getMessage()
+                'message' => 'Server Error: ' . $e->getMessage(),
+                'line' => $e->getLine()
             ]);
         }
     }
