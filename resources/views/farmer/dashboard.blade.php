@@ -273,9 +273,7 @@ setTimeout(() => { dashMap.invalidateSize(); }, 400);
 <script>
 window.addEventListener('load', () => {
     if ('caches' in window && navigator.onLine) {
-        // Include assets and models alongside your HTML routes
         const offlineResources = [
-            // HTML Pages
             "{{ route('farmer.dashboard') }}",
             "{{ route('farmer.announcement') }}",
             "{{ route('farmer.camera') }}",
@@ -283,28 +281,22 @@ window.addEventListener('load', () => {
             "{{ route('farmer.history') }}",
             "{{ route('farmer.live_com') }}",
             "{{ route('farmer.field_map') }}",
-            
-            // AI Models (Crucial for offline fallback detection)
-            "{{ asset('model/model.json') }}",
-            "{{ asset('model/metadata.json') }}",
-            "{{ asset('model/weights.bin') }}", // Ensure you add your weights file here
-            
-            // External Libraries (TensorFlow & Teachable Machine)
-            "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js",
-            "https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js",
-            "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
-            "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            "/model/model.json",
+            "/model/metadata.json",
+            "/model/weights.bin"
         ];
 
         caches.open('cropsense-offline-v4').then(cache => {
             offlineResources.forEach(resource => {
-                fetch(resource, { mode: 'no-cors' }).then(response => {
-                    if(response.ok || response.type === 'opaque') {
-                        cache.put(resource, response);
-                    }
-                }).catch(err => console.warn('Failed to cache resource:', resource));
+                // Fetch WITHOUT mode: 'no-cors' so session credentials are sent
+                fetch(resource)
+                    .then(response => {
+                        if (response.ok) {
+                            cache.put(resource, response);
+                        }
+                    })
+                    .catch(err => console.warn('[SW Warmup] Failed:', resource));
             });
-            console.log('[SW] Offline cache successfully warmed up from Dashboard!');
         });
     }
 });

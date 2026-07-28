@@ -51,24 +51,45 @@ self.addEventListener('activate', (event) => {
 });
 
 // ==================== FETCH EVENT ====================
+// ==================== FETCH EVENT ====================
 self.addEventListener('fetch', (event) => {
     // Check if the request is for an HTML page (Navigation)
     if (event.request.mode === 'navigate') {
         event.respondWith(
             fetch(event.request)
-                .catch(() => {
-                    // If network fails, serve from cache
-                    return caches.match(event.request).then((cachedResponse) => {
-                        if (cachedResponse) {
-                            return cachedResponse;
-                        }
-                        // Optional: Return a generic offline page if the specific page isn't cached
-                        // return caches.match('/offline.html'); 
-                    });
+                .then((networkResponse) => {
+                    // ONLINE: Save a fresh copy of every page visited to cache
+                    if (networkResponse.status === 200) {
+                        const responseClone = networkResponse.clone();
+                        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+                    }
+                    return networkResponse;
+                })
+                .catch(async () => {
+                    // OFFLINE: Try exact URL match
+                    let cachedResponse = await caches.match(event.request);
+                    
+                    // Fallback: Try match ignoring search parameters
+                    if (!cachedResponse) {
+                        cachedResponse = await caches.match(event.request, { ignoreSearch: true });
+                    }
+                    
+                    // Fallback: Try matching by path name directly
+                    if (!cachedResponse) {
+                        const url = new URL(event.request.url);
+                        cachedResponse = await caches.match(url.pathname);
+                    }
+
+                    // Fallback: Default to Dashboard if detection page isn't cached yet
+                    if (!cachedResponse) {
+                        cachedResponse = await caches.match('/farmer/dashboard');
+                    }
+
+                    return cachedResponse;
                 })
         );
     } else {
-        // For assets (CSS, JS, Images, Models) - Cache First, fallback to Network
+        // Assets (CSS, JS, Models) - Cache First, fallback to Network
         event.respondWith(
             caches.match(event.request).then((cachedResponse) => {
                 return cachedResponse || fetch(event.request).then((fetchResponse) => {
