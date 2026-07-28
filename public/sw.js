@@ -6,7 +6,7 @@ const PRECACHE_ASSETS = [
     // AI Model Assets
     '/model/model.json',
     '/model/metadata.json',
-    '/weights.bin.json',
+    '/model/weights.bin',
 
 // External CSS
     'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css',
@@ -52,80 +52,32 @@ self.addEventListener('activate', (event) => {
 
 // ==================== FETCH EVENT ====================
 self.addEventListener('fetch', (event) => {
-    if (event.request.method !== 'GET') return;
-
-    // 1. PAGE NAVIGATION STRATEGY (HTML pages)
-    if (event.request.mode === 'navigate' || event.request.headers.get('accept')?.includes('text/html')) {
+    // Check if the request is for an HTML page (Navigation)
+    if (event.request.mode === 'navigate') {
         event.respondWith(
             fetch(event.request)
-                .then((networkResponse) => {
-                    // Dynamically cache visited pages when online
-                    if (networkResponse && networkResponse.status === 200) {
-                        const responseToCache = networkResponse.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
-                    }
-                    return networkResponse;
-                })
                 .catch(() => {
-                    // Added { ignoreSearch: true } to prevent URL parameters from breaking the cache match
-                    return caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
-                        if (cachedResponse) return cachedResponse;
-
-                        // Fallback 1: Try to serve the dashboard if exact page isn't cached
-                        return caches.match('/farmer/dashboard', { ignoreSearch: true }).then((dashboardResponse) => {
-                            if (dashboardResponse) return dashboardResponse;
-
-                            // Fallback 2: Ultimate Inline Fallback (Kills the Dino Game)
-                            return new Response(`
-                                <!DOCTYPE html>
-                                <html lang="en">
-                                <head>
-                                    <meta charset="UTF-8">
-                                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                                    <title>Offline | CROPSENSE AI</title>
-                                    <style>
-                                        body { background-color: #0e1116; color: white; font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
-                                        h2 { color: #10b981; margin-bottom: 10px; }
-                                        p { color: #94a3b8; margin-bottom: 25px; max-width: 80%; }
-                                        button { background-color: #10b981; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; margin: 5px; }
-                                    </style>
-                                </head>
-                                <body>
-                                    <h2>🌾 CROPSENSE AI is Offline</h2>
-                                    <p>You are currently offline, and this specific page hasn't been synced to your device yet.</p>
-                                    <div>
-                                        <button onclick="window.history.back()">Go Back</button>
-                                        <button onclick="location.reload()" style="background-color: #3b82f6;">Try Again</button>
-                                    </div>
-                                </body>
-                                </html>
-                            `, {
-                                status: 200,
-                                headers: { 'Content-Type': 'text/html' }
-                            });
-                        });
+                    // If network fails, serve from cache
+                    return caches.match(event.request).then((cachedResponse) => {
+                        if (cachedResponse) {
+                            return cachedResponse;
+                        }
+                        // Optional: Return a generic offline page if the specific page isn't cached
+                        // return caches.match('/offline.html'); 
                     });
                 })
         );
-        return;
-    }
-
-    // 2. STATIC ASSETS STRATEGY (CSS, JS, Images, CDNs)
-    event.respondWith(
-        caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
-            if (cachedResponse) return cachedResponse;
-
-            return fetch(event.request)
-                .then((networkResponse) => {
-                    if (networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque')) {
-                        const responseToCache = networkResponse.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
-                    }
-                    return networkResponse;
-                })
-                .catch((err) => {
-                    console.warn('[SW Offline] Could not retrieve asset:', event.request.url);
+    } else {
+        // For assets (CSS, JS, Images, Models) - Cache First, fallback to Network
+        event.respondWith(
+            caches.match(event.request).then((cachedResponse) => {
+                return cachedResponse || fetch(event.request).then((fetchResponse) => {
+                    return caches.open(CACHE_NAME).then((cache) => {
+                        cache.put(event.request, fetchResponse.clone());
+                        return fetchResponse;
+                    });
                 });
-        })
-    );
+            })
+        );
+    }
 });
