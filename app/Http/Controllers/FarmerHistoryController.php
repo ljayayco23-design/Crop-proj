@@ -245,9 +245,21 @@ class FarmerHistoryController extends Controller
         $diseaseKeys = implode(", ", ['healthy_rice_plant', 'bacterial_leaf_blight', 'leaf_blast', 'rice_false_smut', 'sheath_blight', 'tungro_virus']);
         $pestKeys = implode(", ", ['brown_planthopper', 'leaf_folders', 'leafhopper', 'rice_bug', 'rice_gall_midge', 'rice_leaf_roller', 'rice_stem_borer', 'snail']);
 
-$prompt = "You are an expert senior agronomist and crop pathologist. Perform a rigorous, detail-oriented visual analysis of this rice plant image. Look closely at specific symptoms visible in the photo—such as lesion shapes, color gradients, chlorosis, necrosis, pest markings, or tissue damage—and base your diagnosis directly on these visual markers.
-        
-        You MUST output ONLY a valid JSON object. 
+$prompt = "You are an expert senior agronomist and crop pathologist. Perform a rigorous, detail-oriented visual analysis of the provided image.
+
+        CRITICAL REJECTION RULE (NON-PADDY IMAGES):
+        First, verify if the image actually contains a rice (paddy) plant, rice disease, or rice pest. If the image is unrelated (e.g., human faces, animals, vehicles, landscapes, different crops, or random objects), you MUST reject it by outputting exactly this:
+        - \"class_name\": \"Unrelated Image\"
+        - \"class_key\": \"\" (You MUST leave this strictly empty)
+        - \"is_pest\": false
+        - \"severity_label\": \"UNKNOWN\"
+        - \"severity_message\": \"Cannot determine severity on a non-rice image.\"
+        - \"description\": \"The uploaded image does not appear to be a rice plant, disease, or pest. Please upload a clear photo of a rice leaf, stem, or paddy field.\"
+        - Set \"treatments\", \"causes\", \"nutrient_deficiency\", \"grain_damage\", \"natural_enemies\", and \"prevention\" to \"—\".
+        - Set \"confidence\" and \"severity_percent\" to 0.
+
+        DIAGNOSIS RULE (RICE IMAGES):
+        If it IS a rice plant, carefully analyze precise visual markers: lesion shapes, color gradients (e.g., chlorosis, necrosis), pest bite marks, frass, or structural tissue damage. Provide a highly accurate, reality-based diagnosis focused strictly on what is physically visible in the photo.
 
         CRITICAL INSTRUCTION: DO NOT use <think> tags. DO NOT output any reasoning, thinking, or step-by-step logic. Start your response immediately with the '{' character.
         
@@ -264,7 +276,7 @@ $prompt = "You are an expert senior agronomist and crop pathologist. Perform a r
             \"class_name\": \"string\",
             \"class_key\": \"string\",
             \"is_pest\": boolean,
-            \"confidence\": integer (65-100),
+            \"confidence\": integer (0-100),
             \"severity_label\": \"HEALTHY, LOW, MODERATE, SEVERE, or UNKNOWN\",
             \"severity_message\": \"string\",
             \"severity_percent\": integer (0-100),
@@ -276,7 +288,7 @@ $prompt = "You are an expert senior agronomist and crop pathologist. Perform a r
             \"natural_enemies\": \"string\",
             \"prevention\": \"string\"
         }";
-
+        
         try {
 $response = Http::withoutVerifying()
                 ->withHeaders([
