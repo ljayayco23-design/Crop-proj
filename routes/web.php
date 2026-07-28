@@ -14,6 +14,14 @@ use App\Http\Controllers\FieldMapController; // ✅ Added New Field Map Controll
 use Illuminate\Support\Facades\Artisan;
 use App\Http\Controllers\FarmerChatController; // Or your current controller
 
+// Force Laravel to serve the Service Worker as a static JavaScript file
+Route::get('/sw.js', function () {
+    return response()->file(public_path('sw.js'), [
+        'Content-Type' => 'application/javascript',
+        'Cache-Control' => 'no-cache, no-store, must-revalidate'
+    ]);
+});
+
 Route::post('/farmer/chat-query', [FarmerChatController::class, 'handleChat'])->name('farmer.chat.query');
 
 
