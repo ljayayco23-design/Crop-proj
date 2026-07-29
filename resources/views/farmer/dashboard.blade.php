@@ -270,66 +270,98 @@ fetch(`{{ route('farmer.field_map.weather') }}?lat=${farmLat}&lon=${farmLng}`)
 setTimeout(() => { dashMap.invalidateSize(); }, 400);
 </script>
 
-<script>
 
-    // 1. Initialize System Readiness Checker
-window.isSystemReady = false;
+
+<script>
+// 1. Initialize System Readiness Checker based on current connection
+window.isSystemReady = navigator.onLine ? false : true;
 
 // 2. Intercept Logout attempts before the system is fully ready
 document.addEventListener('click', function(e) {
-    // Find if the clicked element is an anchor, form, or button
     const target = e.target.closest('a, form, button');
     
     if (target && !window.isSystemReady) {
-        // Check if the action relates to logging out (by checking href, form action, or ID)
         const isLogoutAction = (target.href && target.href.toLowerCase().includes('logout')) || 
                                (target.action && target.action.toLowerCase().includes('logout')) ||
                                (target.id && target.id.toLowerCase().includes('logout'));
         
         if (isLogoutAction) {
-            e.preventDefault(); // Stop the logout process
-            alert("⏳ The system is not ready yet. Please wait a few seconds while we sync your offline data.");
+            e.preventDefault();
+            alert("⏳ The system is syncing data since you just went online. Please wait a few seconds before logging out.");
         }
     }
 });
 
-window.addEventListener('load', () => {
-    if ('caches' in window && navigator.onLine) {
-        const offlineResources = [
-            "{{ route('farmer.dashboard') }}",
-            "{{ route('farmer.announcement') }}",
-            "{{ route('farmer.camera') }}",
-            "{{ route('farmer.detection') }}",
-            "{{ route('farmer.history') }}",
-            "{{ route('farmer.live_com') }}",
-            "{{ route('farmer.field_map') }}",
-            "/model/model.json",
-            "/model/metadata.json",
-            "/model/weights.bin"
-        ];
-
-caches.open('cropsense-offline-v4').then(cache => {
-            // 3. Map all fetch requests to an array of Promises
-            const fetchPromises = offlineResources.map(resource => {
-                return fetch(resource)
-                    .then(response => {
-                        if (response.ok) {
-                            return cache.put(resource, response);
-                        }
-                    })
-                    .catch(err => console.warn('[SW Warmup] Failed:', resource));
-            });
-
-            // 4. Wait for ALL background caching to complete
-            Promise.all(fetchPromises).then(() => {
-                window.isSystemReady = true; // Unlock the system
-                console.log("✅ Offline data synced. System is ready.");
-            });
-        });
-    } else {
-        // If already offline or cache isn't supported, unlock immediately to not trap the user
+// 3. Reusable function to handle caching safely
+function syncOfflineData() {
+    if (!('caches' in window)) {
         window.isSystemReady = true;
+        return;
+    }
+
+    // Instantly lock the system while syncing
+    window.isSystemReady = false; 
+    console.log("🔄 Starting offline data sync...");
+
+    const offlineResources = [
+        // HTML Pages
+        "{{ route('farmer.dashboard') }}",
+        "{{ route('farmer.announcement') }}",
+        "{{ route('farmer.camera') }}",
+        "{{ route('farmer.detection') }}",
+        "{{ route('farmer.history') }}",
+        "{{ route('farmer.live_com') }}",
+        "{{ route('farmer.field_map') }}",
+        
+        // AI Models (Crucial for offline fallback detection)
+        "{{ asset('model/model.json') }}",
+        "{{ asset('model/metadata.json') }}",
+        "{{ asset('model/weights.bin') }}",
+        
+        // External Libraries (TensorFlow & Teachable Machine)
+        "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js",
+        "https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js",
+        "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+        "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    ];
+
+    caches.open('cropsense-offline-v4').then(cache => {
+        const fetchPromises = offlineResources.map(resource => {
+            return fetch(resource)
+                .then(response => {
+                    if (response.ok) {
+                        return cache.put(resource, response);
+                    }
+                })
+                .catch(err => console.warn('[SW Warmup] Failed:', resource));
+        });
+
+        // Wait for ALL background caching to complete
+        Promise.all(fetchPromises).then(() => {
+            window.isSystemReady = true; // Unlock the system
+            console.log("✅ Offline data synced. System is ready.");
+        });
+    });
+}
+
+// 4. Trigger on Page Load
+window.addEventListener('load', () => {
+    if (navigator.onLine) {
+        syncOfflineData();
     }
 });
+
+// 5. Trigger REAL-TIME when the user goes ONLINE
+window.addEventListener('online', () => {
+    console.log("🌐 Connection restored! Re-syncing data...");
+    syncOfflineData(); // This instantly locks logout and runs the sync
+});
+
+// 6. Trigger REAL-TIME when the user goes OFFLINE
+window.addEventListener('offline', () => {
+    console.log("⚠️ Connection lost. Switching to offline mode.");
+    window.isSystemReady = true; // Instantly unlock so offline features (like offline logout) work normally
+});
 </script>
+
 @endsection
