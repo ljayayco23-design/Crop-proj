@@ -9,7 +9,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 
-
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -32,25 +31,24 @@
         .dropdown-item:hover { background: rgba(255,255,255,0.08) !important; color: white !important; }
         
        .floating-panel {
-    position: fixed; 
-    top: 0; 
-    right: -550px; 
-    width: 100%;             /* Allow it to be fully flexible */
-    max-width: 480px;        /* Cap the size on desktop */
-    height: 100vh;
-    background: rgba(30,41,59,0.98); 
-    backdrop-filter: blur(30px); 
-    border-left: 1px solid #334155;
-    transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
-    z-index: 1200; 
-    overflow-y: auto; 
-    padding: 32px;
-}
+            position: fixed; 
+            top: 0; 
+            right: -550px; 
+            width: 100%;             
+            max-width: 480px;        
+            height: 100vh;
+            background: rgba(30,41,59,0.98); 
+            backdrop-filter: blur(30px); 
+            border-left: 1px solid #334155;
+            transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
+            z-index: 1200; 
+            overflow-y: auto; 
+            padding: 32px;
+        }
 
-/* Add a media query at the bottom of your <style> block for small phones */
-@media (max-width: 576px) {
-    .floating-panel { padding: 20px; }
-}
+        @media (max-width: 576px) {
+            .floating-panel { padding: 20px; }
+        }
 
         .floating-panel.show { right: 0; box-shadow: -30px 0 80px rgba(0,0,0,0.6); }
         .profile-photo { width: 140px; height: 140px; object-fit: cover; border: 5px solid rgba(59,130,246,0.5); border-radius: 50%; }
@@ -59,6 +57,21 @@
         .prodigy-card:hover { transform: translateY(-5px); box-shadow: 0 20px 40px -10px rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.5); }
         
         .prodigy-label { color: #94a3b8; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem; }
+
+        /* --- Mobile Floating Sidebar --- */
+        @media (max-width: 768px) {
+            .sidebar-container {
+                left: -250px; 
+                box-shadow: 4px 0 15px rgba(0,0,0,0.5);
+            }
+            .content-area {
+                margin-left: 0 !important; 
+                width: 100%;
+            }
+            body.sidebar-open .sidebar-container {
+                left: 0;
+            }
+        }
     </style>
 </head>
 <body data-bs-theme="dark">
@@ -67,14 +80,12 @@
     $user = Auth::user();
     $userFullName = $user->full_name ?? $user->name ?? 'Admin';
     
-    // Check if profile_photo exists. Since it's a Base64 string, we use it directly!
     if (!empty($user->profile_photo)) {
         $admin_pic = $user->profile_photo;
     } else {
         $admin_pic = 'https://ui-avatars.com/api/?name=' . urlencode($userFullName) . '&background=3b82f6&color=fff&size=140&bold=true';
     }
         
-        // Notifications
         $pending_approvals = 0;
         try {
             $pending_approvals = \App\Models\User::where('role', 'farmer')->where('status', 'pending')->count();
@@ -90,7 +101,8 @@
 
     <div class="content-area">
         <nav class="main-header navbar navbar-expand navbar-dark px-4 shadow-sm">
-            <button onclick="document.body.classList.toggle('sidebar-collapsed')" class="btn btn-link text-white p-0 me-4">
+            <!-- Updated Toggle Button -->
+            <button onclick="toggleSidebar()" class="btn btn-link text-white p-0 me-4">
                 <i class="fas fa-bars fs-5"></i>
             </button>
             <ul class="navbar-nav ms-auto d-flex align-items-center gap-3">
@@ -214,6 +226,27 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+    // --- Smarter Toggle Function (handles Desktop & Mobile) ---
+    function toggleSidebar() {
+        if (window.innerWidth <= 768) {
+            document.body.classList.toggle('sidebar-open');
+        } else {
+            document.body.classList.toggle('sidebar-collapsed');
+        }
+    }
+
+    // --- Click Outside to Close (Mobile Only) ---
+    document.addEventListener('click', function(event) {
+        if (window.innerWidth <= 768 && document.body.classList.contains('sidebar-open')) {
+            const sidebar = document.querySelector('.sidebar-container');
+            const menuBtn = document.querySelector('.fa-bars').closest('button, a'); 
+            
+            if (!sidebar.contains(event.target) && (!menuBtn || !menuBtn.contains(event.target))) {
+                document.body.classList.remove('sidebar-open');
+            }
+        }
+    });
+
     // --- 1. Tab Switching Logic ---
     function showProfilePanel(tab) { 
         document.getElementById('floatingPanel').classList.add('show'); 
@@ -244,60 +277,58 @@
     });
 
     // --- 3. Smarter Save Function ---
-async function saveProfile(formId) {
-    const form = document.getElementById(formId);
-    const formData = new FormData(form);
-    const btn = form.querySelector('button[type="button"]');
-    const originalText = btn.innerHTML;
-    
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-    btn.disabled = true;
+    async function saveProfile(formId) {
+        const form = document.getElementById(formId);
+        const formData = new FormData(form);
+        const btn = form.querySelector('button[type="button"]');
+        const originalText = btn.innerHTML;
+        
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        btn.disabled = true;
 
-    try {
-        const res = await fetch(form.action, { 
-            method: 'POST', 
-            body: formData,
-            headers: { 
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json' 
-            }
-        });
-
-        const data = await res.json();
-
-        if (res.ok) { 
-            alert(data.message || 'Profile updated successfully!'); 
-            
-            // Instantly update UI with the Base64 string from TiDB
-            if(data.user) {
-                const newPic = data.user.profile_photo_url;
-                document.getElementById('navbar-profile-pic').src = newPic;
-                document.getElementById('dropdown-profile-pic').src = newPic;
-                document.getElementById('profile-pic').src = newPic;
-                document.getElementById('dropdown-user-name').innerText = data.user.full_name;
-            }
-        } else {
-            if (res.status === 422 && data.errors) {
-                let errorMsg = 'Could not save. Please fix these errors:\n\n';
-                for (const key in data.errors) {
-                    errorMsg += `- ${data.errors[key][0]}\n`;
+        try {
+            const res = await fetch(form.action, { 
+                method: 'POST', 
+                body: formData,
+                headers: { 
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json' 
                 }
-                alert(errorMsg);
+            });
+
+            const data = await res.json();
+
+            if (res.ok) { 
+                alert(data.message || 'Profile updated successfully!'); 
+                
+                // Instantly update UI with the Base64 string from TiDB
+                if(data.user) {
+                    const newPic = data.user.profile_photo_url;
+                    document.getElementById('navbar-profile-pic').src = newPic;
+                    document.getElementById('dropdown-profile-pic').src = newPic;
+                    document.getElementById('profile-pic').src = newPic;
+                    document.getElementById('dropdown-user-name').innerText = data.user.full_name;
+                }
             } else {
-                alert(data.message || 'Failed to update. Server error occurred.');
+                if (res.status === 422 && data.errors) {
+                    let errorMsg = 'Could not save. Please fix these errors:\n\n';
+                    for (const key in data.errors) {
+                        errorMsg += `- ${data.errors[key][0]}\n`;
+                    }
+                    alert(errorMsg);
+                } else {
+                    alert(data.message || 'Failed to update. Server error occurred.');
+                }
             }
+        } catch(e) { 
+            console.error("Save Error:", e);
+            alert('A network error occurred. Please try again.');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
         }
-    } catch(e) { 
-        console.error("Save Error:", e);
-        alert('A network error occurred. Please try again.');
-    } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
     }
-}
-
-
-</script>
+    </script>
     
     @yield('scripts')
 
@@ -309,6 +340,6 @@ async function saveProfile(formId) {
             window.location.reload();
         }
     });
-</script>
+    </script>
 </body>
 </html>

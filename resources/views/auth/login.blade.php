@@ -44,7 +44,7 @@
                 </a>
             </div>
 
-            <button type="submit" 
+            <button type="submit" id="loginSubmitBtn"
                     class="w-full py-4 bg-emerald-600 hover:bg-emerald-700 rounded-3xl font-semibold text-lg transition-all">
                 Mag-login
             </button>
@@ -560,6 +560,20 @@ function updateFormDisplay() {
             hideForgotModal();
         }
     });
+    // --- Login Button Double-Click Prevention ---
+    const loginForm = document.getElementById('loginForm');
+    const loginSubmitBtn = document.getElementById('loginSubmitBtn');
+
+    if (loginForm && loginSubmitBtn) {
+        loginForm.addEventListener('submit', function() {
+            // Only disable if the HTML5 validation passes
+            if (loginForm.checkValidity()) {
+                loginSubmitBtn.disabled = true;
+                loginSubmitBtn.innerText = "Processing...";
+                loginSubmitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        });
+    }
 </script>
 @endsection
 
