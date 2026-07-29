@@ -276,28 +276,6 @@ setTimeout(() => { dashMap.invalidateSize(); }, 400);
 // 1. Initialize System Readiness Checker based on current connection
 window.isSystemReady = navigator.onLine ? false : true;
 
-// 2. Direct Form Interception for Logout (Bulletproof)
-document.addEventListener('DOMContentLoaded', () => {
-    initChat();
-
-    const logoutForm = document.getElementById('logout-form');
-    if (logoutForm) {
-        logoutForm.addEventListener('submit', function (e) {
-            // If online, but background sync is still running
-            if (navigator.onLine && !window.isSystemReady) {
-                e.preventDefault();
-                alert("⏳ The system is syncing data since you just went online. Please wait a few seconds before logging out.");
-                return;
-            }
-            
-            // If offline
-            if (!navigator.onLine) {
-                e.preventDefault();
-                alert("📡 You are currently offline. Please reconnect to the internet to log out securely.");
-            }
-        });
-    }
-});
 
 // 3. Reusable function to handle caching safely
 function syncOfflineData() {

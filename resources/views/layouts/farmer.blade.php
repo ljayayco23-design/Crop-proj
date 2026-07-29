@@ -488,19 +488,27 @@
         container.scrollTop = container.scrollHeight;
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
-        initChat();
+document.addEventListener('DOMContentLoaded', () => {
+    initChat();
 
-        const logoutForm = document.getElementById('logout-form');
-        if (logoutForm) {
-            logoutForm.addEventListener('submit', function (e) {
-                if (!navigator.onLine) {
-                    e.preventDefault();
-                    alert("📡 You are currently offline. Please reconnect to the internet to log out securely.");
-                }
-            });
-        }
-    });
+    const logoutForm = document.getElementById('logout-form');
+    if (logoutForm) {
+        logoutForm.addEventListener('submit', function (e) {
+            // If online, but background sync is still running
+            if (navigator.onLine && typeof window.isSystemReady !== 'undefined' && !window.isSystemReady) {
+                e.preventDefault();
+                alert("⏳ The system is syncing data since you just went online. Please wait a few seconds before logging out.");
+                return;
+            }
+            
+            // If offline
+            if (!navigator.onLine) {
+                e.preventDefault();
+                alert("📡 You are currently offline. Please reconnect to the internet to log out securely.");
+            }
+        });
+    }
+});
 
     window.addEventListener('load', () => {
         if ('serviceWorker' in navigator) {
