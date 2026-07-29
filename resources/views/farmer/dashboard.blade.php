@@ -271,6 +271,28 @@ setTimeout(() => { dashMap.invalidateSize(); }, 400);
 </script>
 
 <script>
+
+    // 1. Initialize System Readiness Checker
+window.isSystemReady = false;
+
+// 2. Intercept Logout attempts before the system is fully ready
+document.addEventListener('click', function(e) {
+    // Find if the clicked element is an anchor, form, or button
+    const target = e.target.closest('a, form, button');
+    
+    if (target && !window.isSystemReady) {
+        // Check if the action relates to logging out (by checking href, form action, or ID)
+        const isLogoutAction = (target.href && target.href.toLowerCase().includes('logout')) || 
+                               (target.action && target.action.toLowerCase().includes('logout')) ||
+                               (target.id && target.id.toLowerCase().includes('logout'));
+        
+        if (isLogoutAction) {
+            e.preventDefault(); // Stop the logout process
+            alert("⏳ The system is not ready yet. Please wait a few seconds while we sync your offline data.");
+        }
+    }
+});
+
 window.addEventListener('load', () => {
     if ('caches' in window && navigator.onLine) {
         // Include assets and models alongside your HTML routes
@@ -297,15 +319,26 @@ window.addEventListener('load', () => {
         ];
 
         caches.open('cropsense-offline-v4').then(cache => {
-            offlineResources.forEach(resource => {
-                fetch(resource, { mode: 'no-cors' }).then(response => {
-                    if(response.ok || response.type === 'opaque') {
-                        cache.put(resource, response);
-                    }
-                }).catch(err => console.warn('Failed to cache resource:', resource));
+            // 3. Map all fetch requests to an array of Promises
+            const fetchPromises = offlineResources.map(resource => {
+                return fetch(resource)
+                    .then(response => {
+                        if (response.ok) {
+                            return cache.put(resource, response);
+                        }
+                    })
+                    .catch(err => console.warn('[SW Warmup] Failed:', resource));
             });
-            console.log('[SW] Offline cache successfully warmed up from Dashboard!');
+
+            // 4. Wait for ALL background caching to complete
+            Promise.all(fetchPromises).then(() => {
+                window.isSystemReady = true; // Unlock the system
+                console.log("✅ Offline data synced. System is ready.");
+            });
         });
+    } else {
+        // If already offline or cache isn't supported, unlock immediately to not trap the user
+        window.isSystemReady = true;
     }
 });
 </script>
