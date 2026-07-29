@@ -8,7 +8,7 @@ const PRECACHE_ASSETS = [
     '/model/metadata.json',
     '/model/weights.bin',
 
-// External CSS
+    // External CSS
     'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css',
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
     
@@ -53,6 +53,13 @@ self.addEventListener('activate', (event) => {
 // ==================== FETCH EVENT ====================
 // ==================== FETCH EVENT ====================
 self.addEventListener('fetch', (event) => {
+    
+    // 🛑 FIX: Ignore all non-GET requests (POST, PUT, DELETE)
+    // This prevents the error: "Failed to execute 'put' on 'Cache': Request method 'POST' is unsupported"
+    if (event.request.method !== 'GET') {
+        return; 
+    }
+
     // Check if the request is for an HTML page (Navigation)
     if (event.request.mode === 'navigate') {
         event.respondWith(
