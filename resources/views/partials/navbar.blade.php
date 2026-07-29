@@ -1,8 +1,8 @@
 <nav class="main-header navbar navbar-expand navbar-dark px-3 rounded mb-4">
     <ul class="navbar-nav">
         <li class="nav-item">
-            <a class="nav-link text-white" href="#" role="button" onclick="toggleAdminSidebar(); event.preventDefault();">
-                <i class="fas fa-bars fs-5"></i>
+            <a class="nav-link text-white" href="#" role="button" onclick="toggleSidebar(); event.preventDefault();">
+            <i class="fas fa-bars fs-5"></i>
             </a>
         </li>
     </ul>

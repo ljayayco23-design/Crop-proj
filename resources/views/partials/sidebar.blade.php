@@ -85,18 +85,3 @@
         </ul>
     </div>
 </aside>
-
-<script>
-function toggleAdminSidebar() {
-    const sidebar = document.getElementById('adminSidebar');
-    const contentArea = document.querySelector('.content-area');
-    
-    if (sidebar.style.width === '0px' || sidebar.style.width === '') {
-        sidebar.style.width = '250px';
-        if (contentArea) contentArea.style.marginLeft = '250px';
-    } else {
-        sidebar.style.width = '0px';
-        if (contentArea) contentArea.style.marginLeft = '0px';
-    }
-}
-</script>
