@@ -2,23 +2,59 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Assignment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class TechnicianController extends Controller
 {
+    /**
+     * STRICT barangay match, shared by dashboard() and records() so they
+     * can't disagree. A farmer counts for this technician if and only if
+     * their own barangay_id matches a barangay_id on one of this
+     * technician's ACTIVE Assignment rows (user_type = 'technician').
+     *
+     * No fallback to province/city. A technician with no active
+     * assignment yet gets an empty list of barangay ids, so every query
+     * built from this returns nothing for them — never "everyone".
+     */
+    private function assignedBarangayIds(): \Illuminate\Support\Collection
+    {
+        return Assignment::active()
+            ->where('user_id', Auth::id())
+            ->where('user_type', 'technician')
+            ->pluck('barangay_id');
+    }
+
     public function dashboard()
     {
-        // Safely fetch only independent metrics
-        $totalFarmers = DB::table('users')->where('role', 'farmer')->count();
-        $totalDetections = DB::table('user_detections')->count();
+        $barangayIds = $this->assignedBarangayIds();
+
+        // Both metrics scoped to this technician's own assigned
+        // barangay(s) only — previously these were global counts across
+        // every farmer/detection in the system, regardless of area.
+        $totalFarmers = DB::table('users')
+            ->where('role', 'farmer')
+            ->whereIn('barangay_id', $barangayIds)
+            ->count();
+
+        $totalDetections = DB::table('user_detections')
+            ->whereIn('user_id', function ($q) use ($barangayIds) {
+                $q->select('id')
+                  ->from('users')
+                  ->where('role', 'farmer')
+                  ->whereIn('barangay_id', $barangayIds);
+            })
+            ->count();
 
         return view('technician.dashboard', compact('totalFarmers', 'totalDetections'));
     }
 
     public function records()
     {
+        $barangayIds = $this->assignedBarangayIds();
+
         // Safe conversion tool to handle string/JSON array formatting
         $flatten = function($val, $def) {
             if (empty($val)) return $def;
@@ -53,12 +89,12 @@ class TechnicianController extends Controller
         // 2. Fetch Groq AI Knowledge Base
         $groqKnowledgeBase = [];
         $groqRecords = DB::table('groq_treatment_records')->get();
-        $groqTypes = []; 
-        
+        $groqTypes = [];
+
         foreach ($groqRecords as $row) {
             $diseaseKey = strtolower(trim($row->disease));
             $groqTypes[$diseaseKey] = $row->type;
-            
+
             $groqKnowledgeBase[$diseaseKey] = [
                 'description'         => $flatten($row->description ?? null, '—'),
                 'treatments'          => $flatten($row->treatments ?? null, '—'),
@@ -78,96 +114,172 @@ class TechnicianController extends Controller
 
         // Static name mapping arrays
         $diseaseNames = [
-            'healthy_rice_plant'    => "Healthy Rice Plant", 
+            'healthy_rice_plant'    => "Healthy Rice Plant",
             'bacterial_leaf_blight' => "Bacterial Leaf Blight",
-            'leaf_blast'            => "Leaf Blast", 
+            'leaf_blast'            => "Leaf Blast",
             'rice_false_smut'       => "Rice False Smut",
-            'sheath_blight'         => "Sheath Blight", 
+            'sheath_blight'         => "Sheath Blight",
             'tungro_virus'          => "Tungro Virus"
         ];
         $pestNames = [
-            'brown_planthopper' => "Brown Planthopper", 
+            'brown_planthopper' => "Brown Planthopper",
             'leaf_folders'      => "Leaf Folders",
-            'leafhopper'        => "Leafhopper", 
-            'rice_bug'          => "Rice Bug", 
+            'leafhopper'        => "Leafhopper",
+            'rice_bug'          => "Rice Bug",
             'rice_gall_midge'   => "Rice Gall Midge",
-            'rice_leaf_roller'  => "Rice Leaf Roller", 
-            'rice_stem_borer'   => "Rice Stem Borer", 
+            'rice_leaf_roller'  => "Rice Leaf Roller",
+            'rice_stem_borer'   => "Rice Stem Borer",
             'snail'             => "Snail"
         ];
 
-        // 4. Fetch All Users who are registered as farmers with their separate history
-        $users = DB::table('users')->where('role', 'farmer')->get();
+        // 4. Fetch ONLY farmers in this technician's assigned barangay(s).
+        // Previously this was `where('role', 'farmer')` with no area
+        // scope at all, so every technician saw every farmer in the
+        // system here.
+        $users = DB::table('users')
+            ->where('role', 'farmer')
+            ->whereIn('barangay_id', $barangayIds)
+            ->get();
+
+        $hasGroqSnapshotColumn = \Illuminate\Support\Facades\Schema::hasColumn('user_detections', 'groq_snapshot');
+        $hasSourceColumn = \Illuminate\Support\Facades\Schema::hasColumn('user_detections', 'source');
+
         $allUsersData = [];
 
         foreach ($users as $user) {
+            // records_blade.php's @forelse renders a card per farmer
+            // regardless of whether they have detections yet (it shows
+            // "This farmer has no detection records yet." itself), so —
+            // unlike the old flat version — we no longer `continue` past
+            // farmers with zero rows.
+
+            // Resolve this farmer's field list (main pin + any additional
+            // pins from the map), same as FarmerHistoryController@index.
+            // $user is a stdClass from DB::table(), so additional_farms
+            // is still a raw JSON string here and needs decoding.
+            $fieldsMeta = [
+                'main' => ['key' => 'main', 'label' => ($user->farm_name ?? null) ?: 'Main Field'],
+            ];
+            $additionalFarms = [];
+            if (!empty($user->additional_farms)) {
+                $decoded = json_decode($user->additional_farms, true);
+                if (is_array($decoded)) {
+                    $additionalFarms = $decoded;
+                }
+            }
+            foreach ($additionalFarms as $i => $farm) {
+                $key = $farm['id'] ?? ('extra_' . $i);
+                $fieldsMeta[$key] = [
+                    'key'   => $key,
+                    'label' => $farm['options']['farmName'] ?? ('Additional Field ' . ($i + 1)),
+                ];
+            }
+
             $rawDetections = DB::table('user_detections')
                 ->where('user_id', $user->id)
+                ->orderBy('field_key')
                 ->orderBy('class_key')
                 ->orderBy('created_at', 'desc')
                 ->get();
 
-            // Skip users with no logged detection records
-            if ($rawDetections->isEmpty()) {
-                continue;
-            }
+            $grouped = $rawDetections->groupBy(function ($row) {
+                $fieldKey = $row->field_key ?: 'main';
+                return $fieldKey . '|' . strtolower(trim($row->class_key));
+            });
 
             $detectionData = [];
-            $currentKey = '';
-            $images = [];
-            $confidences = [];
+            foreach ($grouped as $groupKey => $rows) {
+                [$fieldKey, $classKey] = explode('|', $groupKey, 2);
 
-            foreach ($rawDetections as $row) {
-                $key = strtolower(trim($row->class_key));
-                
-                if ($currentKey !== $key && $currentKey !== '') {
-                    $isPest = isset($pestNames[$currentKey]) || (isset($groqTypes[$currentKey]) && $groqTypes[$currentKey] === 'pest');
-                    $fallbackName = ucwords(str_replace('_', ' ', $currentKey));
-                    $className = $isPest ? ($pestNames[$currentKey] ?? $fallbackName) : ($diseaseNames[$currentKey] ?? $fallbackName);
-
-                    $detectionData[] = [
-                        'class_key'  => $currentKey,
-                        'class_name' => $className,
-                        'is_pest'    => $isPest,
-                        'images'     => $images,
-                        'confidence' => $confidences[0] ?? 65
-                    ];
-                    $images = []; $confidences = [];
-                }
-                
-                $currentKey = $key;
-
-                if (!empty($row->image_path)) {
-                    $path = $row->image_path;
-                    if (str_starts_with($path, 'data:image/') || str_starts_with($path, 'http') || str_starts_with($path, '/')) {
-                        $images[] = $path;
-                    } elseif (strlen($path) > 255) {
-                        $images[] = 'data:image/jpeg;base64,' . $path;
-                    } else {
-                        $images[] = asset($path);
+                $instances = [];
+                $anyInstanceIsPest = null;
+                foreach ($rows as $row) {
+                    $image = null;
+                    if (!empty($row->image_path)) {
+                        $path = $row->image_path;
+                        if (str_starts_with($path, 'data:image/') || str_starts_with($path, 'http') || str_starts_with($path, '/')) {
+                            $image = $path;
+                        } elseif (strlen($path) > 255) {
+                            $image = 'data:image/jpeg;base64,' . $path;
+                        } else {
+                            $image = asset($path);
+                        }
                     }
-                }
-                if (isset($row->confidence)) $confidences[] = (int)$row->confidence;
-            }
 
-            if ($currentKey !== '') {
-                $isPest = isset($pestNames[$currentKey]) || (isset($groqTypes[$currentKey]) && $groqTypes[$currentKey] === 'pest');
-                $fallbackName = ucwords(str_replace('_', ' ', $currentKey));
-                $className = $isPest ? ($pestNames[$currentKey] ?? $fallbackName) : ($diseaseNames[$currentKey] ?? $fallbackName);
+                    $source = ($hasSourceColumn && isset($row->source) && $row->source === 'groq') ? 'groq' : 'model';
+
+                    $snapshot = null;
+                    if ($source === 'groq' && $hasGroqSnapshotColumn && !empty($row->groq_snapshot)) {
+                        $decodedSnap = json_decode($row->groq_snapshot, true);
+                        if (is_array($decodedSnap)) {
+                            $snapshot = $decodedSnap;
+                        }
+                    }
+
+                    if ($snapshot !== null && array_key_exists('is_pest', $snapshot)) {
+                        $anyInstanceIsPest = (bool) $snapshot['is_pest'];
+                    }
+
+                    $instances[] = [
+                        'id'               => $row->id,
+                        'image'            => $image,
+                        'confidence'       => isset($row->confidence) ? (int) $row->confidence : 0,
+                        'date'             => $row->created_at ? \Carbon\Carbon::parse($row->created_at)->format('M d, Y g:i A') : null,
+                        'source'           => $source,
+                        'kb'               => $snapshot ?? ($knowledgeBase[$classKey] ?? []),
+                        'severity_label'   => $snapshot['severity_label'] ?? null,
+                        'severity_percent' => $snapshot['severity_percent'] ?? null,
+                        'severity_message' => $snapshot['severity_message'] ?? null,
+                    ];
+                }
+
+                // Class-level pest/disease decision: known dictionaries
+                // first, then this class's own Groq instance data, then
+                // the admin-curated groq_treatment_records 'type' column.
+                $isPest = isset($pestNames[$classKey])
+                    || (!isset($diseaseNames[$classKey]) && $anyInstanceIsPest === true)
+                    || (!isset($diseaseNames[$classKey]) && $anyInstanceIsPest === null && ($groqTypes[$classKey] ?? null) === 'pest');
+
+                $fallbackName = ucwords(str_replace('_', ' ', $classKey));
+                $className = $isPest ? ($pestNames[$classKey] ?? $fallbackName) : ($diseaseNames[$classKey] ?? $fallbackName);
 
                 $detectionData[] = [
-                    'class_key'  => $currentKey,
+                    'field_key'  => $fieldKey,
+                    'class_key'  => $classKey,
                     'class_name' => $className,
                     'is_pest'    => $isPest,
-                    'images'     => $images,
-                    'confidence' => $confidences[0] ?? 65
+                    'instances'  => $instances,
+                    'confidence' => $instances[0]['confidence'] ?? 65,
                 ];
             }
 
+            // Split into per-field sections (main field always shown,
+            // others only if they have data) — same as
+            // FarmerHistoryController@index.
+            $fieldSections = [];
+            foreach ($fieldsMeta as $key => $meta) {
+                $fieldSections[$key] = ['key' => $key, 'label' => $meta['label'], 'diseases' => [], 'pests' => []];
+            }
+            foreach ($detectionData as $det) {
+                $fk = $det['field_key'];
+                if (!isset($fieldSections[$fk])) {
+                    $fieldSections[$fk] = ['key' => $fk, 'label' => 'Removed Field', 'diseases' => [], 'pests' => []];
+                }
+                if ($det['is_pest']) {
+                    $fieldSections[$fk]['pests'][] = $det;
+                } else {
+                    $fieldSections[$fk]['diseases'][] = $det;
+                }
+            }
+            $fieldSections = array_filter($fieldSections, function ($sec, $key) {
+                return $key === 'main' || !empty($sec['diseases']) || !empty($sec['pests']);
+            }, ARRAY_FILTER_USE_BOTH);
+
             $allUsersData[] = [
+                'user_id'       => $user->id,
                 'user_name'     => $user->full_name ?? $user->name ?? 'Unknown Farmer',
                 'email'         => $user->email,
-                'detectionData' => $detectionData
+                'fieldSections' => $fieldSections,
             ];
         }
 

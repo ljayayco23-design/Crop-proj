@@ -50,9 +50,18 @@
 .custom-pin svg { filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.6)); }
 
 /* Custom Clean Tooltip for Hovering over pins */
-.custom-clean-tooltip { background: #161b22 !important; border: 1px solid #30363d !important; color: white !important; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5) !important; border-radius: 8px !important; }
+.custom-clean-tooltip {
+    background: #161b22 !important;
+    border: 1px solid #30363d !important;
+    color: white !important;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5) !important;
+    border-radius: 8px !important;
+    white-space: normal !important;
+    max-width: 240px !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+}
 .custom-clean-tooltip::before { border-top-color: #30363d !important; }
-
 /* Custom Farm Pin Style */
 .farm-pin-icon i {
     color: #10b981;
@@ -116,6 +125,8 @@
                     <div class="absolute bottom-4 left-4 lg:top-4 lg:bottom-auto lg:right-4 lg:left-auto bg-panelBg/80 backdrop-blur-md border border-panelBorder rounded-md px-4 py-2 text-xs text-gray-300 font-mono flex items-center gap-4 shadow-xl z-[500] pointer-events-none"><span id="coord-lat">Lat 0.00</span><span id="coord-lng">Lng 0.00</span></div>
                 </div>
 
+
+
                 <div class="bg-[#0e1116] border-t border-panelBorder grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-panelBorder shrink-0 z-20">
                     <div class="p-5 flex flex-col justify-between">
                         <div>
@@ -148,16 +159,33 @@
                         </div>
 
                         <div id="marker-text-props" style="display: none;">
-                            <h3 class="text-xs font-semibold text-white uppercase tracking-wider mb-1">Pin / Text Customization</h3>
-                            <p class="text-[11px] text-gray-500 mb-3">Adjust the solid color of your marker or text</p>
-                            <div class="flex items-center justify-between bg-darkBg p-3 border border-panelBorder rounded-md">
-                                <label class="text-xs text-gray-300 font-medium">Element Color</label>
-                                <div class="flex items-center gap-2">
-                                    <input type="color" id="prop-marker-color" value="#3882F6" class="w-6 h-6 rounded cursor-pointer bg-transparent border-0 p-0" onchange="updateSelectedMarker()">
-                                    <span class="text-xs text-gray-400 font-mono" id="prop-marker-hex">#3882F6</span>
+                                <h3 class="text-xs font-semibold text-white uppercase tracking-wider mb-1">Pin Customization</h3>
+                                <p class="text-[11px] text-gray-500 mb-3">Enter farm details</p>
+                                
+
+                                <!-- NEW INPUTS FOR FARM PINS -->
+                                <div class="space-y-2 border-t border-panelBorder pt-3">
+                                    <div>
+                                        <label class="text-[10px] text-gray-400 uppercase">Farm Name</label>
+                                        <input type="text" id="prop-farm-name" placeholder="e.g. South Field" class="w-full bg-darkBg border border-panelBorder rounded px-2 py-1.5 text-xs text-white outline-none focus:border-accent">
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label class="text-[10px] text-gray-400 uppercase">Size (ha)</label>
+                                            <input type="number" step="0.01" id="prop-farm-size" placeholder="e.g. 2.5" class="w-full bg-darkBg border border-panelBorder rounded px-2 py-1.5 text-xs text-white outline-none focus:border-accent">
+                                        </div>
+                                        <div>
+                                            <label class="text-[10px] text-gray-400 uppercase">Variety</label>
+                                            <input type="text" id="prop-farm-variety" placeholder="e.g. IR64" class="w-full bg-darkBg border border-panelBorder rounded px-2 py-1.5 text-xs text-white outline-none focus:border-accent">
+                                        </div>
+                                    </div>
+                                    <div class="pt-2">
+                                        <button onclick="saveMarkerDetails()" class="w-full bg-accent hover:bg-accentHover rounded px-3 py-2 text-xs font-bold text-white transition flex items-center justify-center gap-2">
+                                            <i class="ph ph-floppy-disk text-sm"></i> Save Pin Data
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
                         <button onclick="deleteSelectedShape()" class="w-full mt-3 flex items-center justify-center gap-2 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs transition-colors"><i class="ph ph-trash"></i> Remove Selected Element</button>
                     </div>
 
@@ -196,6 +224,24 @@
                             <div class="text-center border-x border-panelBorder"><i class="fa-solid fa-wind text-accent text-xs mb-1"></i><div id="weather-wind-val" class="text-[10px] text-gray-300 font-semibold">{{ $wind ?? '--' }} km/h</div></div>
                             <div class="text-center"><i class="fa-solid fa-cloud-rain text-accent text-xs mb-1"></i><div id="weather-rain-val" class="text-[10px] text-gray-300 font-semibold">{{ $rain ?? '--' }}%</div></div>
                         </div>
+                    @endif
+
+                    <!-- LAST REPORT WIDGET -->
+                    @if(isset($latestDetection) && $latestDetection)
+                    <div class="mt-4 border-t border-panelBorder pt-3">
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider"><i class="fa-solid fa-clock-rotate-left me-1"></i> Last Report</h3>
+                        </div>
+                        <a href="{{ route('farmer.history') }}" class="block bg-[#0e1116] border border-panelBorder hover:border-accent rounded p-2 transition group text-decoration-none">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-xs font-bold text-gray-200 group-hover:text-white transition">{{ $latestDetection->class_name ?? 'Detected Field Issue' }}</span>
+                            </div>
+                            <div class="flex justify-between items-center mt-1">
+                                <span class="text-[10px] text-gray-500">{{ $latestDetection->created_at ? \Carbon\Carbon::parse($latestDetection->created_at)->diffForHumans() : 'Just now' }}</span>
+                                <span class="text-[10px] text-accent group-hover:underline">View History <i class="ph ph-arrow-right"></i></span>
+                            </div>
+                        </a>
+                    </div>
                     @endif
                 </div>
 
@@ -249,7 +295,6 @@ if (typeof L !== 'undefined' && L.GridLayer) {
     });
 }
 
-// 1. Define Map Styles with the Correct URL Structures
 const baseMaps = {
     "hybrid": L.tileLayer(`https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=${MAPTILER_KEY}`, { maxZoom: 19, crossOrigin: true }),
     "streets": L.tileLayer(`https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`, { maxZoom: 19, crossOrigin: true }),
@@ -258,17 +303,22 @@ const baseMaps = {
     "dark": L.tileLayer(`https://api.maptiler.com/maps/dataviz-dark/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`, { maxZoom: 19, crossOrigin: true })
 };
 
-// Start with Hybrid
 let currentActiveTileLayer = baseMaps["hybrid"];
 
 const map = L.map('map', {
     center: [{{ $userLat ?? 10.8986 }}, {{ $userLng ?? 123.4143 }}],
     zoom: 14,
     layers: [currentActiveTileLayer],
-    attributionControl: false // Removes the white box
+    attributionControl: false,
+    zoomControl: false // Prevent double zoom layout issue
 });
 
-// Switch Map Styles safely without breaking Leaflet's internal layer mapping
+const fieldStatuses = @json($fieldStatuses ?? []);
+const fieldStatusColors = @json($fieldStatusColors ?? []);
+function getFieldStatusColor(status) {
+    return fieldStatusColors[status] || '#94a3b8';
+}
+
 function switchMapStyle(styleKey) { 
     if (baseMaps[styleKey]) {
         map.removeLayer(currentActiveTileLayer);
@@ -277,12 +327,14 @@ function switchMapStyle(styleKey) {
     } 
 }
 
-// ==========================================
-// REVERSE GEOCODING (Get Exact Address for your Pins)
-// ==========================================
 function fetchAddressForLayer(layer, lat, lng) {
     layer.placeName = "Loading exact location...";
-    updateLayersList(); // Show loading in the sidebar
+    updateLayersList(); 
+    
+    // Update tooltip while fetching if it's a marker
+    if (layer.options && (layer.options.customType === 'Marker' || layer.options.isFarmPin)) {
+         if(typeof bindCustomTooltip === 'function') bindCustomTooltip(layer);
+    }
     
     fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
         .then(res => res.json())
@@ -294,17 +346,22 @@ function fetchAddressForLayer(layer, lat, lng) {
             }
             updateLayersList();
             saveToDatabase();
+            
+            // Re-bind tooltip with actual address
+            if (layer.options && (layer.options.customType === 'Marker' || layer.options.isFarmPin)) {
+                if(typeof bindCustomTooltip === 'function') bindCustomTooltip(layer);
+            }
         })
         .catch(err => {
             console.error("Geocoding failed:", err);
             layer.placeName = "Failed to load location";
             updateLayersList();
+            if (layer.options && (layer.options.customType === 'Marker' || layer.options.isFarmPin)) {
+                if(typeof bindCustomTooltip === 'function') bindCustomTooltip(layer);
+            }
         });
 }
 
-// ==========================================
-// DYNAMIC WEATHER FETCHING
-// ==========================================
 function updateWeather(lat, lng) {
     document.getElementById('weather-temp-val').innerHTML = '<i class="ph ph-spinner animate-spin"></i>';
     
@@ -357,9 +414,18 @@ document.getElementById('map-search-bar').addEventListener('keydown', function(e
 L.control.zoom({ position: 'topleft' }).addTo(map);
 
 map.pm.addControls({ 
-    position: 'topleft', drawMarker: true, drawText: true, drawCircleMarker: false, drawPolyline: true, drawRectangle: true, drawPolygon: true, drawCircle: true, editMode: true, dragMode: false, removalMode: true 
+    position: 'topleft', 
+    drawMarker: true, 
+    drawText: true, 
+    drawCircleMarker: false, 
+    drawPolyline: true, 
+    drawRectangle: true, 
+    drawPolygon: true, 
+    drawCircle: true, 
+    editMode: true, 
+    dragMode: true, 
+    removalMode: true 
 });
-
 map.pm.setGlobalOptions({ 
     textOptions: { className: 'custom-text-transparent' },
     measurements: { measurement: true, displayLabels: true, totalLength: true, segmentLength: true, area: true }
@@ -371,6 +437,7 @@ function createCustomMarkerIcon(color) {
 }
 
 let selectedLayer = null;
+let pendingLocationMarker = null;
 
 function updateShapeAreaLabel(layer) {
     if (layer instanceof L.Polygon && !(layer instanceof L.Rectangle)) {
@@ -394,18 +461,29 @@ function updateLayersList() {
     layers.forEach(layer => {
         let area = 0, radius = 0, typeName = 'Shape', iconClass = 'ph-hexagon';
         try {
-            if (layer.options.customType === 'Text' || layer.pm._shape === 'Text') { typeName = 'Text Label'; iconClass = 'ph-text-t'; }
-            else if (layer.options.customType === 'Marker') { typeName = layer.options.isFarmPin ? 'Main Farm Pin' : 'Marker Pin'; iconClass = 'ph-map-pin'; }
-            else if (layer instanceof L.Circle) { typeName = 'Circle'; iconClass = 'ph-circle'; radius = layer.getRadius(); area = Math.PI * radius * radius; }
-            else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) { typeName = layer instanceof L.Rectangle ? 'Rectangle' : 'Polygon'; iconClass = layer instanceof L.Rectangle ? 'ph-corners-out' : 'ph-hexagon'; area = turf.area(layer.toGeoJSON()); }
+            if (layer.options.customType === 'Text' || layer.pm._shape === 'Text') { 
+                typeName = 'Text Label'; iconClass = 'ph-text-t'; 
+            } else if (layer.options.customType === 'Marker') { 
+                if (layer.options.isMainFarm) {
+                    typeName = 'Main Farm Pin';
+                } else if (layer.options.isFarmPin) {
+                    typeName = 'Additional Farm';
+                } else {
+                    typeName = 'Marker Pin';
+                }
+                iconClass = 'ph-map-pin'; 
+            } else if (layer instanceof L.Circle) { 
+                typeName = 'Circle'; iconClass = 'ph-circle'; radius = layer.getRadius(); area = Math.PI * radius * radius; 
+            } else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) { 
+                typeName = layer instanceof L.Rectangle ? 'Rectangle' : 'Polygon'; iconClass = layer instanceof L.Rectangle ? 'ph-corners-out' : 'ph-hexagon'; area = turf.area(layer.toGeoJSON()); 
+            }
         } catch(e){}
         
         totalAreaSqm += area;
         const isSelected = selectedLayer === layer;
 
-        // If it's a marker with an address, add it to the sidebar HTML
         let addressHTML = '';
-        if ((typeName === 'Marker Pin' || typeName === 'Main Farm Pin') && layer.placeName) {
+        if ((typeName === 'Marker Pin' || typeName === 'Main Farm Pin' || typeName === 'Additional Farm') && layer.placeName) {
             addressHTML = `
                 <div class="text-[11px] text-gray-500 italic mt-2 border-t border-panelBorder pt-2">
                     <i class="ph-fill ph-map-pin text-red-400 mr-1"></i> ${layer.placeName}
@@ -448,11 +526,40 @@ function selectLayer(layer) {
     if(isMarkerOrText) {
         document.getElementById('shape-props').style.display = 'none';
         document.getElementById('marker-text-props').style.display = 'block';
-        
-        let savedColor = opts.markerColor || (opts.customType === 'Text' ? '#ffffff' : '#3882F6');
-        document.getElementById('prop-marker-color').value = savedColor;
-        document.getElementById('prop-marker-hex').innerText = savedColor.toUpperCase();
+
+        const isFarmPinLayer = opts.customType === 'Marker'; // every dropped Marker is a farm pin
+        const colorRow = document.getElementById('marker-color-row');
+        const statusRow = document.getElementById('marker-status-row');
+
+        if (isFarmPinLayer) {
+            // Pin color is automatic (driven by field health status) — no manual picker
+            colorRow.style.display = 'none';
+            statusRow.style.display = 'flex';
+            const status = opts.farmStatus || 'No data';
+            const statusEl = document.getElementById('marker-status-value');
+            statusEl.innerText = status;
+            statusEl.style.color = opts.markerColor || getFieldStatusColor(status);
+        } else {
+            colorRow.style.display = 'flex';
+            statusRow.style.display = 'none';
+
+            let savedColor = opts.markerColor || '#ffffff';
+            let colorInput = document.getElementById('prop-marker-color');
+            let hexLabel = document.getElementById('prop-marker-hex');
+
+            colorInput.value = savedColor;
+            hexLabel.innerText = savedColor.toUpperCase();
+            colorInput.disabled = false;
+            colorInput.style.opacity = '1';
+            colorInput.style.cursor = 'pointer';
+        }
+
+        // Populate Custom Inputs based on layer values
+        document.getElementById('prop-farm-name').value = opts.farmName || '';
+        document.getElementById('prop-farm-size').value = opts.farmSize || '';
+        document.getElementById('prop-farm-variety').value = opts.farmVariety || '';
     } else {
+
         document.getElementById('shape-props').style.display = 'block';
         document.getElementById('marker-text-props').style.display = 'none';
         
@@ -480,22 +587,60 @@ function updateSelectedShape() {
 }
 
 function updateSelectedMarker() {
-    if(!selectedLayer) return;
+  if(!selectedLayer || selectedLayer.options.customType === 'Marker') return;
     const color = document.getElementById('prop-marker-color').value;
     document.getElementById('prop-marker-hex').innerText = color.toUpperCase();
     
     selectedLayer.options.markerColor = color;
     if(selectedLayer.options.customType === 'Marker') {
         selectedLayer.setIcon(createCustomMarkerIcon(color));
+        if (typeof bindCustomTooltip === 'function') bindCustomTooltip(selectedLayer);
     } else if(selectedLayer.options.customType === 'Text' || selectedLayer.pm._shape === 'Text') {
         if(selectedLayer.getElement()) selectedLayer.getElement().style.color = color;
     }
     saveToDatabase();
 }
 
+
+// Function to capture the inputted pin data and save it
+window.saveMarkerDetails = function() {
+    if (!selectedLayer || selectedLayer.options.customType !== 'Marker') return;
+
+    // Grab the values from the input fields[cite: 3]
+    selectedLayer.options.farmName = document.getElementById('prop-farm-name').value;
+    selectedLayer.options.farmSize = document.getElementById('prop-farm-size').value;
+    selectedLayer.options.farmVariety = document.getElementById('prop-farm-variety').value;
+    selectedLayer.options.isFarmPin = true;
+
+    // Update tooltip if the function exists[cite: 3]
+    if (typeof bindCustomTooltip === 'function') {
+        bindCustomTooltip(selectedLayer);
+    }
+
+    // Trigger the actual save to map_layers and users table[cite: 3]
+    saveToDatabase();
+    
+    // Provide visual feedback on the button[cite: 3]
+    const btn = document.querySelector('button[onclick="saveMarkerDetails()"]');
+    if (btn) {
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="ph ph-check text-sm"></i> Saved Pin Data';
+        setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
+    }
+};
+
 function deleteSelectedShape() { 
     if (selectedLayer) { 
         map.removeLayer(selectedLayer); 
+
+        // If the user deletes a hectare polygon tied to a pin, reset the pin's size
+        map.eachLayer(l => {
+            if (l.associatedPolygon === selectedLayer) {
+                l.associatedPolygon = null;
+                l.options.farmSize = 0; 
+            }
+        });
+
         selectedLayer = null; 
         document.getElementById('properties-panel').style.opacity = '0.5'; 
         document.getElementById('properties-panel').style.pointerEvents = 'none'; 
@@ -510,9 +655,11 @@ function saveToDatabase() {
 
     const layers = map.pm.getGeomanLayers(); 
     const payload = { layers: [] };
-    let currentHasFarmPin = false; 
+    let currentHasMainFarmPin = false; 
     
     layers.forEach(layer => {
+        if (layer.options && layer.options.isFarmPolygon) return; 
+
         let type = layer.options.customType || 'Shape';
         if (layer.pm && layer.pm._shape === 'Text') type = 'Text';
         else if (layer instanceof L.Circle) type = 'Circle'; 
@@ -531,10 +678,17 @@ function saveToDatabase() {
             customType: layer.options.customType,
             markerColor: layer.options.markerColor,
             textMarker: layer.options.textMarker,
-            isFarmPin: layer.options.isFarmPin 
+            isFarmPin: layer.options.isFarmPin,
+            isMainFarm: layer.options.isMainFarm, // Critical field
+            farmName: layer.options.farmName,
+            farmSize: layer.options.farmSize,
+            farmVariety: layer.options.farmVariety,
+            customPolygonGeoJSON: layer.options.customPolygonGeoJSON
         };
         
-        if (layer.options.isFarmPin) currentHasFarmPin = true;
+        if (layer.options.isFarmPin && layer.options.isMainFarm) {
+            currentHasMainFarmPin = true;
+        }
 
         payload.layers.push({ 
             id: L.stamp(layer).toString(), 
@@ -545,13 +699,13 @@ function saveToDatabase() {
                 radius: (layer instanceof L.Circle) ? layer.getRadius() : null,
                 markerColor: layer.options.markerColor || null,
                 text: textContent,
-                placeName: layer.placeName || null // Save address
+                placeName: layer.placeName || null
             } 
         });
     });
 
     const farmLat = {{ $userLat ?? 'null' }};
-    if (farmLat && !currentHasFarmPin) {
+    if (farmLat && !currentHasMainFarmPin) {
         payload.layers.push({
             id: 'deleted-farm-pin',
             type: 'DeletedFarmPin',
@@ -573,23 +727,48 @@ function saveToDatabase() {
         console.error('Auto-save error:', err);
         if(syncStatus) syncStatus.innerHTML = '<i class="ph ph-x-circle text-red-400"></i> Sync Failed';
     });
+
+    fetch(SYNC_URL, { 
+    method: 'POST', 
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF_TOKEN }, 
+    body: JSON.stringify(payload) 
+})
+.then(async res => {
+    if(!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        throw new Error(errBody?.message || 'Save fault detected.');
+    }
+    if(syncStatus) syncStatus.innerHTML = '<i class="ph ph-check-circle text-green-400"></i> Synced';
+})
+.catch(err => {
+    console.error('Auto-save error:', err);
+    if(syncStatus) syncStatus.innerHTML = '<i class="ph ph-x-circle text-red-400"></i> Sync Failed';
+});
 }
+
 
 function loadFromDatabase() {
     const syncStatus = document.getElementById('sync-status');
     if(syncStatus) syncStatus.innerHTML = '<i class="ph ph-spinner animate-spin text-accent"></i> Loading layers...';
 
+    const farmLat = {{ $userLat ?? 'null' }};
+    const farmLng = {{ $userLng ?? 'null' }};
+    const fSize = {{ $farmSize ?? 0 }};
+    const fName = {!! json_encode($farmName ?? 'Main Farm') !!};
+    const fVariety = {!! json_encode($riceVariety ?? 'N/A') !!};
+    const uAddress = {!! json_encode($userAddress ?? 'Address not registered') !!};
+    const userFieldId = {!! json_encode(auth()->user()->field_id ?? null) !!};
+    
+    // Parse the new column from our DB
+    const additionalFarms = {!! $additionalFarmsJson ?? '[]' !!}; 
+
     fetch(SYNC_URL, { headers: { 'X-CSRF-TOKEN': CSRF_TOKEN } })
     .then(async res => {
-        if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.message || `Server returned ${res.status}`);
-        }
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
         return res.json();
     })
     .then(data => {
         let deletedFlag = false;
-        let hasFarmPin = false;
 
         if (data && Array.isArray(data)) {
             deletedFlag = data.some(item => item.type === 'DeletedFarmPin');
@@ -610,32 +789,6 @@ function loadFromDatabase() {
                 if (item.type === 'Circle') { 
                     layer = L.circle([coords[1], coords[0]], { radius: props.radius, ...props.options }); 
                 } 
-                else if (item.type === 'Marker') { 
-                    layer = L.marker([coords[1], coords[0]], { ...props.options }); 
-                    layer.options.customType = 'Marker';
-                    
-                    // Load Address if available
-                    layer.placeName = props.placeName || null;
-                    if (!layer.placeName) fetchAddressForLayer(layer, coords[1], coords[0]);
-                    
-                    if(props.markerColor) {
-                        layer.options.markerColor = props.markerColor;
-                        layer.setIcon(createCustomMarkerIcon(props.markerColor));
-                    }
-
-                    if (props.options && props.options.isFarmPin) {
-                        layer.options.isFarmPin = true;
-                        hasFarmPin = true;
-                        updateWeather(coords[1], coords[0]); 
-                    }
-                    
-                    layer.on('dragend', function(e) {
-                        const pos = e.target.getLatLng();
-                        updateWeather(pos.lat, pos.lng);
-                        fetchAddressForLayer(e.target, pos.lat, pos.lng);
-                        saveToDatabase();
-                    });
-                } 
                 else if (item.type === 'Text') {
                     layer = L.marker([coords[1], coords[0]], {
                         textMarker: true, customType: 'Text', text: props.text, markerColor: props.markerColor || '#ffffff',
@@ -649,6 +802,7 @@ function loadFromDatabase() {
                 }
 
                 if (layer) { 
+                    layer._leaflet_id = item.id; 
                     layer.addTo(map); 
                     if(item.type === 'Text') L.PM.reInitLayer(layer); 
                     if (layer instanceof L.Polygon) updateShapeAreaLabel(layer);
@@ -662,55 +816,70 @@ function loadFromDatabase() {
             });
         }
 
-        const farmLat = {{ $userLat ?? 'null' }};
-        const farmLng = {{ $userLng ?? 'null' }};
-        
-        if (farmLat && farmLng && !hasFarmPin && !deletedFlag) {
-            const customFarmIcon = L.divIcon({
-                className: 'farm-pin-icon',
-                html: '<i class="fa-solid fa-location-dot"></i>',
-                iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -32]
-            });
-
+        // 1. Draw Main Registration Pin
+        if (farmLat && farmLng && !deletedFlag) {
+            const mainStatus = fieldStatuses['main'] || 'No data';
+            const defaultPinColor = getFieldStatusColor(mainStatus);
             const userFarmMarker = L.marker([farmLat, farmLng], {
-                icon: customFarmIcon,
-                interactive: true,
-                customType: 'Marker', 
-                markerColor: '#10b981',
-                isFarmPin: true
-            }).addTo(map);
-
-            userFarmMarker.bindTooltip(`
-                <div style="text-align:center;">
-                    <strong style="color: #10b981; font-size: 16px;">{{ $farmName ?? 'Your Farm' }}</strong><br>
-                    <span style="font-size: 12px; color: #ccc;">Size: {{ $farmSize ?? 'N/A' }} Hectares</span>
-                </div>
-            `, { direction: 'top', className: 'area-tooltip', permanent: false });
-
-            updateWeather(farmLat, farmLng);
-            fetchAddressForLayer(userFarmMarker, farmLat, farmLng);
-
-            userFarmMarker.on('dragend', function(e) {
-                const pos = e.target.getLatLng();
-                updateWeather(pos.lat, pos.lng);
-                fetchAddressForLayer(e.target, pos.lat, pos.lng);
-                saveToDatabase();
-            });
-
-            userFarmMarker.on('pm:remove', function() {
-                saveToDatabase(); 
+                icon: createCustomMarkerIcon(defaultPinColor),
+                interactive: true, draggable: true, customType: 'Marker', 
+                markerColor: defaultPinColor,
+                isFarmPin: true, isMainFarm: true,
+                farmStatus: mainStatus,
+                farmName: fName, farmSize: fSize, farmVariety: fVariety
             });
             
-            userFarmMarker.on('click', () => selectLayer(userFarmMarker));
+            if (userFieldId) userFarmMarker._leaflet_id = userFieldId; 
             
-            map.setView([farmLat, farmLng], 17);
-            saveToDatabase(); 
-        } else if (farmLat && farmLng) {
-            map.setView([farmLat, farmLng], 17);
+            userFarmMarker.addTo(map);
+            userFarmMarker.placeName = uAddress;
+
+            if (typeof bindCustomTooltip === 'function') bindCustomTooltip(userFarmMarker);
+            if (typeof updateMarkerPolygon === 'function') updateMarkerPolygon(userFarmMarker);
+            if (typeof bindMarkerDrag === 'function') bindMarkerDrag(userFarmMarker);
         }
 
-        updateLayersList();
-        if(syncStatus) syncStatus.innerHTML = '<i class="ph ph-lightning"></i> Real-time Sync';
+        // 2. Draw Additional Pins from the `users` table directly
+        if (Array.isArray(additionalFarms)) {
+            additionalFarms.forEach(farm => {
+                if (!farm.coords) return;
+                const farmStatus = fieldStatuses[farm.id] || 'No data';
+                const mColor = getFieldStatusColor(farmStatus);
+                
+                const addMarker = L.marker([farm.coords[1], farm.coords[0]], { 
+                    icon: createCustomMarkerIcon(mColor),
+                    interactive: true, draggable: true, customType: 'Marker',
+                    markerColor: mColor, isFarmPin: true, isMainFarm: false,
+                    farmStatus: farmStatus,
+                    farmName: farm.options.farmName || 'Extra Field',
+                    farmSize: farm.options.farmSize || 0,
+                    farmVariety: farm.options.farmVariety || 'N/A'
+                });                
+                if (farm.id) addMarker._leaflet_id = farm.id;
+                addMarker.placeName = farm.placeName || null;
+                addMarker.addTo(map);
+                
+                if (!addMarker.placeName) fetchAddressForLayer(addMarker, farm.coords[1], farm.coords[0]);
+                
+                addMarker.on('dragend', function(e) {
+                    const pos = e.target.getLatLng();
+                    updateWeather(pos.lat, pos.lng);
+                    fetchAddressForLayer(e.target, pos.lat, pos.lng);
+                    saveToDatabase();
+                });
+                
+                if (typeof bindCustomTooltip === 'function') bindCustomTooltip(addMarker);
+                if (typeof updateMarkerPolygon === 'function') updateMarkerPolygon(addMarker);
+                if (typeof bindMarkerDrag === 'function') bindMarkerDrag(addMarker);
+            });
+        }
+        
+        map.eachLayer(function(layer) {
+            if (layer.options && layer.options.customType === 'Marker') {
+                layer.options.draggable = true; 
+                if (layer.dragging) layer.dragging.enable();
+            }
+        });
     })
     .catch(err => {
         console.error("Database Load Error:", err);
@@ -718,11 +887,29 @@ function loadFromDatabase() {
     });
 }
 
+
+function saveNewLocationName() {
+    const input = document.getElementById('new-place-input');
+    if (pendingLocationMarker && input.value.trim() !== '') {
+        pendingLocationMarker.placeName = input.value.trim();
+        input.value = '';
+        document.getElementById('new-location-panel').classList.add('hidden');
+        updateLayersList();
+        saveToDatabase();
+    }
+}
+
 map.on('pm:create', (e) => {
-    if (e.shape === 'Marker') {
+if (e.shape === 'Marker') {
+        const initialColor = getFieldStatusColor('No data');
         e.layer.options.customType = 'Marker';
-        e.layer.options.markerColor = '#3882F6';
-        e.layer.setIcon(createCustomMarkerIcon('#3882F6'));
+        e.layer.options.markerColor = initialColor;
+        e.layer.options.farmStatus = 'No data';
+        e.layer.options.isFarmPin = true;
+        e.layer.options.isMainFarm = false; // Forces system to recognize it as a secondary farm
+        e.layer.setIcon(createCustomMarkerIcon(initialColor));
+        
+        bindCustomTooltip(e.layer);
         
         const latlng = e.layer.getLatLng();
         updateWeather(latlng.lat, latlng.lng);
@@ -734,7 +921,8 @@ map.on('pm:create', (e) => {
             fetchAddressForLayer(evt.target, pos.lat, pos.lng);
             saveToDatabase();
         });
-    } 
+
+    }
     else if (e.shape === 'Text') {
         e.layer.options.customType = 'Text';
         e.layer.options.markerColor = '#ffffff';
@@ -757,7 +945,17 @@ map.on('pm:create', (e) => {
     saveToDatabase();
 });
 
-map.on('pm:remove', () => {
+map.on('pm:remove', (e) => {
+    // FIX: Properly handle if the user deletes the farm size polygon manually using the toolbar
+    map.eachLayer(l => {
+        if (l.associatedPolygon === e.layer) {
+            l.associatedPolygon = null;
+            l.options.farmSize = 0;
+            l.options.customPolygonGeoJSON = null;
+            bindCustomTooltip(l);
+        }
+    });
+
     selectedLayer = null; 
     document.getElementById('properties-panel').style.opacity = '0.5'; 
     document.getElementById('properties-panel').style.pointerEvents = 'none'; 
@@ -949,9 +1147,6 @@ function exportMapImage() {
     });
 }
 
-// ===============================================
-// RENDER OTHER FARMERS' FIELDS WITH ADDRESSES
-// ===============================================
 window.otherFarmMarkers = {};
 
 function triggerOtherFarmZoom(lat, lng, markerId) {
@@ -974,16 +1169,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 const lat = parseFloat(farm.latitude);
                 const lng = parseFloat(farm.longitude);
                 const fName = farm.farm_name || 'Unknown Farm';
-                const fSize = farm.farm_size || 'N/A';
+                const fSize = parseFloat(farm.farm_size) || 0;
                 const fAddress = farm.address || 'Address not registered'; 
+                const fVariety = farm.rice_variety || 'N/A';
+                const fHealth = farm.crop_health || 'No data';
                 const markerId = `other_farm_${index}`;
+
+                const healthColor = getHealthColor(fHealth);
 
                 const otherIcon = L.divIcon({
                     className: 'other-farm-pin',
-                    html: '<i class="fa-solid fa-location-dot" style="color: #38bdf8; font-size: 26px; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.8));"></i>',
-                    iconSize: [26, 26],
-                    iconAnchor: [13, 26],
-                    popupAnchor: [0, -26]
+                    html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" width="28" height="40"><path fill="${healthColor}" d="M172.268 501.67C26.97 291.031 0 269.413 0 192 0 85.961 85.961 0 192 0s192 85.961 192 192c0 77.413-26.97 99.031-172.268 309.67-9.535 13.774-29.93 13.773-39.464 0zM192 272c44.183 0 80-35.817 80-80s-35.817-80-80-80-80 35.817-80 80 35.817 80 80 80z"/></svg>`,
+                    iconSize: [28, 40],
+                    iconAnchor: [14, 40],
+                    popupAnchor: [0, -40]
                 });
 
                 const otherMarker = L.marker([lat, lng], {
@@ -994,25 +1193,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 window.otherFarmMarkers[markerId] = otherMarker;
 
-                otherMarker.bindTooltip(`
-                    <div style="text-align:left; max-width: 220px; font-family: sans-serif; padding: 3px;">
-                        <strong style="color: #38bdf8; font-size: 13px; display:block; margin-bottom:2px;"><i class="fa-solid fa-tractor me-1"></i> ${fName}</strong>
-                        <span style="font-size: 11px; color: #fff; display:block; margin-bottom:4px;">📐 Area: <b>${fSize} ha</b></span>
-                        <div style="border-top: 1px solid #444; padding-top: 4px; font-size: 10px; color: #bbb; line-height: 1.3;">
-                            <i class="fa-solid fa-map-pin me-1" style="color: #ef4444;"></i> ${fAddress}
-                        </div>
-                    </div>
-                `, { direction: 'top', className: 'custom-clean-tooltip' });
-
-                otherMarker.on('click', function() {
+    marker.bindTooltip(`
+        <div style="text-align:left; max-width: 220px; font-family: sans-serif; padding: 3px; white-space: normal; word-wrap: break-word; overflow-wrap: break-word;">
+            <strong style="color: ${mColor}; font-size: 13px; display:block; margin-bottom:2px;"><i class="fa-solid fa-tractor me-1"></i> ${fName}</strong>
+            <span style="font-size: 11px; color: #fff; display:block; margin-bottom:4px;">📐 Area: <b>${fSize} ha</b></span>
+            <span style="font-size: 11px; color: #fff; display:block; margin-bottom:4px;">🌾 Variety: <b>${fVariety}</b></span>
+            <span style="font-size: 11px; color: #fff; display:block; margin-bottom:4px;">🩺 Status: <b style="color: ${mColor};">${healthStatus}</b></span>
+            <div style="border-top: 1px solid #444; padding-top: 4px; font-size: 10px; color: #bbb; line-height: 1.4; white-space: normal; word-wrap: break-word; overflow-wrap: break-word;">
+                <i class="fa-solid fa-map-pin me-1" style="color: #ef4444;"></i> <span style="word-break: break-word;">${fAddress}</span>
+            </div>
+        </div>
+    `, { direction: 'top', className: 'custom-clean-tooltip' });
+    
+    otherMarker.on('click', function() {
                     map.flyTo([lat, lng], 17, { duration: 0.8 });
                 });
 
                 otherFieldsHTML += `
-                    <div class="bg-darkBg p-3 rounded-lg border border-panelBorder hover:border-[#38bdf8] cursor-pointer transition group" 
+                    <div class="bg-darkBg p-3 rounded-lg border border-panelBorder hover:border-[${healthColor}] cursor-pointer transition group" 
                          onclick="triggerOtherFarmZoom(${lat}, ${lng}, '${markerId}')">
                         <div class="flex items-center gap-2 text-gray-200 font-medium mb-1 text-sm">
-                            <i class="ph-fill ph-map-pin text-[#38bdf8]"></i> ${fName}
+                            <i class="ph-fill ph-map-pin" style="color: ${healthColor};"></i> ${fName}
                         </div>
                         <div class="text-xs text-gray-400 mb-1">
                             Area: <span class="font-mono text-gray-300">${fSize} ha</span>
@@ -1031,15 +1232,133 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-window.addEventListener('resize', () => {
-setTimeout(() => {
-        if (typeof map !== 'undefined') {
-            map.invalidateSize();
-        }
-    }, 500);    
-    if (!document.getElementById('export-guide-box').classList.contains('hidden')) {
-        renderGuideBox(true); 
+
+function bindCustomTooltip(marker) {
+    const fName = marker.options.farmName || 'Unnamed Field';
+    const fSize = marker.options.farmSize || 0;
+    const fVariety = marker.options.farmVariety || 'N/A';
+    const fAddress = marker.placeName || 'Loading precise location...';
+    const mColor = marker.options.markerColor || '#3882F6';
+    
+ let healthStatus = marker.options.farmStatus || 'No data';
+
+    marker.unbindPopup();
+    marker.unbindTooltip();
+    marker.bindTooltip(`
+        <div style="text-align:left; max-width: 220px; font-family: sans-serif; padding: 3px;">
+            <strong style="color: ${mColor}; font-size: 13px; display:block; margin-bottom:2px;"><i class="fa-solid fa-tractor me-1"></i> ${fName}</strong>
+            <span style="font-size: 11px; color: #fff; display:block; margin-bottom:4px;">📐 Area: <b>${fSize} ha</b></span>
+            <span style="font-size: 11px; color: #fff; display:block; margin-bottom:4px;">🌾 Variety: <b>${fVariety}</b></span>
+            <span style="font-size: 11px; color: #fff; display:block; margin-bottom:4px;">🩺 Status: <b style="color: ${mColor};">${healthStatus}</b></span>
+            <div style="border-top: 1px solid #444; padding-top: 4px; font-size: 10px; color: #bbb; line-height: 1.3;">
+                <i class="fa-solid fa-map-pin me-1" style="color: #ef4444;"></i> ${fAddress}
+            </div>
+        </div>
+    `, { direction: 'top', className: 'custom-clean-tooltip' });
+}
+
+function saveMarkerDetails() {
+    updateMarkerDetails();
+    // Empty inputs after pressing save
+    saveToDatabase();
+}
+
+function updateMarkerDetails() {
+    if(!selectedLayer) return;
+    
+    selectedLayer.options.farmName = document.getElementById('prop-farm-name').value;
+    selectedLayer.options.farmSize = document.getElementById('prop-farm-size').value;
+    selectedLayer.options.farmVariety = document.getElementById('prop-farm-variety').value;
+
+    bindCustomTooltip(selectedLayer);
+    
+    updateMarkerPolygon(selectedLayer, true); 
+    saveToDatabase();
+}
+
+function updateMarkerPolygon(marker, forceRedraw = false) {
+    let fSize = parseFloat(marker.options.farmSize);
+    
+    if (marker.associatedPolygon && !forceRedraw) return;
+
+    if (marker.associatedPolygon) {
+        map.removeLayer(marker.associatedPolygon);
+        marker.associatedPolygon = null;
     }
-});
+    
+    if (fSize > 0) {
+        let polyLayer;
+        
+        if (marker.options.customPolygonGeoJSON && !forceRedraw) {
+            const geoJsonLayer = L.geoJSON(marker.options.customPolygonGeoJSON);
+            geoJsonLayer.eachLayer(l => polyLayer = l);
+        } else {
+            let hectares = fSize > 100 ? fSize / 10000 : fSize;
+            
+            const radius = Math.sqrt((hectares * 10000) / Math.PI) / 1000;
+            const pos = marker.getLatLng();
+            const centerPt = turf.point([pos.lng, pos.lat]);
+            
+            const buffered = turf.buffer(centerPt, radius, { units: 'kilometers', steps: 4 });
+            const squareBox = turf.bboxPolygon(turf.bbox(buffered));
+            
+            const geoJsonLayer = L.geoJSON(squareBox);
+            geoJsonLayer.eachLayer(l => polyLayer = l);
+        }
+
+        marker.associatedPolygon = L.polygon(polyLayer.getLatLngs(), {
+            style: { 
+                color: marker.options.markerColor || '#3882F6', 
+                weight: 2, 
+                fillOpacity: 0.25 
+            },
+            isFarmPolygon: true 
+        }).addTo(map);
+
+        marker.associatedPolygon.on('click', () => selectLayer(marker.associatedPolygon));
+
+        marker.associatedPolygon.on('pm:edit pm:markerdragend pm:dragend pm:cut pm:rotateend', function(e) {
+            const areaSqm = turf.area(this.toGeoJSON());
+            const newHectares = (areaSqm / 10000).toFixed(2);
+            
+            marker.options.farmSize = newHectares;
+            marker.options.customPolygonGeoJSON = this.toGeoJSON();
+            bindCustomTooltip(marker);
+            saveToDatabase();
+        });
+    }
+}
+
+function bindMarkerDrag(marker) {
+    marker.on('drag', function() {
+        if (this.associatedPolygon) {
+            const pos = this.getLatLng();
+            const centerPt = turf.point([pos.lng, pos.lat]);
+            
+            let fSize = parseFloat(this.options.farmSize);
+            let hectares = fSize > 100 ? fSize / 10000 : fSize;
+            const radius = Math.sqrt((hectares * 10000) / Math.PI) / 1000;
+            
+            const buffered = turf.buffer(centerPt, radius, { units: 'kilometers', steps: 4 });
+            const squareBox = turf.bboxPolygon(turf.bbox(buffered));
+            
+            const geoJsonLayer = L.geoJSON(squareBox);
+            let polyLayer;
+            geoJsonLayer.eachLayer(l => polyLayer = l);
+            
+            this.associatedPolygon.setLatLngs(polyLayer.getLatLngs());
+        }
+    });
+
+    marker.on('dragend', function() {
+        if (this.associatedPolygon) {
+            this.options.customPolygonGeoJSON = this.associatedPolygon.toGeoJSON();
+            saveToDatabase();
+        }
+    });
+}
+
+
+
 </script>
 @endsection

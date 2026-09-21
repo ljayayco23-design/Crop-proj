@@ -81,6 +81,30 @@
 </div>
 
 <div class="row g-4 mb-4">
+    <div class="col-xl-7">
+        <div class="prodigy-card h-100 p-4">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <h6 class="mb-0 fw-bold text-white"><i class="fa-solid fa-chart-line text-primary me-2"></i> Detection Trends</h6>
+                <span class="badge bg-primary bg-opacity-25 text-primary small">Last 6 Months</span>
+            </div>
+            <p class="text-secondary small mb-3">Total rice disease &amp; pest detections logged by farmers each month.</p>
+            <div id="detectionTrendChart"></div>
+        </div>
+    </div>
+
+    <div class="col-xl-5">
+        <div class="prodigy-card h-100 p-4">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <h6 class="mb-0 fw-bold text-white"><i class="fa-solid fa-chart-pie text-warning me-2"></i> Top Diseases &amp; Pests</h6>
+                <span class="badge bg-warning bg-opacity-25 text-warning small">All Time</span>
+            </div>
+            <p class="text-secondary small mb-3">Most frequently detected issues across all farms.</p>
+            <div id="diseaseDistributionChart"></div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
     <div class="col-xl-8">
         <div class="prodigy-card h-100 p-0 overflow-hidden d-flex flex-column" style="min-height: 450px;">
             <div class="bg-dark border-bottom border-secondary p-3 d-flex justify-content-between align-items-center">
@@ -174,6 +198,63 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
+    // --- ANALYTICS: DETECTION TREND (LINE/AREA CHART) ---
+    const trendLabels = @json($trendLabels ?? []);
+    const trendData = @json($trendData ?? []);
+
+    new ApexCharts(document.querySelector("#detectionTrendChart"), {
+        chart: { type: 'area', height: 300, background: 'transparent', foreColor: '#94a3b8', toolbar: { show: false } },
+        series: [{ name: 'Detections', data: trendData }],
+        xaxis: {
+            categories: trendLabels,
+            axisBorder: { color: '#334155' },
+            axisTicks: { color: '#334155' }
+        },
+        yaxis: { min: 0, forceNiceScale: true, labels: { formatter: (v) => Math.round(v) } },
+        grid: { borderColor: '#334155', strokeDashArray: 4 },
+        colors: ['#3b82f6'],
+        stroke: { curve: 'smooth', width: 3 },
+        fill: {
+            type: 'gradient',
+            gradient: { shadeIntensity: 1, opacityFrom: 0.45, opacityTo: 0.05, stops: [0, 90, 100] }
+        },
+        markers: { size: 4, colors: ['#3b82f6'], strokeColors: '#0f172a', strokeWidth: 2, hover: { size: 6 } },
+        dataLabels: { enabled: false },
+        tooltip: { theme: 'dark', y: { formatter: (v) => v + ' detection' + (v === 1 ? '' : 's') } }
+    }).render();
+
+    // --- ANALYTICS: TOP DISEASE/PEST DISTRIBUTION (DONUT CHART) ---
+    const pieLabels = @json($pieLabels ?? []);
+    const pieData = @json($pieData ?? []);
+    const hasPieData = pieData.length > 0 && pieData.some(v => v > 0);
+
+    new ApexCharts(document.querySelector("#diseaseDistributionChart"), {
+        chart: { type: 'donut', height: 300, background: 'transparent', foreColor: '#94a3b8' },
+        series: hasPieData ? pieData : [1],
+        labels: hasPieData ? pieLabels : ['No detections yet'],
+        colors: hasPieData ? ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#0ea5e9'] : ['#334155'],
+        legend: { position: 'bottom', fontSize: '12px', labels: { colors: '#cbd5e1' } },
+        stroke: { colors: ['#0f172a'], width: 2 },
+        dataLabels: { enabled: hasPieData, style: { fontSize: '11px' } },
+        tooltip: { theme: 'dark', enabled: hasPieData },
+        plotOptions: {
+            pie: {
+                donut: {
+                    size: '68%',
+                    labels: {
+                        show: true,
+                        total: {
+                            show: true,
+                            label: 'Total',
+                            color: '#94a3b8',
+                            formatter: (w) => hasPieData ? w.globals.seriesTotals.reduce((a, b) => a + b, 0) : '0'
+                        }
+                    }
+                }
+            }
+        }
+    }).render();
+
     // --- MAP INITIALIZATION ---
     const MAPTILER_KEY = '{{ env("MAPTILER_API_KEY") }}';
     

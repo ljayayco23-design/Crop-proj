@@ -41,13 +41,18 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    // This modal is shared by both the admin and technician panels, so the
+    // form target has to follow whichever panel rendered the page — it can't
+    // be hardcoded to "admin/users/...".
+    const editBasePath = "{{ auth()->user()->role === 'admin' ? url('admin/users') : url('technician/users') }}";
+
     window.editUser = function(id, name, email, status) {
         document.getElementById('eid').value = id;
         document.getElementById('ename').value = name;
         document.getElementById('eemail').value = email;
         document.getElementById('estatus').value = status || 'pending';
         
-        document.getElementById('editUserForm').action = "{{ url('admin/users') }}/" + id + "/update";
+        document.getElementById('editUserForm').action = editBasePath + "/" + id + "/update";
         
         new bootstrap.Modal(document.getElementById('editModal')).show();
     };

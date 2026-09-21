@@ -14,7 +14,15 @@ class RoleMiddleware
             return redirect()->route('login');
         }
 
-        if (auth()->user()->role !== $role) {
+        $actorRole = auth()->user()->role;
+
+        // 'developer' is a hardcoded, seeded-only account that reuses the
+        // admin panel wholesale (same routes, same views) — so anywhere the
+        // route requires 'role:admin', a developer passes too.
+        $satisfies = $actorRole === $role
+            || ($role === 'admin' && $actorRole === 'developer');
+
+        if (!$satisfies) {
             abort(403, 'Unauthorized access. You do not have the required role.');
         }
 

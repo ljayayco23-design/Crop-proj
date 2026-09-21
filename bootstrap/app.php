@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Registering your RoleMiddleware alias here
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
+            'permission' => \App\Http\Middleware\PermissionMiddleware::class,
         ]);
 
         // THE FIX: Prevent Laravel from running out of memory 
@@ -27,7 +28,23 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions) {
         // 🚨 EMERGENCY BREAK: Forces the real hidden error to show up
+        // ...but only for genuine, unexpected errors. Validation failures
+        // (like "email already taken") and other exceptions that already
+        // know how to render themselves are left alone so Laravel can
+        // handle them normally (e.g. redirect back with $errors).
         $exceptions->render(function (\Throwable $e) {
+            if ($e instanceof \Illuminate\Validation\ValidationException) {
+                return null;
+            }
+
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
+                return null;
+            }
+
+            if ($e instanceof \Illuminate\Http\Exceptions\HttpResponseException) {
+                return null;
+            }
+
             header('Content-Type: text/plain', true, 500);
             echo "--- THE REAL HIDDEN ERROR ---\n";
             echo "MESSAGE: " . $e->getMessage() . "\n\n";

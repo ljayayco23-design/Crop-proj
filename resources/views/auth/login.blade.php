@@ -3,11 +3,14 @@
 @section('title', 'RICEGUARD AI • Login')
 
 @section('content')
-<div class="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
-    <div class="bg-[#1e293b] rounded-3xl p-8 w-full max-w-md">
+<div class="min-h-screen bg-[#0f172a] bg-cover bg-center bg-no-repeat bg-fixed flex items-center justify-center p-4 relative"
+     style="background-image: linear-gradient(rgba(15,23,42,0.75), rgba(15,23,42,0.85)), url('{{ asset('img/login-bg.jpg') }}');">
+    <div class="bg-[#1e293b]/95 backdrop-blur-sm rounded-3xl p-8 w-full max-w-md shadow-2xl">
 
         <div class="text-center mb-8">
-            <i class="fas fa-shield-alt text-5xl text-emerald-400 mb-4"></i>
+            <button type="button" onclick="showLogoLightbox()" class="inline-flex items-center justify-center h-20 w-20 rounded-full bg-white shadow-lg ring-4 ring-emerald-400/40 mb-4 overflow-hidden hover:ring-emerald-400/70 transition-all cursor-pointer">
+                <img src="{{ asset('img/logo.jpg') }}" alt="RiceGuard AI Logo" class="h-full w-full object-cover">
+            </button>
             <h1 class="text-3xl font-bold">RICEGUARD AI</h1>
             <p class="text-zinc-400">Login Portal</p>
         </div>
@@ -58,8 +61,22 @@
     </div>
 </div>
 
-<div id="signupModal" class="hidden fixed inset-0 bg-black/90 flex items-center justify-center z-50 px-4 overflow-y-auto py-10">
+<!-- Logo Lightbox: shows the full logo image when clicked, on login or registration -->
+<div id="logoLightbox" class="hidden fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-[60] p-4" onclick="hideLogoLightbox()">
+    <div class="relative max-w-md w-full" onclick="event.stopPropagation()">
+        <button type="button" onclick="hideLogoLightbox()" class="absolute -top-10 right-0 text-white text-3xl leading-none hover:text-emerald-400">&times;</button>
+        <img src="{{ asset('img/logo.jpg') }}" alt="RiceGuard AI Logo" class="w-full h-auto rounded-2xl shadow-2xl bg-white p-6">
+    </div>
+</div>
+
+<div id="signupModal" class="hidden fixed inset-0 bg-cover bg-center bg-no-repeat bg-fixed flex items-center justify-center z-50 px-4 overflow-y-auto py-10"
+     style="background-image: linear-gradient(rgba(15,23,42,0.85), rgba(15,23,42,0.9)), url('{{ asset('img/login-bg.jpg') }}');">
     <div class="bg-[#1e293b] rounded-3xl p-8 w-full max-w-lg shadow-2xl relative my-auto">
+        <div class="text-center mb-2">
+            <button type="button" onclick="showLogoLightbox()" class="inline-flex items-center justify-center h-16 w-16 rounded-full bg-white shadow-lg ring-4 ring-emerald-400/40 mb-3 overflow-hidden hover:ring-emerald-400/70 transition-all cursor-pointer">
+                <img src="{{ asset('img/logo.jpg') }}" alt="RiceGuard AI Logo" class="h-full w-full object-cover">
+            </button>
+        </div>
         <h2 class="text-2xl font-bold text-center mb-2 text-emerald-400">Farmer Registration</h2>
         <div class="text-center text-sm text-zinc-400 mb-6 font-semibold" id="step-indicator">Step 1 of 5</div>
 
@@ -86,8 +103,28 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="block text-zinc-400 text-sm mb-2">Address</label>
-                    <input type="text" name="address"class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700" placeholder="Enter your full address" required>
+                    <label class="block text-zinc-400 text-sm mb-2">Province</label>
+                    <select id="province-select" required class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
+                        <option value="" disabled selected>Select province...</option>
+                    </select>
+                    <input type="hidden" name="province" id="province-hidden">
+                    <input type="hidden" name="province_id" id="province-id-hidden">
+                </div>
+                <div class="mb-3">
+                    <label class="block text-zinc-400 text-sm mb-2">City / Municipality</label>
+                    <select id="city-select" required disabled class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
+                        <option value="" disabled selected>Select province first...</option>
+                    </select>
+                    <input type="hidden" name="city" id="city-hidden">
+                    <input type="hidden" name="city_id" id="city-id-hidden">
+                </div>
+                <div class="mb-3">
+                    <label class="block text-zinc-400 text-sm mb-2">Barangay</label>
+                    <select id="barangay-select" required disabled class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
+                        <option value="" disabled selected>Select city first...</option>
+                    </select>
+                    <input type="hidden" name="barangay" id="barangay-hidden">
+                    <input type="hidden" name="barangay_id" id="barangay-id-hidden">
                 </div>
                 
             </div>
@@ -106,22 +143,25 @@
             </div>
 
             <div class="form-step hidden" id="step-field-details">
-                <h3 class="text-lg font-semibold text-emerald-400 border-b border-zinc-700 pb-2 mb-4">3. Field Details</h3>
+                <h3 class="text-lg font-semibold text-emerald-400 border-b border-zinc-700 pb-2 mb-4">3. Field Details & Mapping</h3>
                 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     
+                    <!-- Left Column: Redesigned Input Fields -->
                     <div class="space-y-4">
                         <div>
-                            <label class="block text-zinc-400 text-sm mb-2">Farm Name</label>
-                            <input type="text" name="farm_name" placeholder="e.g., San Jose Farmland" required class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
+                            <label class="block text-zinc-400 text-sm mb-1 font-medium">Farm Name <span class="text-emerald-400">*</span></label>
+                            <input type="text" name="farm_name" placeholder="e.g., San Jose Farmland" required 
+                                class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700 transition-all">
                         </div>
 
                         <div>
-                            <label class="block text-zinc-400 text-sm mb-1">Rice Field Location</label>
-                            <small class="text-zinc-500 text-xs block mb-2">Search for your barangay or specific location</small>
+                            <label class="block text-zinc-400 text-sm mb-1 font-medium">Rice Field Location</label>
+                            <small class="text-zinc-500 text-xs block mb-2">Search barangay, street, or city (Google Maps style)</small>
                             <div class="flex gap-2">
-                                <input type="text" id="location-search" placeholder="Search location..." class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
-                                <button type="button" onclick="searchLocation()" class="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-all">Search</button>
+                                <input type="text" id="location-search" placeholder="Search location..." 
+                                    class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
+                                <button type="button" onclick="searchLocation()" class="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-all shadow-lg">Search</button>
                             </div>
                             <input type="hidden" name="latitude" id="lat-input" required>
                             <input type="hidden" name="longitude" id="lng-input" required>
@@ -131,22 +171,40 @@
 
                         <div class="grid grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-zinc-400 text-sm mb-2">Size (Hectares)</label>
-                                <input type="number" name="farm_size" step="0.1" min="0" required class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
-                            </div>
-                            <div>
-                                <label class="block text-zinc-400 text-sm mb-2">Water Source</label>
-                                <select name="water_source" required class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
-                                    <option value="" disabled selected>Select...</option>
-                                    <option value="irrigated">Irrigated</option>
-                                    <option value="rainfed">Rainfed</option>
+                                <label class="block text-zinc-400 text-sm mb-1 font-medium">Growth Stage</label>
+                                <select name="growth_stage" class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
+                                    <option value="Seedling">Seedling</option>
+                                    <option value="Vegetative">Vegetative</option>
+                                    <option value="Reproductive">Reproductive</option>
+                                    <option value="Ripening">Ripening</option>
                                 </select>
                             </div>
+                            <div>
+                                <label class="block text-zinc-400 text-sm mb-1 font-medium">Rice Variety</label>
+                                <input type="text" name="rice_variety" placeholder="e.g., IR64" class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="block text-zinc-400 text-sm mb-1 font-medium">Size (Hectares)</label>
+                            <input type="number" name="farm_size" step="0.01" min="0" placeholder="e.g. 3 or 3000" required 
+                                class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
+                        </div>
+
+                        <div>
+                            <label class="block text-zinc-400 text-sm mb-1 font-medium">Water Source</label>
+                            <select name="water_source" required class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
+                                <option value="" disabled selected>Select water source...</option>
+                                <option value="irrigated">Irrigated</option>
+                                <option value="rainfed">Rainfed</option>
+                            </select>
                         </div>
                     </div>
 
-                    <div class="h-[350px] md:h-full min-h-[300px]">
-                        <div id="registration-map" class="w-full h-full rounded-xl border border-zinc-700 z-10" style="min-height: 300px;"></div>
+                    <!-- Right Column: Interactive Map with City/Street Labels -->
+                    <div class="h-[400px] md:h-full min-h-[350px] flex flex-col">
+                        <div id="registration-map" class="w-full flex-1 rounded-2xl border border-zinc-700 shadow-inner z-10" style="min-height: 350px;"></div>
+                        <p class="text-xs text-zinc-400 mt-2 text-center">Tip: Click map or drag pin to adjust location. Hectares automatically generate shape.</p>
                     </div>
                 </div>
             </div>
@@ -213,7 +271,8 @@
 </div>
 
 
-<div id="forgotModal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 px-4">
+<div id="forgotModal" class="hidden fixed inset-0 bg-cover bg-center bg-no-repeat bg-fixed flex items-center justify-center z-50 px-4"
+     style="background-image: linear-gradient(rgba(15,23,42,0.85), rgba(15,23,42,0.9)), url('{{ asset('img/login-bg.jpg') }}');">
     <div class="bg-[#1e293b] rounded-3xl p-8 w-full max-w-md shadow-2xl">
         <h2 class="text-2xl font-bold text-center mb-6">Nakalimutan ang Password</h2>
         
@@ -553,9 +612,18 @@ function updateFormDisplay() {
         document.getElementById('forgotModal').classList.add('hidden');
     }
 
+    // Logo Lightbox Functions
+    function showLogoLightbox() {
+        document.getElementById('logoLightbox').classList.remove('hidden');
+    }
+    function hideLogoLightbox() {
+        document.getElementById('logoLightbox').classList.add('hidden');
+    }
+
     // Close modals on Escape key
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
+            hideLogoLightbox();
             hideSignupModal();
             hideForgotModal();
         }
@@ -582,45 +650,134 @@ function updateFormDisplay() {
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-let regMap, regMarker;
+let regMap, regMarker, sizePolygon;
 
 document.addEventListener('DOMContentLoaded', function() {
-    // 1. Initialize Map
+    // 1. MapTiler layers (Hybrid Default + Streets Fallback)
     const MAPTILER_KEY = '{{ env("MAPTILER_API_KEY", "G32f8QO7Njff9iDKvb56") }}';
-    regMap = L.map('registration-map', { zoomControl: false }).setView([10.8986, 123.4143], 13); // Default: Sagay
-    L.tileLayer(`https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=${MAPTILER_KEY}`, { maxZoom: 19, crossOrigin: true }).addTo(regMap);
+    
+    const hybridLayer = L.tileLayer(`https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=${MAPTILER_KEY}`, { 
+        maxZoom: 19, crossOrigin: true, attribution: '&copy; MapTiler'
+    });
+    const streetsLayer = L.tileLayer(`https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`, { 
+        maxZoom: 19, crossOrigin: true, attribution: '&copy; MapTiler'
+    });
+
+    // Initialize Map centered on Sagay City with Hybrid as default
+    regMap = L.map('registration-map', { 
+        zoomControl: false,
+        layers: [hybridLayer] // Hybrid is now default
+    }).setView([10.8986, 123.4143], 14);
+    
+    // Add Layer Control Dropdown at top left
+    const baseLayers = {
+        "Hybrid Map": hybridLayer,
+        "Original Streets": streetsLayer
+    };
+    L.control.layers(baseLayers, null, { position: 'topleft' }).addTo(regMap);
     L.control.zoom({ position: 'topleft' }).addTo(regMap);
 
-    const defaultLatLng = [10.8986, 123.4143]; // Sagay coordinates
-
-// 2. Set Default Fallback Location Initially (No automatic location prompt)
-    placeMarker(defaultLatLng, "Default Farm Location (Drag to adjust)");
+    const defaultLatLng = [10.8986, 123.4143]; 
+    placeMarker(defaultLatLng, "Default Farm Location");
     reverseGeocode(defaultLatLng[0], defaultLatLng[1]);
-    
-    
-    // 3. Map Click Event (Click to pin)
+
+    // Map Click Event to relocate pin and redraw polygon
     regMap.on('click', function(e) {
         placeMarker([e.latlng.lat, e.latlng.lng]);
         reverseGeocode(e.latlng.lat, e.latlng.lng);
+        drawHectarePolygon();
     });
+
+    // Real-time listeners
+    const healthSelect = document.querySelector('select[name="crop_health"]');
+    if (healthSelect) healthSelect.addEventListener('change', updatePinColor);
+
+    const sizeInput = document.querySelector('input[name="farm_size"]');
+    if (sizeInput) sizeInput.addEventListener('input', drawHectarePolygon);
 });
+
+// Generate dynamic REAL PIN shape with health color
+function getHealthIcon(healthStatus) {
+    let color = '#94a3b8'; // Gray (No data)
+    if (healthStatus === 'Healthy') color = '#10b981';    // Green
+    if (healthStatus === 'Monitoring') color = '#eab308'; // Yellow
+    if (healthStatus === 'At Risk') color = '#ef4444';    // Red
+
+    // Real Marker SVG instead of a circle
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" width="32" height="42">
+        <path fill="${color}" stroke="#ffffff" stroke-width="8" d="M172.268 501.67C26.97 291.031 0 269.413 0 192 0 85.961 85.961 0 192 0s192 85.961 192 192c0 77.413-26.97 99.031-172.268 309.67-9.535 13.774-29.93 13.773-39.464 0zM192 272c44.183 0 80-35.817 80-80s-35.817-80-80-80-80 35.817-80 80 35.817 80 80 80z"/>
+    </svg>`;
+
+    return L.divIcon({
+        className: 'custom-pin-icon',
+        html: svg,
+        iconSize: [32, 42],
+        iconAnchor: [16, 42],
+        popupAnchor: [0, -42]
+    });
+}
+
+function updatePinColor() {
+    if (regMarker) {
+        const health = document.querySelector('select[name="crop_health"]').value;
+        regMarker.setIcon(getHealthIcon(health));
+    }
+}
 
 function placeMarker(latlng, popupText = "Farm Location") {
     if (regMarker) regMap.removeLayer(regMarker);
-    regMarker = L.marker(latlng, { draggable: true }).addTo(regMap);
+    
+    const health = document.querySelector('select[name="crop_health"]')?.value || 'No data';
+    
+    regMarker = L.marker(latlng, { 
+        draggable: true,
+        icon: getHealthIcon(health)
+    }).addTo(regMap);
+    
     regMarker.bindPopup(popupText).openPopup();
     
-    // Update Hidden Inputs
     document.getElementById('lat-input').value = latlng[0];
     document.getElementById('lng-input').value = latlng[1];
 
-    // Drag event
+    // Drag event updates coordinates and re-centers polygon shape
+    regMarker.on('drag', function(event) {
+        drawHectarePolygon(); // Update polygon in real-time while dragging
+    });
+
     regMarker.on('dragend', function(event) {
         let position = regMarker.getLatLng();
         document.getElementById('lat-input').value = position.lat;
         document.getElementById('lng-input').value = position.lng;
         reverseGeocode(position.lat, position.lng);
+        drawHectarePolygon();
     });
+}
+
+function drawHectarePolygon() {
+    const sizeInput = document.querySelector('input[name="farm_size"]').value;
+    let hectares = parseFloat(sizeInput);
+    
+    if (sizePolygon) regMap.removeLayer(sizePolygon);
+    if (!hectares || hectares <= 0 || !regMarker) return;
+
+    if (hectares > 100) {
+        hectares = hectares / 10000; 
+    }
+
+    const center = [regMarker.getLatLng().lng, regMarker.getLatLng().lat];
+    const radiusInKilometers = Math.sqrt((hectares * 10000) / Math.PI) / 1000;
+    
+    const options = { steps: 64, units: 'kilometers' };
+    const circle = turf.circle(center, radiusInKilometers, options);
+    const healthColor = getHealthIcon(document.querySelector('select[name="crop_health"]')?.value).options.html.match(/fill="(#[a-zA-Z0-9]+)"/)[1];
+
+    sizePolygon = L.geoJSON(circle, {
+        style: {
+            color: healthColor || '#10b981',
+            weight: 2,
+            fillOpacity: 0.25
+        }
+    }).addTo(regMap);
 }
 
 function searchLocation() {
@@ -633,23 +790,106 @@ function searchLocation() {
             if (data.length > 0) {
                 let latlng = [data[0].lat, data[0].lon];
                 regMap.setView(latlng, 16);
-                placeMarker(latlng);
+                placeMarker(latlng, data[0].display_name);
+                drawHectarePolygon();
             } else {
                 alert("Location not found.");
             }
         });
 }
 
-// Converts map pin back into text for the search bar
 function reverseGeocode(lat, lng) {
     fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
         .then(res => res.json())
         .then(data => {
             if (data && data.display_name) {
                 document.getElementById('location-search').value = data.display_name;
+                const addressInput = document.querySelector('input[name="address"]');
+                if (addressInput) addressInput.value = data.display_name;
             }
         });
 }
+
+
+
+
+document.addEventListener('DOMContentLoaded', function () {
+    const BASE_URL = "{{ url('/') }}"; // resolves correctly in artisan serve AND xampp subfolders
+
+    const provinceSelect = document.getElementById('province-select');
+    const citySelect = document.getElementById('city-select');
+    const barangaySelect = document.getElementById('barangay-select');
+
+    const provinceHidden = document.getElementById('province-hidden');
+    const cityHidden = document.getElementById('city-hidden');
+    const barangayHidden = document.getElementById('barangay-hidden');
+
+    const provinceIdHidden = document.getElementById('province-id-hidden');
+    const cityIdHidden = document.getElementById('city-id-hidden');
+    const barangayIdHidden = document.getElementById('barangay-id-hidden');
+
+    if (!provinceSelect) return;
+
+    fetch(`${BASE_URL}/locations/provinces`)
+        .then(res => res.json())
+        .then(provinces => {
+            provinces.forEach(p => {
+                provinceSelect.insertAdjacentHTML('beforeend', `<option value="${p.id}">${p.name}</option>`);
+            });
+        });
+
+    provinceSelect.addEventListener('change', function () {
+        // store the selected NAME (for display) AND the ID (required by backend validation)
+        provinceHidden.value = this.options[this.selectedIndex].text;
+        provinceIdHidden.value = this.value;
+        cityHidden.value = '';
+        barangayHidden.value = '';
+        cityIdHidden.value = '';
+        barangayIdHidden.value = '';
+
+        citySelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
+        barangaySelect.innerHTML = '<option value="" disabled selected>Select city first...</option>';
+        citySelect.disabled = true;
+        barangaySelect.disabled = true;
+        if (!this.value) return;
+
+        fetch(`${BASE_URL}/locations/cities/${this.value}`)
+            .then(res => res.json())
+            .then(cities => {
+                citySelect.innerHTML = '<option value="" disabled selected>Select city/municipality...</option>';
+                cities.forEach(c => {
+                    citySelect.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.name}</option>`);
+                });
+                citySelect.disabled = false;
+            });
+    });
+
+    citySelect.addEventListener('change', function () {
+        cityHidden.value = this.options[this.selectedIndex].text;
+        cityIdHidden.value = this.value;
+        barangayHidden.value = '';
+        barangayIdHidden.value = '';
+
+        barangaySelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
+        barangaySelect.disabled = true;
+        if (!this.value) return;
+
+        fetch(`${BASE_URL}/locations/barangays/${this.value}`)
+            .then(res => res.json())
+            .then(barangays => {
+                barangaySelect.innerHTML = '<option value="" disabled selected>Select barangay...</option>';
+                barangays.forEach(b => {
+                    barangaySelect.insertAdjacentHTML('beforeend', `<option value="${b.id}">${b.name}</option>`);
+                });
+                barangaySelect.disabled = false;
+            });
+    });
+
+    barangaySelect.addEventListener('change', function () {
+        barangayHidden.value = this.options[this.selectedIndex].text;
+        barangayIdHidden.value = this.value;
+    });
+});
 </script>
 
 

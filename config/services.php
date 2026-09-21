@@ -35,4 +35,14 @@ return [
         ],
     ],
 
+    // Used by the Create Account "Location Preview" map and the Assignment
+    // Management "Area Map Overview" map (AdminUserController::createAccount
+    // and AdminAssignmentController::index both read this via
+    // config('services.maptiler.key')). Without this block, that call
+    // always resolves to null even when MAPTILER_API_KEY is set in .env —
+    // which is exactly why the on-map layer switcher was showing disabled.
+    'maptiler' => [
+        'key' => env('MAPTILER_API_KEY'),
+    ],
+
 ];

@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException; 
 
 class AuthController extends Controller
@@ -16,7 +17,7 @@ class AuthController extends Controller
     if (auth()->check()) {
         $role = auth()->user()->role;
         return match ($role) {
-            'admin' => redirect()->route('admin.dashboard'),
+            'admin', 'developer' => redirect()->route('admin.dashboard'),
             'technician' => redirect()->route('technician.dashboard'),
             'farmer' => redirect()->route('farmer.dashboard'),
             default => redirect()->route('login'),
@@ -60,7 +61,9 @@ class AuthController extends Controller
                     'full_name' => 'required|string|max:255',
                     'email' => 'required|email',
                     'password' => 'required|min:6',
-                    'address' => 'required|string',
+                    'province_id' => 'required|exists:provinces,id',
+                    'city_id' => 'required|exists:cities,id',
+                    'barangay_id' => 'required|exists:barangays,id',
                     'farm_name' => 'required|string',
                     'latitude' => 'required|numeric',
                     'longitude' => 'required|numeric',
@@ -93,7 +96,9 @@ class AuthController extends Controller
                     'water_source' => $request->water_source,
                     'id_type' => $request->id_type,
                     'document_photo' => $request->document_photo_base64, 
-                    'address' => $request->address,
+                    'province_id' => $request->province_id,
+                    'city_id' => $request->city_id,
+                    'barangay_id' => $request->barangay_id,
                     'farm_name' => $request->farm_name,
                     'latitude' => $request->latitude,
                     'longitude' => $request->longitude,
@@ -187,7 +192,10 @@ class AuthController extends Controller
         (Auth::login($user));
         $request->session()->regenerate();
 
-        if ($user->role === 'admin') return redirect('/admin/dashboard');
+        // Developer is a hardcoded, seeded-only account (see the
+        // 2026_08_23_000002_seed_developer_user migration) that reuses the
+        // admin panel wholesale — same dashboard, same views.
+        if ($user->role === 'admin' || $user->role === 'developer') return redirect('/admin/dashboard');
         if ($user->role === 'technician') return redirect('/technician/dashboard');
         return redirect('/farmer/dashboard');
     }
@@ -289,6 +297,52 @@ class AuthController extends Controller
 
             return back()->with('error', $errorMessage);
         }
+    }
+
+    // ==========================================
+    // UPDATE FARM ADDRESS (Province / City / Barangay)
+    // Called via AJAX from the farmer dashboard "Farm Address" card
+    // ==========================================
+    public function updateAddress(Request $request)
+    {
+        try {
+            $request->validate([
+                'province_id'  => 'required|exists:provinces,id',
+                'city_id'      => 'required|exists:cities,id',
+                'barangay_id'  => 'required|exists:barangays,id',
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?? 'Invalid selection.',
+            ], 422);
+        }
+
+        $user = Auth::user();
+        $user->province_id  = $request->province_id;
+        $user->city_id      = $request->city_id;
+        $user->barangay_id  = $request->barangay_id;
+        $user->save();
+
+        $location = DB::table('barangays')
+            ->join('cities', 'barangays.city_id', '=', 'cities.id')
+            ->join('provinces', 'cities.province_id', '=', 'provinces.id')
+            ->where('barangays.id', $user->barangay_id)
+            ->select(
+                'provinces.name as province_name',
+                'cities.name as city_name',
+                'barangays.name as barangay_name'
+            )
+            ->first();
+
+        $address = $location
+            ? "{$location->barangay_name}, {$location->city_name}, {$location->province_name}"
+            : 'Not yet set';
+
+        return response()->json([
+            'success' => true,
+            'address' => $address,
+        ]);
     }
 
     public function logout(Request $request)

@@ -13,7 +13,7 @@
         ->where('status', 'approved')
         ->whereNotNull('latitude')
         ->whereNotNull('longitude')
-        ->select('farm_name', 'farm_size', 'latitude', 'longitude', 'address') 
+        ->select('farm_name', 'farm_size', 'latitude', 'longitude') 
         ->get();
 
     // Default coordinates for Technician (Center of Sagay City as fallback)

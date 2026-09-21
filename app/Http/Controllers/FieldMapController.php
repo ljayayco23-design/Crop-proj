@@ -15,22 +15,83 @@ public function index()
         $city   = "Sagay City";
         $url    = "http://api.weatherapi.com/v1/forecast.json";
 
+        $user = auth()->user()->load(['province', 'city', 'barangay']);
         // Fetch User Registration Map Data
-        $userLat  = Auth::user()->latitude;
-        $userLng  = Auth::user()->longitude;
-        $farmName = Auth::user()->farm_name;
-        $farmSize = Auth::user()->farm_size;
+        $userLat  = $user->latitude;
+        $userLng  = $user->longitude;
+        $farmName = $user->farm_name;
+        $farmSize = $user->farm_size;
 
-        $otherFarms = \App\Models\User::where('role', 'farmer')
+        // Fetch New Crop & Detection Additions
+        $growthStage     = $user->growth_stage;
+        $riceVariety     = $user->rice_variety;
+        $userAddress = collect([
+            optional($user->barangay)->name,
+            optional($user->city)->name,
+            optional($user->province)->name,
+        ])->filter()->implode(', ');
+        $latestDetection = \App\Models\TreatmentRecord::where('user_id', $user->id)->latest()->first();
+        
+        // Load the new additional farms column
+$additionalFarmsJson = json_encode($user->additional_farms ?? []);
+
+
+        // ================= AUTOMATIC FIELD STATUS (based on saved detection history) =================
+        // Tune these any time — they control when a field's status label/pin color changes.
+        $statusThresholds = [
+            'healthy'    => 1,   // >= this many total detections -> "Healthy"
+            'monitoring' => 25,  // >= this many total detections -> "Monitoring"
+            'at_risk'    => 60,  // >= this many total detections -> "At Risk"
+        ];
+        $fieldStatusColors = [
+            'No data'    => '#94a3b8',
+            'Healthy'    => '#10b981',
+            'Monitoring' => '#f59e0b',
+            'At Risk'    => '#ef4444',
+        ];
+
+        $computeFieldStatus = function ($fieldKey) use ($user, $statusThresholds) {
+            $query = DB::table('user_detections')->where('user_id', $user->id);
+            if ($fieldKey === 'main') {
+                $query->where(function ($q) {
+                    $q->where('field_key', 'main')->orWhereNull('field_key');
+                });
+            } else {
+                $query->where('field_key', $fieldKey);
+            }
+            $total = $query->count();
+
+            if ($total <= 0) return 'No data';
+            if ($total < $statusThresholds['monitoring']) return 'Healthy';
+            if ($total < $statusThresholds['at_risk']) return 'Monitoring';
+            return 'At Risk';
+        };
+
+        $fieldStatuses = ['main' => $computeFieldStatus('main')];
+        foreach (($user->additional_farms ?? []) as $i => $farm) {
+            $key = $farm['id'] ?? ('extra_' . $i);
+            $fieldStatuses[$key] = $computeFieldStatus($key);
+        }
+        // ================================================================================================
+
+                $otherFarms = \App\Models\User::with(['province', 'city', 'barangay'])
+            ->where('role', 'farmer')
             ->where('status', 'approved')
-            ->where('id', '!=', auth()->id()) // Exclude myself
+            ->where('id', '!=', $user->id)
             ->whereNotNull('latitude')
             ->whereNotNull('longitude')
-            ->select('farm_name', 'farm_size', 'latitude', 'longitude', 'address') 
-            ->get();
+            ->select('id', 'farm_name', 'farm_size', 'latitude', 'longitude', 'province_id', 'city_id', 'barangay_id')
+            ->get()
+            ->map(function ($farm) {
+                $farm->address = collect([
+                    optional($farm->barangay)->name,
+                    optional($farm->city)->name,
+                    optional($farm->province)->name,
+                ])->filter()->implode(', ');
+                return $farm;
+            });
 
-        // Evaluate user authorization scope to build view target destination path
-        $viewTemplate = auth()->user()->role === 'technician' ? 'technician.field_map' : 'farmer.field_map';
+        $viewTemplate = $user->role === 'technician' ? 'technician.field_map' : 'farmer.field_map';
 
         try {
             $response = Http::timeout(5)->get($url, [
@@ -73,15 +134,19 @@ public function index()
             if ($wind > 25) $alerts[] = "💨 Strong winds — Check for lodging risk on tall varieties.";
             if (empty($alerts)) $alerts[] = "✅ Good weather conditions for rice today.";
 
-            // Passing variables straight into the dynamic string path template
             return view($viewTemplate, compact(
-                'temp', 'condition', 'humidity', 'wind', 'rain', 'alerts', 'riskLevel', 'riskColor', 'userLat', 'userLng', 'farmName', 'farmSize', 'otherFarms'
+                'temp', 'condition', 'humidity', 'wind', 'rain', 'alerts', 'riskLevel', 'riskColor', 
+                'userLat', 'userLng', 'farmName', 'farmSize', 'otherFarms',
+                'growthStage', 'riceVariety', 'userAddress', 'latestDetection', 'additionalFarmsJson',
+                'fieldStatuses', 'fieldStatusColors'
             ));
 
-        } catch (\Exception $e) {
-            // Apply the dynamic target destination in case of exception handling fallbacks as well
-            return view($viewTemplate, compact('userLat', 'userLng', 'farmName', 'farmSize', 'otherFarms'))
-                   ->with('error', 'Weather service is temporarily offline or timed out.');
+             } catch (\Exception $e) {
+            return view($viewTemplate, compact(
+                'userLat', 'userLng', 'farmName', 'farmSize', 'otherFarms',
+                'growthStage', 'riceVariety', 'userAddress', 'latestDetection', 'additionalFarmsJson',
+                'fieldStatuses', 'fieldStatusColors'
+            ))->with('error', 'Weather service is temporarily offline or timed out.');
         }
     }
 
@@ -146,13 +211,11 @@ public function index()
         }
     }
 
-    public function syncLayers(Request $request)
+public function syncLayers(Request $request)
     {
         try {
             $userId = Auth::id();
-            if (!$userId) {
-                return response()->json(['error' => 'User not authenticated'], 401);
-            }
+            if (!$userId) return response()->json(['error' => 'User not authenticated'], 401);
 
             if ($request->isMethod('post')) {
                 $layers = $request->input('layers', []);
@@ -160,16 +223,70 @@ public function index()
                 DB::transaction(function () use ($userId, $layers) {
                     DB::table('map_layers')->where('user_id', $userId)->delete();
 
+                    $mainFarmPin = null;
+                    $additionalFarms = [];
+                    $mainPinDeleted = false;
+
                     foreach ($layers as $layer) {
-                        DB::table('map_layers')->insert([
-                            'user_id'    => $userId,
-                            'layer_id'   => $layer['id'] ?? uniqid(),
-                            'type'       => $layer['type'] ?? 'Shape',
-                            'geojson'    => is_array($layer['geojson']) || is_object($layer['geojson']) ? json_encode($layer['geojson']) : $layer['geojson'],
-                            'properties' => is_array($layer['properties']) || is_object($layer['properties']) ? json_encode($layer['properties']) : $layer['properties'],
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ]);
+                        if (($layer['type'] ?? '') === 'DeletedFarmPin') {
+                            $mainPinDeleted = true;
+                            continue;
+                        }
+
+                        $layerId = $layer['id'] ?? uniqid();
+                        $props = $layer['properties'] ?? [];
+                        $options = $props['options'] ?? [];
+
+                        $isFarmPin = isset($options['isFarmPin']) && $options['isFarmPin'];
+                        $isMainFarm = isset($options['isMainFarm']) && $options['isMainFarm'];
+
+                        if ($isFarmPin) {
+                            $farmData = [
+                                'id'        => $layerId,
+                                'coords'    => $layer['geojson']['geometry']['coordinates'] ?? null,
+                                'options'   => $options,
+                                'placeName' => $props['placeName'] ?? null
+                            ];
+
+                            if ($isMainFarm) {
+                                $mainFarmPin = $farmData;
+                            } else {
+                                $additionalFarms[] = $farmData;
+                            }
+                        } else {
+                            // Standard shapes go back to map_layers
+                            DB::table('map_layers')->insert([
+                                'user_id'    => $userId,
+                                'layer_id'   => $layerId,
+                                'type'       => $layer['type'] ?? 'Shape',
+                                'geojson'    => is_array($layer['geojson']) || is_object($layer['geojson']) ? json_encode($layer['geojson']) : $layer['geojson'],
+                                'properties' => is_array($props) || is_object($props) ? json_encode($props) : $props,
+                                'created_at' => now(),
+                                'updated_at' => now(),
+                            ]);
+                        }
+                    }
+
+                    $updateData = [];
+
+                    if ($mainPinDeleted) {
+                        $updateData['field_id'] = null;
+                        $updateData['latitude'] = null;
+                        $updateData['longitude'] = null;
+                    } elseif ($mainFarmPin && $mainFarmPin['coords']) {
+                        $updateData['field_id']     = $mainFarmPin['id'];
+                        $updateData['latitude']     = $mainFarmPin['coords'][1];
+                        $updateData['longitude']    = $mainFarmPin['coords'][0];
+                        $updateData['farm_name']    = $mainFarmPin['options']['farmName'] ?? DB::raw('farm_name');
+                        $updateData['farm_size']    = $mainFarmPin['options']['farmSize'] ?? DB::raw('farm_size');
+                        $updateData['rice_variety'] = $mainFarmPin['options']['farmVariety'] ?? DB::raw('rice_variety');
+                    }
+
+                    // Save additional fields into the users table using the new column
+                    $updateData['additional_farms'] = json_encode($additionalFarms);
+
+                    if (!empty($updateData)) {
+                        DB::table('users')->where('id', $userId)->update($updateData);
                     }
                 });
 
@@ -178,7 +295,6 @@ public function index()
 
             if ($request->isMethod('get')) {
                 $layers = DB::table('map_layers')->where('user_id', $userId)->get();
-
                 $formattedLayers = $layers->map(function ($layer) {
                     $safeDecode = function($data) {
                         if (empty($data)) return [];
@@ -188,7 +304,6 @@ public function index()
                         }
                         return $data; 
                     };
-
                     return [
                         'id'         => $layer->layer_id,
                         'type'       => $layer->type,
@@ -196,16 +311,10 @@ public function index()
                         'properties' => $safeDecode($layer->properties),
                     ];
                 });
-
                 return response()->json($formattedLayers);
             }
-            
         } catch (\Exception $e) {
-            return response()->json([
-                'error'   => 'Server Crash',
-                'message' => $e->getMessage(),
-                'line'    => $e->getLine()
-            ], 500);
+            return response()->json(['error' => 'Server Crash', 'message' => $e->getMessage()], 500);
         }
     }
 

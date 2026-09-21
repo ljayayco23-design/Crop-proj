@@ -90,6 +90,51 @@
             }
             .chat-header { border-radius: 0 !important; }
         }
+
+        /* Profile Details / Account Center fields: underline only, no boxed border */
+        .floating-panel input.field-underline,
+        .floating-panel textarea.field-underline {
+            background: transparent !important;
+            border: none !important;
+            border-bottom: 2px solid #495057 !important;
+            border-radius: 0 !important;
+            padding-left: 0.25rem;
+            padding-right: 0.25rem;
+            transition: border-color .15s ease-in-out;
+        }
+        .floating-panel input.field-underline:focus,
+        .floating-panel textarea.field-underline:focus {
+            border-bottom-color: #28a745 !important;
+            box-shadow: none !important;
+            outline: none;
+        }
+        /* Selects keep their arrow but lose the boxed border, same underline look */
+        .floating-panel select.field-underline {
+            background-color: transparent !important;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23ffffff'%3e%3cpath d='M8 11L3 6h10l-5 5z'/%3e%3c/svg%3e") !important;
+            background-repeat: no-repeat !important;
+            background-position: right 0.25rem center !important;
+            background-size: 14px !important;
+            border: none !important;
+            border-bottom: 2px solid #495057 !important;
+            border-radius: 0 !important;
+            padding-left: 0.25rem;
+            padding-right: 1.5rem;
+            transition: border-color .15s ease-in-out;
+        }
+        .floating-panel select.field-underline:focus {
+            border-bottom-color: #28a745 !important;
+            box-shadow: none !important;
+            outline: none;
+        }
+        .floating-panel select.field-underline:disabled {
+            border-bottom-color: #343a40 !important;
+            opacity: 0.6;
+        }
+        .floating-panel select.field-underline option {
+            background-color: #212529;
+            color: #fff;
+        }
     </style>
 </head>
 <body data-bs-theme="dark">
@@ -169,8 +214,7 @@
                             </div>
                         </div>
                         <hr class="border-secondary">
-                        <a class="dropdown-item py-2 text-white" href="#" onclick="showProfilePanel(0)"><i class="fas fa-user me-3 text-success"></i>Profile Details</a>
-                        <a class="dropdown-item py-2 text-white" href="#" onclick="showProfilePanel(1)"><i class="fas fa-cog me-3 text-info"></i>Account Center</a>
+                        <a class="dropdown-item py-2 text-white" href="#" onclick="showProfilePanel()"><i class="fas fa-cog me-3 text-info"></i>Settings</a>
                         <hr class="border-secondary">
                         <form id="logout-form" method="POST" action="{{ route('logout') }}">
                             @csrf
@@ -184,44 +228,67 @@
         <!-- Floating Profile Panel -->
         <div id="floatingPanel" class="floating-panel">
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h4 id="panelTitle" class="fw-bold text-white mb-0">My Profile</h4>
-                <button onclick="document.getElementById('floatingPanel').classList.remove('show')" class="btn btn-link text-white text-decoration-none"><i class="fas fa-times fs-3 text-danger"></i></button>
+                <h4 id="panelTitle" class="fw-bold text-white mb-0">Settings</h4>
+                <button onclick="handlePanelClose()" class="btn btn-link text-white text-decoration-none"><i class="fas fa-times fs-3 text-danger"></i></button>
             </div>
 
-            <ul class="nav nav-pills nav-fill bg-dark border border-secondary rounded-3 p-1 mb-4" id="profileTabs">
-                <li class="nav-item"><a class="nav-link active bg-success text-white fw-bold" onclick="switchTab(0)" style="cursor:pointer">Profile</a></li>
-                <li class="nav-item"><a class="nav-link text-white" onclick="switchTab(1)" style="cursor:pointer">Security</a></li>
-            </ul>
+            <!-- Menu list: shown first. Only the names are clickable; content
+                 only appears once one of them is tapped (see openProfileSection()). -->
+            <div id="profile-menu-list">
+                <a href="#" class="dropdown-item py-3 d-flex align-items-center gap-3 text-white border-bottom border-secondary border-opacity-25" onclick="event.preventDefault(); openProfileSection('profile')" style="cursor:pointer">
+                    <div class="text-info"><i class="fas fa-user-circle fs-4"></i></div>
+                    <div><h6 class="mb-0 fw-bold">Profile Details</h6><small class="text-secondary">Name, photo, farm address</small></div>
+                </a>
+                <a href="#" class="dropdown-item py-3 d-flex align-items-center gap-3 text-white" onclick="event.preventDefault(); openProfileSection('account')" style="cursor:pointer">
+                    <div class="text-success"><i class="fas fa-shield-alt fs-4"></i></div>
+                    <div><h6 class="mb-0 fw-bold">Account Center</h6><small class="text-secondary">Change your password</small></div>
+                </a>
+            </div>
 
-            <div id="tab-profile">
+            <div id="tab-profile" style="display:none;">
                 <form id="profileForm" method="POST" action="{{ route('profile.update') }}" enctype="multipart/form-data">
                     @csrf
                     <div class="text-center mb-4 position-relative">
                         <img id="profile-pic" src="{{ $profile_pic }}" class="profile-photo shadow-lg">
                         <label for="photo-upload" class="btn btn-success btn-sm position-absolute rounded-circle shadow" style="bottom:0; right:130px; width:35px; height:35px; line-height:22px;"><i class="fas fa-camera"></i></label>
-                        <input type="file" name="profile_photo" id="photo-upload" accept="image/*" class="d-none" onchange="document.getElementById('profile-pic').src = window.URL.createObjectURL(this.files[0])">
+                        <input type="file" id="photo-upload" accept="image/*" class="d-none" onchange="handleProfilePhotoChange(this)">
+                        <input type="hidden" name="profile_photo_base64" id="profile_photo_base64">
                     </div>
                     
                     <div class="mb-3">
                         <label class="form-label prodigy-label">Full Name</label>
-                        <input type="text" name="full_name" class="form-control bg-dark border-secondary text-white" value="{{ $userFullName }}" required>
+                        <input type="text" name="full_name" class="form-control field-underline text-white" value="{{ $userFullName }}" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label prodigy-label">Phone Number</label>
-                        <input type="text" name="phone" class="form-control bg-dark border-secondary text-white" value="{{ $user->phone ?? '' }}">
+                        <input type="text" name="phone" class="form-control field-underline text-white" value="{{ $user->phone ?? '' }}">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label prodigy-label">Address</label>
-                        <textarea name="address" class="form-control bg-dark border-secondary text-white" rows="2">{{ $user->address ?? '' }}</textarea>
+                        <label class="form-label prodigy-label">Province</label>
+                        <select name="province_id" id="pm-province-select" class="form-control field-underline text-white">
+                            <option value="" disabled selected>Select province...</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label prodigy-label">City / Municipality</label>
+                        <select name="city_id" id="pm-city-select" class="form-control field-underline text-white" disabled>
+                            <option value="" disabled selected>Select province first...</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label prodigy-label">Barangay</label>
+                        <select name="barangay_id" id="pm-barangay-select" class="form-control field-underline text-white" disabled>
+                            <option value="" disabled selected>Select city first...</option>
+                        </select>
                     </div>
                     <div class="mb-3">
                         <label class="form-label prodigy-label">Farm Size (Hectares)</label>
-                        <input type="number" step="0.1" name="farm_size" class="form-control bg-dark border-secondary text-white" value="{{ $user->farm_size ?? '' }}">
+                        <input type="number" step="0.1" name="farm_size" class="form-control field-underline text-white" value="{{ $user->farm_size ?? '' }}">
                     </div>
                   
                     <div class="mb-4">
                         <label class="form-label prodigy-label">About My Farm (Bio)</label>
-                        <textarea name="bio" class="form-control bg-dark border-secondary text-white" rows="3">{{ $user->bio ?? '' }}</textarea>
+                        <textarea name="bio" class="form-control field-underline text-white" rows="3">{{ $user->bio ?? '' }}</textarea>
                     </div>
 
                     <button type="button" onclick="saveProfile('profileForm')" class="btn btn-success w-100 py-3 fw-bold mt-3 shadow">Save Changes</button>
@@ -233,15 +300,15 @@
                     @csrf
                     <div class="mb-3">
                         <label class="form-label prodigy-label">Current Password</label>
-                        <input type="password" name="current_password" class="form-control bg-dark border-secondary text-white" required>
+                        <input type="password" name="current_password" class="form-control field-underline text-white" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label prodigy-label">New Password</label>
-                        <input type="password" name="new_password" class="form-control bg-dark border-secondary text-white" required>
+                        <input type="password" name="new_password" class="form-control field-underline text-white" required>
                     </div>
                     <div class="mb-4">
                         <label class="form-label prodigy-label">Confirm Password</label>
-                        <input type="password" name="new_password_confirmation" class="form-control bg-dark border-secondary text-white" required>
+                        <input type="password" name="new_password_confirmation" class="form-control field-underline text-white" required>
                     </div>
                     <button type="button" onclick="savePassword('passwordForm')" class="btn btn-success w-100 py-3 fw-bold shadow">Change Password</button>
                 </form>
@@ -268,21 +335,172 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-    function showProfilePanel(tab) { 
-        document.getElementById('floatingPanel').classList.add('show'); 
-        switchTab(tab); 
+    // Panel now opens on a menu of clickable names (Profile Details /
+    // Account Center). Content for either only renders once its name is
+    // tapped — see openProfileSection(). currentProfileView tracks which
+    // screen is showing so the X button knows whether to close the whole
+    // panel or just step back to the menu.
+    let currentProfileView = 'menu';
+
+    function showProfilePanel() {
+        document.getElementById('floatingPanel').classList.add('show');
+        openProfileMenu();
     }
 
-    function switchTab(tab) {
-        const tabs = document.querySelectorAll('#profileTabs .nav-link');
-        tabs[0].classList.toggle('active', tab === 0); 
-        tabs[0].classList.toggle('text-white', tab !== 0);
-        tabs[1].classList.toggle('active', tab === 1); 
-        tabs[1].classList.toggle('text-white', tab !== 1);
-        
-        document.getElementById('tab-profile').style.display = tab === 0 ? 'block' : 'none';
-        document.getElementById('tab-settings').style.display = tab === 1 ? 'block' : 'none';
+    function openProfileMenu() {
+        currentProfileView = 'menu';
+        document.getElementById('panelTitle').textContent = 'Settings';
+        document.getElementById('profile-menu-list').style.display = 'block';
+        document.getElementById('tab-profile').style.display = 'none';
+        document.getElementById('tab-settings').style.display = 'none';
     }
+
+    function openProfileSection(section) {
+        currentProfileView = section;
+        document.getElementById('profile-menu-list').style.display = 'none';
+        document.getElementById('tab-profile').style.display = section === 'profile' ? 'block' : 'none';
+        document.getElementById('tab-settings').style.display = section === 'account' ? 'block' : 'none';
+        document.getElementById('panelTitle').textContent = section === 'profile' ? 'Profile Details' : 'Account Center';
+
+        if (section === 'profile' && !window.pmLocationLoaded) {
+            window.pmLocationLoaded = true;
+            loadPmProvinces();
+        }
+    }
+
+    // The X button: from the menu it closes the panel back to the main
+    // dashboard; from a section it steps back to the menu instead.
+    function handlePanelClose() {
+        if (currentProfileView === 'menu') {
+            document.getElementById('floatingPanel').classList.remove('show');
+        } else {
+            openProfileMenu();
+        }
+    }
+
+    // ==========================================
+    // PROFILE MODAL — Province/City/Barangay cascading dropdowns
+    // (same pattern as the Farm Address card / registration form)
+    // ==========================================
+    const PM_BASE_URL = "{{ url('/') }}";
+    const pmCurrentAddress = {
+        province_id: @json($user->province_id ?? null),
+        city_id: @json($user->city_id ?? null),
+        barangay_id: @json($user->barangay_id ?? null)
+    };
+
+    const pmProvinceSelect = document.getElementById('pm-province-select');
+    const pmCitySelect = document.getElementById('pm-city-select');
+    const pmBarangaySelect = document.getElementById('pm-barangay-select');
+
+    function loadPmProvinces() {
+        pmProvinceSelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
+        fetch(`${PM_BASE_URL}/locations/provinces`)
+            .then(res => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            })
+            .then(provinces => {
+                pmProvinceSelect.innerHTML = '<option value="" disabled>Select province...</option>';
+                provinces.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = p.name;
+                    if (pmCurrentAddress.province_id && String(p.id) === String(pmCurrentAddress.province_id)) {
+                        opt.selected = true;
+                    }
+                    pmProvinceSelect.appendChild(opt);
+                });
+                if (pmCurrentAddress.province_id) {
+                    loadPmCities(pmCurrentAddress.province_id, pmCurrentAddress.city_id);
+                }
+            })
+            .catch(err => {
+                console.error('[Profile Address] Failed to load provinces:', err);
+                pmProvinceSelect.innerHTML = '<option value="" disabled selected>Failed to load provinces</option>';
+            });
+    }
+
+    function loadPmCities(provinceId, preselectCityId) {
+        pmCitySelect.value = '';
+        pmCitySelect.disabled = true;
+        pmCitySelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
+        pmBarangaySelect.value = '';
+        pmBarangaySelect.disabled = true;
+        pmBarangaySelect.innerHTML = '<option value="" disabled selected>Select city first...</option>';
+
+        fetch(`${PM_BASE_URL}/locations/cities/${provinceId}`)
+            .then(res => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            })
+            .then(cities => {
+                pmCitySelect.innerHTML = '<option value="" disabled>Select city/municipality...</option>';
+                cities.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name;
+                    if (preselectCityId && String(c.id) === String(preselectCityId)) {
+                        opt.selected = true;
+                    }
+                    pmCitySelect.appendChild(opt);
+                });
+                pmCitySelect.disabled = false;
+                if (cities.length === 0) {
+                    console.warn('[Profile Address] No cities returned for province', provinceId, '— check that the cities table has rows for this province_id.');
+                }
+                if (preselectCityId) {
+                    loadPmBarangays(preselectCityId, pmCurrentAddress.barangay_id);
+                }
+            })
+            .catch(err => {
+                console.error('[Profile Address] Failed to load cities:', err);
+                pmCitySelect.innerHTML = '<option value="" disabled selected>Failed to load cities</option>';
+            });
+    }
+
+    function loadPmBarangays(cityId, preselectBarangayId) {
+        pmBarangaySelect.value = '';
+        pmBarangaySelect.disabled = true;
+        pmBarangaySelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
+
+        fetch(`${PM_BASE_URL}/locations/barangays/${cityId}`)
+            .then(res => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            })
+            .then(barangays => {
+                pmBarangaySelect.innerHTML = '<option value="" disabled>Select barangay...</option>';
+                barangays.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.id;
+                    opt.textContent = b.name;
+                    if (preselectBarangayId && String(b.id) === String(preselectBarangayId)) {
+                        opt.selected = true;
+                    }
+                    pmBarangaySelect.appendChild(opt);
+                });
+                pmBarangaySelect.disabled = false;
+                if (barangays.length === 0) {
+                    console.warn('[Profile Address] No barangays returned for city', cityId, '— check that the barangays table has rows for this city_id.');
+                }
+            })
+            .catch(err => {
+                console.error('[Profile Address] Failed to load barangays:', err);
+                pmBarangaySelect.innerHTML = '<option value="" disabled selected>Failed to load barangays</option>';
+            });
+    }
+
+    pmProvinceSelect.addEventListener('change', function () {
+        pmCurrentAddress.city_id = null;
+        pmCurrentAddress.barangay_id = null;
+        if (this.value) loadPmCities(this.value, null);
+    });
+
+    pmCitySelect.addEventListener('change', function () {
+        pmCurrentAddress.barangay_id = null;
+        if (this.value) loadPmBarangays(this.value, null);
+    });
 
     document.addEventListener('click', function(event) {
         const panel = document.getElementById('floatingPanel');
@@ -291,6 +509,7 @@
         
         if (panel.classList.contains('show') && !isClickInsidePanel && !isClickingTrigger) {
             panel.classList.remove('show');
+            openProfileMenu();
         }
 
         const sidebar = document.getElementById('farmerSidebar');
@@ -301,6 +520,47 @@
             document.body.classList.remove('sidebar-show');
         }
     });
+
+    // --- Profile photo: compress client-side before it ever leaves the browser ---
+    // Same approach as the registration page's document/selfie upload — resize to a
+    // max width on a canvas, re-encode as JPEG at 60% quality, then send that (much
+    // smaller) Base64 string instead of the raw file.
+    async function compressImageFile(file) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            const objectUrl = URL.createObjectURL(file);
+
+            img.onload = () => {
+                URL.revokeObjectURL(objectUrl);
+                const canvas = document.createElement('canvas');
+
+                const MAX_WIDTH = 512;
+                const scale = Math.min(MAX_WIDTH / img.width, 1);
+
+                canvas.width = img.width * scale;
+                canvas.height = img.height * scale;
+
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                resolve(canvas.toDataURL('image/jpeg', 0.6));
+            };
+            img.onerror = (err) => reject(err);
+            img.src = objectUrl;
+        });
+    }
+
+    async function handleProfilePhotoChange(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        try {
+            const compressedBase64 = await compressImageFile(file);
+            document.getElementById('profile_photo_base64').value = compressedBase64;
+            document.getElementById('profile-pic').src = compressedBase64;
+        } catch (error) {
+            console.error('Photo compression error:', error);
+        }
+    }
 
     async function saveProfile(formId) {
         const form = document.getElementById(formId);

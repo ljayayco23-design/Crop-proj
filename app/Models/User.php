@@ -16,7 +16,9 @@ class User extends Authenticatable
         'role',
         'status',
         'phone',
-        'address',
+        'province_id',
+        'city_id',
+        'barangay_id',
         'lang',
         // ADDED MISSING REGISTRATION FIELDS BELOW:
         'dob',
@@ -30,6 +32,11 @@ class User extends Authenticatable
         'water_source',
         'id_type',
         'document_photo',
+
+
+        'field_id',
+        'additional_farms',
+        'rice_variety',
     ];
 
     protected $hidden = [
@@ -37,9 +44,14 @@ class User extends Authenticatable
         'remember_token',
     ];
 
+    protected $appends = [
+        'address',
+    ];
+
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        'additional_farms' => 'array',
     ];
 
     protected static function boot()
@@ -56,5 +68,31 @@ class User extends Authenticatable
             // 3. Delete the user's scan/detection history
             \Illuminate\Support\Facades\DB::table('user_detections')->where('user_id', $user->id)->delete();
         });
+    }
+
+        public function province()
+    {
+        return $this->belongsTo(Province::class);
+    }
+
+    public function city()
+    {
+        return $this->belongsTo(City::class);
+    }
+
+    public function barangay()
+    {
+        return $this->belongsTo(Barangay::class);
+    }
+
+    public function getAddressAttribute()
+    {
+        $parts = array_filter([
+            $this->province->name ?? null,
+            $this->city->name ?? null,
+            $this->barangay->name ?? null,
+        ]);
+
+        return $parts ? implode(', ', $parts) : null;
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\KnowledgeController;
 use App\Http\Controllers\Admin\AdminUserController;
 use App\Http\Controllers\Admin\AdminDashboardController;
+use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\FarmerHistoryController;
 use App\Http\Controllers\TechnicianController;
 use App\Http\Controllers\AnnouncementController;
@@ -13,7 +14,14 @@ use App\Http\Controllers\ChatController;
 use App\Http\Controllers\FieldMapController; // ✅ Added New Field Map Controller
 use Illuminate\Support\Facades\Artisan;
 use App\Http\Controllers\FarmerChatController; // Or your current controller
+use App\Http\Controllers\Admin\AdminAssignmentController;
+use App\Http\Controllers\Admin\AdminSystemReportController;
+use App\Http\Controllers\LocationController;
+use App\Http\Controllers\FarmerReportController;
 
+Route::get('/locations/provinces', [LocationController::class, 'provinces']);
+Route::get('/locations/cities/{province}', [LocationController::class, 'cities']);
+Route::get('/locations/barangays/{city}', [LocationController::class, 'barangays']);
 // Force Laravel to serve the Service Worker as a static JavaScript file
 Route::get('/sw.js', function () {
     return response()->file(public_path('sw.js'), [
@@ -24,7 +32,35 @@ Route::get('/sw.js', function () {
 
 Route::post('/farmer/chat-query', [FarmerChatController::class, 'handleChat'])->name('farmer.chat.query');
 
+// ============================================
+// DETECTION FEEDBACK LOOP (farmer report -> technician review)
+// Two roles, ONE controller. The middleware does the first role check and
+// FarmerReportController re-checks auth()->user()->role server-side, so
+// neither side can reach the other's screen or rows.
+// ============================================
+Route::middleware(['auth', 'role:farmer'])->prefix('farmer')->group(function () {
+    Route::get('/reports', [FarmerReportController::class, 'index'])->name('farmer.reports');
+    // Posted by the "Report a Problem" modal on the detection page.
+    Route::post('/reports', [FarmerReportController::class, 'store'])->name('farmer.reports.store');
+    // Posted by the three-dot "Delete" action on the farmer's own Report
+    // Problem page. Scoped to the farmer's own rows inside the controller.
+    Route::delete('/reports/{report}', [FarmerReportController::class, 'destroy'])->name('farmer.reports.destroy');
+});
 
+
+Route::middleware(['auth', 'role:technician'])->prefix('technician')->group(function () {
+    Route::get('/reports', [FarmerReportController::class, 'index'])->name('technician.reports');
+    // "Save Review & Resolve". {report} is re-scoped to this technician's
+    // own queue inside the controller before anything is updated.
+    Route::post('/reports/{report}/review', [FarmerReportController::class, 'review'])->name('technician.reports.review');
+    Route::post('/reports/{report}/review/clear', [FarmerReportController::class, 'clearReview'])->name('technician.reports.review.clear');
+    // "Escalate to Admin". Saves the same review data as the route above,
+    // then flags the report for the admin's System Report page. Scoped to
+    // this technician's own queue inside the controller, same as review.
+    Route::post('/reports/{report}/escalate', [FarmerReportController::class, 'escalate'])->name('technician.reports.escalate');
+    // Live admin status of this technician's escalated reports (polled by the technician page).
+    Route::get('/reports/escalations', [FarmerReportController::class, 'escalationStatuses'])->name('technician.reports.escalations');
+});
 // ============================================
 // SHARED PROFILE ROUTES (For ALL roles)
 // ============================================
@@ -41,7 +77,7 @@ Route::get('/', function () {
 // ==================== AUTHENTICATION ROUTES ====================
 
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
-Route::post('/login', [AuthController::class, 'login'])->name('login.post');
+Route::post('/login', [AuthController::class, 'login'])->name('login.post')->middleware('throttle:6,1');
 
 // ✅ Keep this one and ensure the name is 'password.email'
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('password.email');
@@ -71,7 +107,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     })->name('index');
 
     Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
-    Route::post('/login', [AuthController::class, 'login'])->name('login.post');
+    Route::post('/login', [AuthController::class, 'login'])->name('login.post')->middleware('throttle:6,1');
 });
 
 // ==================== PROTECTED ADMIN ROUTES ====================
@@ -97,16 +133,32 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->name('admin.')->grou
     Route::get('/history', [\App\Http\Controllers\Admin\AdminDashboardController::class, 'allUserHistory'])->name('history');
     Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
 
-    Route::get('/farmers', [AdminUserController::class, 'farmers'])->name('farmers');
-    Route::get('/technicians', [AdminUserController::class, 'technicians'])->name('technicians');
-    Route::get('/technician/create', [AdminUserController::class, 'createTechnician'])->name('technician.create');
-    Route::post('/technician/store', [AdminUserController::class, 'storeTechnician'])->name('technician.store');
+    // System Report: reports technicians escalated to the admin.
+    // View / In Progress / Resolved from the three-dot menu post to the status route.
+    Route::get('/system-report', [AdminSystemReportController::class, 'index'])->name('system_report');
+    Route::post('/system-report/{report}/status', [AdminSystemReportController::class, 'updateStatus'])->name('system_report.status');
 
-    Route::get('/users/{id}/info', [AdminUserController::class, 'getUserInfo'])->name('users.info');
-    Route::post('/users/{id}/update', [AdminUserController::class, 'update'])->name('users.update');    
-    Route::get('/users/{id}/approve', [AdminUserController::class, 'approve'])->name('users.approve');
-    Route::get('/users/{id}/decline', [AdminUserController::class, 'decline'])->name('users.decline');
-    Route::get('/users/{id}/delete', [AdminUserController::class, 'delete'])->name('users.delete');
+    // These three keep their original names/URLs (so existing sidebar links keep working)
+    // but now all render the merged User Accounts page (admin.users.user_log),
+    // each opening with a different tab pre-selected.
+    Route::get('/farmers', [AdminUserController::class, 'userLog'])->name('farmers')->defaults('role', 'farmer');
+    Route::get('/technicians', [AdminUserController::class, 'userLog'])->name('technicians')->defaults('role', 'technician');
+    Route::get('/admins', [AdminUserController::class, 'userLog'])->name('admins')->defaults('role', 'admin');
+    // Neutral entry point (defaults to the Admin tab) for links like "Back to User Accounts".
+    Route::get('/users', [AdminUserController::class, 'userLog'])->name('users');
+
+    Route::get('/users/create', [AdminUserController::class, 'createAccount'])->name('account.create')->middleware('permission:user_management,create');
+    Route::post('/users/store', [AdminUserController::class, 'storeAccount'])->name('account.store')->middleware('permission:user_management,create');
+
+    Route::get('/users/{id}/info', [AdminUserController::class, 'getUserInfo'])->name('users.info')->middleware('permission:user_management,view');
+    Route::post('/users/{id}/update', [AdminUserController::class, 'update'])->name('users.update')->middleware('permission:user_management,edit');
+    Route::post('/users/{id}/approve', [AdminUserController::class, 'approve'])->name('users.approve')->middleware('permission:user_management,edit');
+    Route::post('/users/{id}/decline', [AdminUserController::class, 'decline'])->name('users.decline')->middleware('permission:user_management,edit');
+    Route::post('/users/{id}/delete', [AdminUserController::class, 'delete'])->name('users.delete')->middleware('permission:user_management,delete');
+
+    // ==================== PERMISSION MANAGEMENT (admin only) ====================
+    Route::get('/permissions', [PermissionController::class, 'index'])->name('permissions');
+    Route::post('/permissions/update', [PermissionController::class, 'update'])->name('permissions.update');
 
     Route::prefix('knowledge')->name('knowledge.')->group(function () {
         Route::post('/delete-groq/{id}', [KnowledgeController::class, 'destroyGroq'])->name('deleteGroq');
@@ -121,10 +173,20 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->name('admin.')->grou
     Route::post('/announcement', [AnnouncementController::class, 'store'])->name('announcement.store');
     Route::put('/announcement/{announcement}', [AnnouncementController::class, 'update'])->name('announcement.update');
     Route::delete('/announcement/{announcement}', [AnnouncementController::class, 'destroy'])->name('announcement.destroy');
+
+    Route::get('/assignments', [AdminAssignmentController::class, 'index'])->name('assignment');
+    Route::get('/assignments/users', [AdminAssignmentController::class, 'usersByRole'])->name('assignment.users');
+    Route::post('/assignments/store', [AdminAssignmentController::class, 'store'])->name('assignment.store');
+    Route::post('/assignments/{id}/update', [AdminAssignmentController::class, 'update'])->name('assignment.update');
+    Route::get('/assignments/{id}/delete', [AdminAssignmentController::class, 'destroy'])->name('assignment.delete');
 });
 
 // ==================== PROTECTED TECHNICIAN ROUTES ====================
-Route::prefix('technician')->middleware(['auth'])->group(function () {
+// NOTE: this group previously only required ['auth'], which meant ANY
+// logged-in user (e.g. a farmer) could open technician pages just by
+// knowing the URL. Added 'role:technician' here to close that gap — same
+// pattern already used by the admin group below ('role:admin').
+Route::prefix('technician')->middleware(['auth', 'role:technician'])->group(function () {
 
 // Technician Documents Route
     Route::get('/documents', function () {
@@ -143,6 +205,41 @@ Route::prefix('technician')->middleware(['auth'])->group(function () {
     Route::get('/field-map/weather', [\App\Http\Controllers\FieldMapController::class, 'getWeather'])->name('technician.field_map.weather');
     Route::get('/field-map', [\App\Http\Controllers\FieldMapController::class, 'index'])->name('technician.field_map');
     Route::match(['get', 'post'], '/field-map/sync', [\App\Http\Controllers\FieldMapController::class, 'syncLayers'])->name('technician.field_map.sync');
+
+    // ==================== USER LOG (technician + farmer only) ====================
+    // Reuses AdminUserController — it self-restricts to ['technician','farmer']
+    // whenever the authenticated user's role isn't 'admin'. Mirrors the
+    // admin.users / admin.technicians / admin.farmers pattern exactly, just
+    // without an "admins" tab.
+    Route::get('/users', [AdminUserController::class, 'userLog'])->name('technician.users');
+    Route::get('/technicians', [AdminUserController::class, 'userLog'])->name('technician.technicians')->defaults('role', 'technician');
+    Route::get('/farmers', [AdminUserController::class, 'userLog'])->name('technician.farmers')->defaults('role', 'farmer');
+
+    Route::get('/users/create', [AdminUserController::class, 'createAccount'])->name('technician.account.create')->middleware('permission:user_management,create');
+    Route::post('/users/store', [AdminUserController::class, 'storeAccount'])->name('technician.account.store')->middleware('permission:user_management,create');
+
+    Route::get('/users/{id}/info', [AdminUserController::class, 'getUserInfo'])->name('technician.users.info')->middleware('permission:user_management,view');
+    Route::post('/users/{id}/update', [AdminUserController::class, 'update'])->name('technician.users.update')->middleware('permission:user_management,edit');
+    Route::post('/users/{id}/approve', [AdminUserController::class, 'approve'])->name('technician.users.approve')->middleware('permission:user_management,edit');
+    Route::post('/users/{id}/decline', [AdminUserController::class, 'decline'])->name('technician.users.decline')->middleware('permission:user_management,edit');
+    Route::post('/users/{id}/delete', [AdminUserController::class, 'delete'])->name('technician.users.delete')->middleware('permission:user_management,delete');
+
+    // ==================== MY ASSIGNMENT (read-only) ====================
+    // Reuses AdminAssignmentController@index — it already detects a
+    // 'technician' actor, scopes the table/map to that technician's own
+    // assignment row(s) only, and renders technician.assignment instead
+    // of admin.assignment. store/update/delete stay admin/developer-only
+    // (403 for a technician even if the URL is hit directly).
+    Route::get('/assignments', [AdminAssignmentController::class, 'index'])->name('technician.assignment');
+
+    // A technician can only reach these once an admin/developer has
+    // actively assigned them to a barangay — enforced server-side in
+    // AdminAssignmentController@store / @usersByRole (403 otherwise), not
+    // just by hiding the form. Lets a technician assign a FELLOW
+    // technician into that SAME barangay only; province/city/barangay are
+    // never taken from the request on that path.
+    Route::get('/assignments/users', [AdminAssignmentController::class, 'usersByRole'])->name('technician.assignment.users');
+    Route::post('/assignments/store', [AdminAssignmentController::class, 'store'])->name('technician.assignment.store');
 });
 
 // ==================== PROTECTED FARMER ROUTES ====================
@@ -157,7 +254,17 @@ Route::prefix('farmer')->middleware(['auth'])->group(function () {
     Route::post('/history/groq', [App\Http\Controllers\FarmerHistoryController::class, 'analyzeImageWithGroq'])->name('farmer.history.groq');
 
     Route::get('/dashboard', function () { return view('farmer.dashboard'); })->name('farmer.dashboard');
-    Route::get('/camera', function () { return view('farmer.camera'); })->name('farmer.camera');
+
+    // "Live Camera" on the dashboard used to point at a route that was
+    // never defined (farmer.camera), which crashed the whole dashboard
+    // with RouteNotFoundException. The detection page already has the
+    // camera-capture flow built in, so this just opens that same page —
+    // swap this to a dedicated controller/view later if Live Camera is
+    // meant to be its own separate experience.
+    Route::get('/camera', function () {
+        return redirect()->route('farmer.detection');
+    })->name('farmer.camera');
+    Route::post('/profile/address', [AuthController::class, 'updateAddress'])->name('farmer.profile.address'); // 👈 add this line
     
     Route::get('/history', [FarmerHistoryController::class, 'index'])->name('farmer.history');
     Route::post('/history/save', [FarmerHistoryController::class, 'saveDetection'])->name('farmer.history.save');
@@ -227,7 +334,28 @@ Route::match(['get', 'post'], '/farmer/detection', function (\Illuminate\Http\Re
         $knowledgeBase = []; 
     }
 
-    return view('farmer.detection.index', compact('diseaseNames', 'pestNames', 'knowledgeBase'));
+
+
+$farmFields = [];
+$authUser = auth()->user();
+if ($authUser) {
+    $farmFields[] = [
+        'value' => 'main',
+        'label' => $authUser->farm_name ?: 'Main Farm',
+    ];
+
+    $additional = is_array($authUser->additional_farms) ? $authUser->additional_farms : [];
+    foreach ($additional as $i => $farm) {
+        $farmFields[] = [
+            'value' => $farm['id'] ?? ('extra_' . $i),
+            'label' => $farm['options']['farmName'] ?? ('Additional Field ' . ($i + 1)),
+        ];
+    }
+}
+
+
+
+    return view('farmer.detection.index', compact('diseaseNames', 'pestNames', 'knowledgeBase', 'farmFields'));
 })->name('farmer.detection');
 
 function tryGetChatResponse($query, $language = 'en') {
