@@ -7,6 +7,7 @@
     "routes": [
         { "src": "/model/(.*)", "dest": "/public/model/$1" },
         { "src": "/build/(.*)", "dest": "/public/build/$1" },
+        { "src": "/img/(.*)", "dest": "/public/img/$1" },
         { "src": "/favicon.ico", "dest": "/public/favicon.ico" },
         { "src": "/(.*)", "dest": "/api/index.php" }
     ],
