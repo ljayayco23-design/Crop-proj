@@ -396,7 +396,7 @@
                             $hasPin = $item->user && $item->user->latitude !== null && $item->user->longitude !== null;
                         @endphp
                         <tr>
-                            <td>
+                            <td data-label="User">
                                 <div class="am-user-cell">
                                     <span class="am-avatar {{ $utype === 'admin' ? 'am-avatar-blue' : 'am-avatar-green' }}">{{ strtoupper($initials) }}</span>
                                     <div>
@@ -420,12 +420,12 @@
                                     </div>
                                 </div>
                             </td>
-                            <td>
+                            <td data-label="User Type">
                                 <span class="am-badge {{ $utype === 'admin' ? 'am-badge-blue' : 'am-badge-green' }}">
                                     {{ ucfirst($utype) }}
                                 </span>
                             </td>
-                            <td>
+                            <td data-label="Assigned By">
                                 @php
                                     // "Me" whenever the currently logged-in actor is the one
                                     // who made this assignment (developer assigning someone,
@@ -439,15 +439,15 @@
                                     {{ $assignedByIsSelf ? 'Me' : ($assignedByName ?? '—') }}
                                 </span>
                             </td>
-                            <td>{{ $item->province->name ?? '—' }}</td>
-                            <td>{{ $item->city->name ?? '—' }}</td>
+                            <td data-label="Province">{{ $item->province->name ?? '—' }}</td>
+                            <td data-label="City / Municipality">{{ $item->city->name ?? '—' }}</td>
                             {{-- Barangay is meaningless for an admin-type assignment
                                  (their scope is the whole province + city), so it's
                                  left blank here instead of showing a "—" placeholder. --}}
-                            <td>{{ $utype === 'admin' ? '' : ($item->barangay->name ?? '—') }}</td>
-                            <td>{{ $item->start_date ? \Illuminate\Support\Carbon::parse($item->start_date)->format('M j, Y') : '—' }}</td>
-                            <td>{{ $item->end_date ? \Illuminate\Support\Carbon::parse($item->end_date)->format('M j, Y') : '—' }}</td>
-                            <td>
+                            <td data-label="Barangay">{{ $utype === 'admin' ? '' : ($item->barangay->name ?? '—') }}</td>
+                            <td data-label="From">{{ $item->start_date ? \Illuminate\Support\Carbon::parse($item->start_date)->format('M j, Y') : '—' }}</td>
+                            <td data-label="To">{{ $item->end_date ? \Illuminate\Support\Carbon::parse($item->end_date)->format('M j, Y') : '—' }}</td>
+                            <td data-label="Status">
                                 @php
                                     $status = $item->status ?? 'active';
                                     $statusBadgeClass = match ($status) {
@@ -460,7 +460,7 @@
                                     {{ ucfirst($status) }}
                                 </span>
                             </td>
-                            <td>
+                            <td data-label="Actions">
                                 <div class="am-row-actions">
                                     <button type="button"
                                             class="am-icon-btn am-icon-btn-edit am-row-edit"
@@ -743,6 +743,116 @@
 
 @media (max-width: 991px) {
     .am-map-wrapper { min-height: 300px; }
+}
+
+/* =====================================================================
+   MOBILE (<768px): stack the header/stat cards full-width and collapse
+   the assignments table into compact grid-cards — the same
+   data-label -> CSS Grid pattern used on the User Log page — so phones
+   never need horizontal scrolling. Tablets/desktop keep the table above
+   (with its two-row header) untouched.
+===================================================================== */
+@media (max-width: 767.98px) {
+    .am-page-header { gap: .75rem; }
+    .am-page-header .am-btn-primary { width: 100%; justify-content: center; }
+    .am-title-row { width: 100%; }
+
+    .am-stats-row > [class*="col-"] { flex: 0 0 100%; max-width: 100%; }
+    .am-stat-card { padding: .9rem; }
+
+    .am-panel { padding: 1rem; }
+    .am-map-wrapper { min-height: 240px; }
+
+    .am-form-actions { flex-direction: column; }
+    .am-form-actions .btn { width: 100%; }
+
+    /* Toolbar above the table: already stacks at 640px; make every field
+       (not just search/filter) full-width and the Export button full-width too */
+    .am-export-btn { width: 100%; justify-content: center; }
+
+    .am-table-scroll { border: none; overflow-x: visible; }
+    .am-table { min-width: 0; }
+    .am-table thead { display: none; }
+    .am-table, .am-table tbody { display: block; width: 100%; }
+
+    .am-table tbody tr {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            "user     user"
+            "type     assignedby"
+            "province city"
+            "barangay from"
+            "to       status"
+            "actions  actions";
+        column-gap: 12px;
+        background: var(--am-panel-2);
+        border: 1px solid var(--am-border);
+        border-radius: 14px;
+        padding: 14px 14px 10px;
+        margin-bottom: 12px;
+    }
+    .am-table tbody tr:last-child { margin-bottom: 0; }
+    .am-table tbody tr:hover { background: var(--am-panel-2); }
+
+    .am-table tbody td {
+        display: block;
+        width: 100%;
+        padding: 0;
+        border: none !important;
+        white-space: normal;
+    }
+
+    .am-table tbody td[data-label="User"] {
+        grid-area: user;
+        padding-bottom: 12px;
+        margin-bottom: 10px;
+        border-bottom: 1px solid var(--am-border) !important;
+    }
+    .am-table tbody td[data-label="User Type"]     { grid-area: type; margin-bottom: 10px; }
+    .am-table tbody td[data-label="Assigned By"]   { grid-area: assignedby; text-align: right; margin-bottom: 10px; }
+    .am-table tbody td[data-label="Province"]      { grid-area: province; }
+    .am-table tbody td[data-label="City / Municipality"] { grid-area: city; }
+    .am-table tbody td[data-label="Barangay"]      { grid-area: barangay; }
+    .am-table tbody td[data-label="From"]          { grid-area: from; }
+    .am-table tbody td[data-label="To"]            { grid-area: to; }
+    .am-table tbody td[data-label="Status"] {
+        grid-area: status;
+        display: flex !important;
+        align-items: center;
+    }
+    .am-table tbody td[data-label="Actions"] {
+        grid-area: actions;
+        text-align: right;
+        margin-top: 6px;
+    }
+
+    .am-table tbody td[data-label="Province"],
+    .am-table tbody td[data-label="City / Municipality"],
+    .am-table tbody td[data-label="Barangay"],
+    .am-table tbody td[data-label="From"],
+    .am-table tbody td[data-label="To"] {
+        background: rgba(255,255,255,.03);
+        border: 1px solid var(--am-border) !important;
+        border-radius: 10px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+        font-size: .8rem;
+    }
+    .am-table tbody td[data-label]:not([data-label="User"]):not([data-label="User Type"]):not([data-label="Assigned By"]):not([data-label="Status"]):not([data-label="Actions"])::before {
+        content: attr(data-label);
+        display: block;
+        font-size: .6rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: var(--am-muted);
+        margin-bottom: 3px;
+    }
+
+    .am-table-footer { flex-direction: column; align-items: stretch !important; gap: .6rem; }
+
+    .am-table tbody tr:has(.am-empty-row) { display: block; background: transparent; border: none; padding: 0; }
 }
 </style>
 

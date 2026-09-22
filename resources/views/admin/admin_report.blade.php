@@ -230,6 +230,98 @@
     .wd-legend-name { color: #e2e8f0; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .wd-legend-count { color: #fff; font-weight: 700; background: rgba(255,255,255,.07); padding: 2px 10px; border-radius: 999px; font-size: .76rem; min-width: 28px; text-align: center; }
     .wd-legend-pct { color: #64748b; font-size: .74rem; width: 38px; text-align: right; flex: 0 0 auto; }
+
+    /* =====================================================================
+       MOBILE (<768px): stack the header/toolbar full-width and collapse the
+       reports table into compact grid-cards — the same data-label -> CSS
+       Grid pattern used on the User Log page — so phones never need
+       horizontal scrolling. Tablets/desktop keep the table above untouched.
+    ===================================================================== */
+    @media (max-width: 767.98px) {
+        .fr-card.p-3.p-md-4 { padding: 14px !important; }
+
+        /* Wrong Detection summary: stack donut above legend, full width */
+        .wd-donut-wrap { margin: 0 auto; }
+        #wd-legend { min-width: 0 !important; width: 100%; }
+
+        /* Toolbar: status/type/search filters go full width, stacked */
+        .fr-card .d-flex.flex-wrap.gap-2.justify-content-between.align-items-center.mb-3 { flex-direction: column; align-items: stretch !important; }
+        .fr-card .d-flex.flex-wrap.gap-2.justify-content-between.align-items-center.mb-3 > .d-flex { width: 100%; flex-direction: column; }
+        #sr-filter-status, #sr-filter-type, #sr-filter-search { width: 100% !important; }
+
+        .fr-table thead { display: none; }
+        .fr-table, .fr-table tbody { display: block; width: 100%; }
+
+        .fr-table tbody tr {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-areas:
+                "id       type"
+                "category category"
+                "desc     desc"
+                "date     status"
+                "actions  actions";
+            column-gap: 12px;
+            /* Card used to have its own dark gradient fill, which sat as a
+               visibly different shade on top of the .fr-card panel behind
+               it. Drop the fill so the card blends into the panel — the
+               border (color-matched, not a bright line) is what separates
+               one report from the next now. */
+            background: transparent;
+            border: 1px solid #263349;
+            border-radius: 14px;
+            padding: 14px 14px 10px;
+            margin-bottom: 12px;
+        }
+        .fr-table tbody tr:last-child { margin-bottom: 0; }
+
+        .fr-table tbody td {
+            display: block;
+            width: 100%;
+            padding: 0;
+            border: none !important;
+            white-space: normal;
+            /* Belt-and-suspenders: the theme's own table/cell styles can
+               still paint a background on individual <td>s even with the
+               row itself transparent — that stray fill is what was
+               showing up as a leftover dark box (e.g. under the Action
+               button). Strip it so every cell matches the card. */
+            background: transparent !important;
+        }
+
+        .fr-table tbody td[data-label="Report ID"] { grid-area: id; font-size: .95rem; margin-bottom: 10px; }
+        .fr-table tbody td[data-label="Type"]       { grid-area: type; text-align: right; margin-bottom: 10px; }
+        .fr-table tbody td[data-label="Category"]   { grid-area: category; margin-bottom: 8px; }
+        .fr-table tbody td[data-label="Description"] { grid-area: desc; margin-bottom: 10px; }
+        .fr-table tbody td[data-label="Date"]       { grid-area: date; }
+        .fr-table tbody td[data-label="Status"]     { grid-area: status; text-align: right; }
+        .fr-table tbody td[data-label="Action"] {
+            grid-area: actions;
+            text-align: right;
+            padding-top: 10px;
+            margin-top: 6px;
+            border-top: 1px solid #1d2636 !important;
+        }
+
+        .fr-table tbody td[data-label]:not([data-label="Report ID"]):not([data-label="Type"]):not([data-label="Status"]):not([data-label="Action"])::before {
+            content: attr(data-label);
+            display: block;
+            font-size: .62rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: #64748b;
+            margin-bottom: 3px;
+        }
+
+        .sr-desc { max-width: 100%; }
+
+        /* Report modal: full-bleed on phones, no side gutters */
+        .rg-report-backdrop { padding: 0; align-items: stretch; }
+        .rg-report-dialog { max-width: 100%; height: 100%; max-height: 100%; border-radius: 0; }
+        .rg-report-thumb { width: 72px; height: 72px; }
+        .rg-confidence-gauge { width: 110px; height: 64px; }
+    }
 </style>
 
 <div class="container-fluid px-0">
@@ -312,15 +404,15 @@
                                 data-status="{{ $report['admin_status'] }}"
                                 data-type="{{ $report['type'] }}"
                                 data-search="{{ strtolower($report['sr_code'].' '.$report['report_id'].' '.$report['farmer_name'].' '.$report['detection']['class_name'].' '.$report['category'].' '.$report['description']) }}">
-                                <td class="fw-bold">#{{ $report['sr_code'] }}</td>
-                                <td><span class="sr-badge sr-type-{{ $report['type_key'] }}">{{ $report['type'] }}</span></td>
-                                <td>{{ $report['category'] }}</td>
-                                <td class="sr-desc">{{ $report['description'] }}</td>
-                                <td class="text-secondary">{{ $report['escalated_date'] }}</td>
-                                <td>
+                                <td class="fw-bold" data-label="Report ID">#{{ $report['sr_code'] }}</td>
+                                <td data-label="Type"><span class="sr-badge sr-type-{{ $report['type_key'] }}">{{ $report['type'] }}</span></td>
+                                <td data-label="Category">{{ $report['category'] }}</td>
+                                <td class="sr-desc" data-label="Description">{{ $report['description'] }}</td>
+                                <td class="text-secondary" data-label="Date">{{ $report['escalated_date'] }}</td>
+                                <td data-label="Status">
                                     <span class="sr-badge sr-status-badge sr-status-{{ $report['admin_status'] }}">{{ $statuses[$report['admin_status']]['label'] }}</span>
                                 </td>
-                                <td class="text-end">
+                                <td class="text-end" data-label="Action">
                                     <button type="button" class="sr-action-toggle" title="Actions"
                                             onclick="srToggleMenu(event, {{ $report['id'] }})">
                                         <i class="fa-solid fa-ellipsis-vertical"></i>
