@@ -20,8 +20,16 @@
         ->where('id', '!=', $user_id)
         ->whereNotNull('latitude')
         ->whereNotNull('longitude')
-        ->select('farm_name', 'farm_size', 'latitude', 'longitude')
-        ->get();
+        ->select('farm_name', 'farm_size', 'latitude', 'longitude', 'additional_farms')
+        ->get()
+        ->map(function ($farm) {
+            $farm->additional_farms = json_decode($farm->additional_farms ?? '[]', true) ?: [];
+            return $farm;
+        });
+
+    // "Reports" card: this farmer's own submitted reports, same as what
+    // they'd see on their own Reports page (FarmerReportController@farmerIndex).
+    $farmReportsCount = \App\Models\FarmerReport::where('user_id', $user_id)->count();
 
     // Logged-in farmer's own Province / City / Barangay, joined for display
     $userLocation = DB::table('barangays')
@@ -61,7 +69,7 @@
 </div>
 
 <div class="row g-4 mb-4">
-    <div class="col-xl-3 col-lg-6">
+    <div class="col-xl-4 col-lg-6">
         <div class="section-card p-4 h-100">
             <div class="d-flex align-items-center justify-content-between mb-3">
                 <i class="fa-solid fa-camera-retro fa-2x text-primary"></i>
@@ -71,7 +79,7 @@
             <h2 class="fw-bold text-white mb-0">{{ number_format($total_detections) }}</h2>
         </div>
     </div>
-    <div class="col-xl-3 col-lg-6">
+    <div class="col-xl-4 col-lg-6">
         <div class="section-card p-4 h-100">
             <div class="d-flex align-items-center justify-content-between mb-3">
                 <i class="fa-solid fa-bug fa-2x text-danger"></i>
@@ -81,7 +89,7 @@
             <h2 class="fw-bold text-danger mb-0">{{ number_format($affected) }}</h2>
         </div>
     </div>
-    <div class="col-xl-3 col-lg-6">
+    <div class="col-xl-4 col-lg-6">
         <div class="section-card p-4 h-100">
             <div class="d-flex align-items-center justify-content-between mb-3">
                 <i class="fa-solid fa-seedling fa-2x text-success"></i>
@@ -91,7 +99,7 @@
             <h2 class="fw-bold text-success mb-0">{{ number_format($healthy) }}</h2>
         </div>
     </div>
-    <div class="col-xl-3 col-lg-6">
+    <div class="col-xl-4 col-lg-6">
         <div class="section-card p-4 h-100">
             <div class="d-flex align-items-center justify-content-between mb-3">
                 <i class="fa-solid fa-history fa-2x text-warning"></i>
@@ -99,6 +107,16 @@
             </div>
             <h6 class="text-secondary fw-bold text-uppercase mb-1">History Logs</h6>
             <h2 class="fw-bold text-white mb-0">{{ number_format($total_detections) }}</h2>
+        </div>
+    </div>
+    <div class="col-xl-4 col-lg-6">
+        <div class="section-card p-4 h-100">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <i class="fa-solid fa-flag fa-2x" style="color:#ec4899;"></i>
+                <span class="badge px-2 py-1" style="background: rgba(236,72,153,0.15); color:#ec4899; border:1px solid #ec4899;">Reports</span>
+            </div>
+            <h6 class="text-secondary fw-bold text-uppercase mb-1">My Reports</h6>
+            <h2 class="fw-bold text-white mb-0">{{ number_format($farmReportsCount) }}</h2>
         </div>
     </div>
 </div>
@@ -300,6 +318,32 @@ if ({{ $userLat ? 'true' : 'false' }}) {
     attachAddressTooltip(userMarker, farmLat, farmLng, "{{ $farmName }}", "{{ $farmSize ?? 'N/A' }}", "#10b981");
 }
 
+// Own additional field plots (users.additional_farms) — a farmer can
+// register more than one field via the Field Map page, each with its own
+// pin and hectare size, separate from the single main lat/lng above. Plot
+// every one of them here too, so this map reflects every field this
+// farmer actually has.
+const ownAdditionalFarms = @json($user->additional_farms ?? []);
+ownAdditionalFarms.forEach((plot, idx) => {
+    const coords = plot.coords || (plot.options && plot.options.coords);
+    if (!Array.isArray(coords) || coords.length < 2) return;
+    const pLng = parseFloat(coords[0]);
+    const pLat = parseFloat(coords[1]);
+    if (isNaN(pLat) || isNaN(pLng)) return;
+
+    const opts = plot.options || {};
+    const plotName = opts.farmName || plot.placeName || `My Field ${idx + 2}`;
+    const plotSize = opts.farmSize || 0;
+
+    const plotIcon = L.divIcon({
+        className: 'farm-pin-icon',
+        html: '<i class="fa-solid fa-map-pin"></i>',
+        iconSize: [26, 26], iconAnchor: [13, 26]
+    });
+    const plotMarker = L.marker([pLat, pLng], { icon: plotIcon }).addTo(dashMap);
+    attachAddressTooltip(plotMarker, pLat, pLng, plotName, plotSize, "#10b981");
+});
+
 const otherFarmsData = @json($otherFarms ?? []);
 otherFarmsData.forEach(farm => {
     if (farm.latitude && farm.longitude) {
@@ -313,6 +357,34 @@ otherFarmsData.forEach(farm => {
         const otherMarker = L.marker([oLat, oLng], { icon: otherIcon }).addTo(dashMap);
         attachAddressTooltip(otherMarker, oLat, oLng, farm.farm_name || "Neighboring Farm", farm.farm_size || "N/A", "#38bdf8");
     }
+
+    // Neighboring farms' additional field plots, same reasoning as above —
+    // a neighbor with 3 registered fields previously only showed 1 pin.
+    const neighborPlots = Array.isArray(farm.additional_farms) ? farm.additional_farms : [];
+    neighborPlots.forEach((plot, idx) => {
+        const coords = plot.coords || (plot.options && plot.options.coords);
+        if (!Array.isArray(coords) || coords.length < 2) return;
+        const pLng = parseFloat(coords[0]);
+        const pLat = parseFloat(coords[1]);
+        if (isNaN(pLat) || isNaN(pLng)) return;
+
+        const opts = plot.options || {};
+        const plotName = opts.farmName || plot.placeName || `${farm.farm_name || 'Neighboring Farm'} (extra field)`;
+        const plotSize = opts.farmSize || 0;
+
+        const otherPlotIcon = L.divIcon({
+            className: 'other-farm-pin',
+            html: '<i class="fa-solid fa-map-pin"></i>',
+            iconSize: [22, 22], iconAnchor: [11, 22]
+        });
+        const otherPlotMarker = L.marker([pLat, pLng], { icon: otherPlotIcon }).addTo(dashMap);
+        otherPlotMarker.bindTooltip(`
+            <div style="text-align:left; max-width: 220px; font-family: system-ui, sans-serif; padding: 4px;">
+                <strong style="color: #38bdf8; font-size: 13px; display:block; margin-bottom:2px;"><i class="fa-solid fa-map-pin me-1"></i> ${plotName}</strong>
+                <span style="font-size: 11px; color: #fff; display:block;">📐 Area: <b>${plotSize} ha</b></span>
+            </div>
+        `, { direction: 'top', className: 'custom-clean-tooltip' });
+    });
 });
 
 // 4. Fetch Dynamic Weather

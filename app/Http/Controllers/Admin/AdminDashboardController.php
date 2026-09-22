@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\TreatmentRecord;
+use App\Models\FarmerReport;
+use App\Models\Assignment;
 
 class AdminDashboardController extends Controller
 {
@@ -149,10 +151,55 @@ public function index()
                                 ->where('status', 'pending')
                                 ->count();
 
+        // "Reports" dashboard card: how many reports have been escalated to
+        // admin, scoped the same way AdminSystemReportController@scopedQuery
+        // does (admin sees escalations from farmers in their own
+        // province+city, developer sees all), so this number always matches
+        // what the admin finds on the System Report page.
+        $escalatedReportsCount = FarmerReport::whereNotNull('escalated_at')
+            ->when(!$isDeveloper, function ($q) use ($actor) {
+                $q->whereHas('farmer', function ($fq) use ($actor) {
+                    $fq->where('province_id', $actor->province_id)
+                       ->where('city_id', $actor->city_id);
+                });
+            })
+            ->count();
+
+        // "Assignments" dashboard card: active assignments in the admin's
+        // own province+city (developer sees all), matching the Assignment
+        // Management page's own province/city scoping.
+        $activeAssignmentsCount = Assignment::active()
+            ->when(!$isDeveloper, function ($q) use ($actor) {
+                $q->where('province_id', $actor->province_id)
+                  ->where('city_id', $actor->city_id);
+            })
+            ->count();
+
         // NEW: Calculate total hectares and fetch all users for the tables/map
         $totalPaddyArea = $scopeToActor(User::where('role', 'farmer'))->sum('farm_size');
         $allFarmers = $scopeToActor(User::where('role', 'farmer'))->get();
         $allTechnicians = $scopeToActor(User::where('role', 'technician'))->get();
+
+        // "Assigned Area" buttons for the Active Field Locations panel: each
+        // technician's active barangay assignment, scoped the same as
+        // $activeAssignmentsCount above, so an admin can jump the map to
+        // every farmer inside a technician's coverage area.
+        $technicianAssignments = Assignment::active()
+            ->where('user_type', 'technician')
+            ->with(['user', 'barangay'])
+            ->when(!$isDeveloper, function ($q) use ($actor) {
+                $q->where('province_id', $actor->province_id)
+                  ->where('city_id', $actor->city_id);
+            })
+            ->get()
+            ->map(function ($a) {
+                return [
+                    'barangay_id'     => $a->barangay_id,
+                    'barangay_name'   => optional($a->barangay)->name ?? 'Unassigned Area',
+                    'technician_name' => optional($a->user)->full_name ?? optional($a->user)->name ?? 'Technician',
+                ];
+            })
+            ->values();
 
         // ====================== ANALYTICS: DETECTION TREND (LINE GRAPH) ======================
         // Last 6 months of detections, zero-filled so the line never has gaps
@@ -215,9 +262,12 @@ public function index()
             'knowledgeEntries', 
             'totalDetections', 
             'pendingApprovals',
+            'escalatedReportsCount',
+            'activeAssignmentsCount',
             'totalPaddyArea',
             'allFarmers',
             'allTechnicians',
+            'technicianAssignments',
             'trendLabels',
             'trendData',
             'pieLabels',
