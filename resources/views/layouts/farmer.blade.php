@@ -142,19 +142,102 @@
     @php
         $user = Auth::user();
         $userFullName = $user->full_name ?? $user->name ?? 'Farmer';
-        
+
         if (!empty($user->profile_photo)) {
             $profile_pic = $user->profile_photo;
         } else {
             $profile_pic = 'https://ui-avatars.com/api/?name=' . urlencode($userFullName) . '&background=10b981&color=fff&size=140&bold=true';
         }
-        
-        $total_notifications = 0;
+
+        // ============================================================
+        // NOTIFICATIONS (farmer)
+        // Every source below is scoped to THIS farmer's own id only —
+        // never another farmer's reports or messages — and never
+        // exposes the admin-only escalation status, since that's
+        // internal to the technician/admin side.
+        // ============================================================
+        $notifCookieName = 'rg_notif_seen_' . $user->role . '_' . $user->id;
+        $notifSeenAt = request()->cookie($notifCookieName)
+            ? \Carbon\Carbon::parse(request()->cookie($notifCookieName))
+            : now()->subDays(14); // first-ever visit: only flag the last 2 weeks as "new", not all history
+
+        $notificationItems = [];
+
         try {
-            $total_notifications = DB::table('messages')->where('to_user_id', $user->id)->count();
-        } catch (\Exception $e) {
-            $total_notifications = 0;
+            // ---- 1) Technician responded to one of THIS farmer's reports ----
+            $reviewedReports = \App\Models\FarmerReport::where('user_id', $user->id)
+                ->whereNotNull('reviewed_at')
+                ->orderByDesc('reviewed_at')
+                ->limit(5)
+                ->get();
+
+            foreach ($reviewedReports as $r) {
+                $notificationItems[] = [
+                    'icon' => 'fa-comment-medical', 'color' => 'success',
+                    'title' => 'Technician Responded',
+                    'subtitle' => ($r->reviewed_by ?? 'Your technician') . ' reviewed your report',
+                    'timestamp' => $r->reviewed_at,
+                    'url' => route('farmer.reports'),
+                ];
+            }
+        } catch (\Exception $e) {}
+
+        try {
+            // ---- 2) Messages (fixed: only actually-new messages, not the all-time total) ----
+            $unreadMessagesCount = DB::table('messages')
+                ->where('to_user_id', $user->id)
+                ->where('created_at', '>', $notifSeenAt)
+                ->count();
+            $latestMessage = DB::table('messages')
+                ->where('to_user_id', $user->id)
+                ->orderByDesc('created_at')
+                ->first();
+
+            if ($latestMessage) {
+                $notificationItems[] = [
+                    'icon' => 'fa-message', 'color' => 'info',
+                    'title' => 'Messages',
+                    'subtitle' => $unreadMessagesCount > 0 ? $unreadMessagesCount . ' new message(s)' : 'Contact technician',
+                    'timestamp' => $latestMessage->created_at,
+                    'url' => route('farmer.live_com'),
+                ];
+            }
+        } catch (\Exception $e) {}
+
+        try {
+            // ---- 3) Announcements (kept from the old feature) ----
+            $latestAnnouncement = DB::table('announcements')->orderByDesc('created_at')->first();
+            if ($latestAnnouncement) {
+                $notificationItems[] = [
+                    'icon' => 'fa-bullhorn', 'color' => 'success',
+                    'title' => 'Announcements',
+                    'subtitle' => $latestAnnouncement->title ?? 'New announcement posted',
+                    'timestamp' => $latestAnnouncement->created_at,
+                    'url' => route('farmer.announcement'),
+                ];
+            }
+        } catch (\Exception $e) {}
+
+        // Sort newest first and flag which ones are "new" since this farmer last opened the bell.
+        usort($notificationItems, fn ($a, $b) => strtotime($b['timestamp']) <=> strtotime($a['timestamp']));
+        foreach ($notificationItems as &$ni) {
+            $ni['is_new'] = \Carbon\Carbon::parse($ni['timestamp'])->gt($notifSeenAt);
+            $ni['time_human'] = \Carbon\Carbon::parse($ni['timestamp'])->diffForHumans();
         }
+        unset($ni);
+
+        $total_notifications = collect($notificationItems)->where('is_new', true)->count();
+
+        // ---- Quick Search index: farmer's own pages only ----
+        $farmerSearchIndex = [
+            ['label' => 'Dashboard', 'url' => route('farmer.dashboard'), 'icon' => 'fa-gauge-high'],
+            ['label' => 'Detection', 'url' => route('farmer.detection'), 'icon' => 'fa-camera'],
+            ['label' => 'History', 'url' => route('farmer.history'), 'icon' => 'fa-clock-rotate-left'],
+            ['label' => 'Report a Problem', 'url' => route('farmer.reports'), 'icon' => 'fa-flag'],
+            ['label' => 'Field Map', 'url' => route('farmer.field_map'), 'icon' => 'fa-map'],
+            ['label' => 'Announcements', 'url' => route('farmer.announcement'), 'icon' => 'fa-bullhorn'],
+            ['label' => 'Messages', 'url' => route('farmer.live_com'), 'icon' => 'fa-message'],
+        ];
     @endphp
 
     <div class="sidebar-container" id="farmerSidebar">
@@ -166,37 +249,38 @@
             <button id="sidebarToggleBtn" onclick="document.body.classList.toggle('sidebar-show'); event.stopPropagation();" class="btn btn-link text-white p-0 me-4"><i class="fas fa-bars fs-5"></i></button>
 
             <ul class="navbar-nav ms-auto d-flex align-items-center gap-3">
-                <li class="nav-item dropdown">
+                <li class="nav-item dropdown" id="quickSearchDropdown">
                     <a class="nav-link text-white" href="#" data-bs-toggle="dropdown" data-bs-auto-close="outside"><i class="fas fa-search fs-5"></i></a>
                     <div class="dropdown-menu dropdown-menu-end p-3" style="width: 320px;">
-                        <input type="text" class="form-control bg-dark border-secondary text-white" placeholder="Search detections..." onkeypress="if(event.key==='Enter') window.location.href='?search='+this.value">
+                        <input type="text" id="quickSearchInput" class="form-control bg-dark border-secondary text-white" placeholder="Search detections..." autocomplete="off" oninput="renderQuickSearchResults(this.value)" onkeypress="if(event.key==='Enter') goToTopSearchResult()">
+                        <div id="quickSearchResults" class="mt-2" style="max-height: 260px; overflow-y: auto;"></div>
                     </div>
                 </li>
 
-                <li class="nav-item dropdown">
+                <li class="nav-item dropdown" id="notifDropdown">
                     <a class="nav-link text-white position-relative" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-bell fs-5"></i>
                         @if($total_notifications > 0)
-                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem;">{{ $total_notifications }}</span>
+                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="notifBadge" style="font-size: 0.6rem;">{{ $total_notifications }}</span>
                         @endif
                     </a>
-                    <div class="dropdown-menu dropdown-menu-end p-0" style="width: 340px;">
+                    <div class="dropdown-menu dropdown-menu-end p-0" style="width: 360px;">
                         <div class="p-3 border-bottom border-secondary" style="background: linear-gradient(135deg, #10b981 0%, #047857 100%); border-radius: 16px 16px 0 0;">
                             <h6 class="mb-0 text-white fw-bold"><i class="fas fa-bell me-2"></i>Notifications</h6>
                         </div>
-                        <div class="p-2">
-                            <a href="{{ route('farmer.live_com') }}" class="dropdown-item py-3 d-flex gap-3 text-white border-bottom border-secondary border-opacity-25">
-                                <div class="text-info"><i class="fas fa-message fs-4"></i></div>
-                                <div><h6 class="mb-1">Messages</h6><small class="text-secondary">Contact technician</small></div>
-                            </a>
-                            <a href="{{ route('farmer.announcement') }}" class="dropdown-item py-3 d-flex gap-3 text-white border-bottom border-secondary border-opacity-25">
-                                <div class="text-success"><i class="fas fa-bullhorn fs-4"></i></div>
-                                <div><h6 class="mb-1">Announcements</h6><small class="text-secondary">View updates</small></div>
-                            </a>
-
-                            @if($total_notifications === 0)
+                        <div class="p-2" style="max-height: 400px; overflow-y: auto;">
+                            @forelse($notificationItems as $ni)
+                                <a href="{{ $ni['url'] }}" class="dropdown-item py-3 d-flex gap-3 text-white border-bottom border-secondary border-opacity-25">
+                                    <div class="text-{{ $ni['color'] }}"><i class="fas {{ $ni['icon'] }} fs-4"></i></div>
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-1 d-flex align-items-center gap-2">{{ $ni['title'] }} @if($ni['is_new'])<span class="badge bg-danger" style="font-size:0.5rem;">NEW</span>@endif</h6>
+                                        <small class="text-secondary d-block">{{ $ni['subtitle'] }}</small>
+                                        <small class="text-secondary" style="font-size: 0.7rem;">{{ $ni['time_human'] }}</small>
+                                    </div>
+                                </a>
+                            @empty
                                 <div class="p-4 text-center text-secondary small">No new notifications</div>
-                            @endif
+                            @endforelse
                         </div>
                     </div>
                 </li>
@@ -561,6 +645,48 @@
             console.error('Photo compression error:', error);
         }
     }
+
+    // --- Quick Search (role-scoped to the farmer's own pages only) ---
+    const quickSearchIndex = @json($farmerSearchIndex);
+
+    function renderQuickSearchResults(term) {
+        const box = document.getElementById('quickSearchResults');
+        term = term.trim().toLowerCase();
+        if (!term) { box.innerHTML = ''; return; }
+
+        const matches = quickSearchIndex.filter(item => item.label.toLowerCase().includes(term));
+        if (matches.length === 0) {
+            box.innerHTML = '<div class="text-secondary small px-2 py-2">No matching pages found.</div>';
+            return;
+        }
+        box.innerHTML = matches.map(item => `
+            <a href="${item.url}" class="dropdown-item py-2 text-white d-flex align-items-center gap-2">
+                <i class="fas ${item.icon} text-success"></i> <span>${item.label}</span>
+            </a>
+        `).join('');
+    }
+
+    function goToTopSearchResult() {
+        const term = document.getElementById('quickSearchInput').value.trim().toLowerCase();
+        if (!term) return;
+        const match = quickSearchIndex.find(item => item.label.toLowerCase().includes(term));
+        if (match) window.location.href = match.url;
+    }
+
+    // --- Notifications: mark as seen (cookie) the moment the bell dropdown opens ---
+    (function () {
+        const notifDropdown = document.getElementById('notifDropdown');
+        if (!notifDropdown) return;
+        notifDropdown.addEventListener('show.bs.dropdown', function () {
+            const cookieName = @json($notifCookieName);
+            document.cookie = cookieName + '=' + encodeURIComponent(new Date().toISOString()) + ';path=/;max-age=31536000';
+            const badge = document.getElementById('notifBadge');
+            if (badge) badge.remove();
+            document.querySelectorAll('#notifDropdown .badge.bg-danger').forEach(b => {
+                if (b.textContent.trim() === 'NEW') b.remove();
+            });
+        });
+    })();
 
     async function saveProfile(formId) {
         const form = document.getElementById(formId);

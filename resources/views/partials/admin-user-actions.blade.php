@@ -27,7 +27,7 @@
 
 @if ($__hasAnyAction)
 <div class="dropdown">
-    <button class="btn btn-sm btn-link text-light p-0" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+    <button class="btn btn-sm btn-link text-light p-0" type="button" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false">
         <i class="fa-solid fa-ellipsis-vertical"></i>
     </button>
 

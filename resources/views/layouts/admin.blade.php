@@ -124,20 +124,102 @@
     @php
     $user = Auth::user();
     $userFullName = $user->full_name ?? $user->name ?? 'Admin';
-    
+
     if (!empty($user->profile_photo)) {
         $admin_pic = $user->profile_photo;
     } else {
         $admin_pic = 'https://ui-avatars.com/api/?name=' . urlencode($userFullName) . '&background=3b82f6&color=fff&size=140&bold=true';
     }
-        
-        $pending_approvals = 0;
-        try {
-            $pending_approvals = \App\Models\User::where('role', 'farmer')->where('status', 'pending')->count();
-        } catch (\Exception $e) {
-            $pending_approvals = 0;
+
+    // ============================================================
+    // NOTIFICATIONS (admin / developer)
+    // Every source below is scoped EXACTLY the way the rest of the
+    // admin panel already scopes admin-visible data (same
+    // province+city rule AdminUserController@userLog /
+    // AdminDashboardController@index / AdminSystemReportController
+    // use), so an admin only ever sees notifications for their own
+    // area — developer stays unrestricted. Every query is re-scoped
+    // by the ACTUAL signed-in user's id/area (not just their role),
+    // so two admins in different cities never see each other's items
+    // even though they share the same role.
+    // ============================================================
+    $isDeveloperActorNotif = $user->role === 'developer';
+    $notifCookieName = 'rg_notif_seen_' . $user->role . '_' . $user->id;
+    $notifSeenAt = request()->cookie($notifCookieName)
+        ? \Carbon\Carbon::parse(request()->cookie($notifCookieName))
+        : now()->subDays(14); // first-ever visit: only flag the last 2 weeks as "new", not all history
+
+    $notificationItems = [];
+    $pending_approvals = 0;
+
+    try {
+        // ---- 1) Pending farmer approvals (kept from the old feature, now data-driven) ----
+        $pendingFarmersQuery = \App\Models\User::where('role', 'farmer')->where('status', 'pending')
+            ->when(!$isDeveloperActorNotif, fn ($q) => $q->where('province_id', $user->province_id)
+                                                          ->where('city_id', $user->city_id));
+        $pending_approvals = (clone $pendingFarmersQuery)->count();
+        $latestPendingFarmer = (clone $pendingFarmersQuery)->latest()->first();
+
+        if ($pending_approvals > 0) {
+            $notificationItems[] = [
+                'icon' => 'fa-user-clock', 'color' => 'warning',
+                'title' => 'Pending Approvals',
+                'subtitle' => $pending_approvals . ' farmer(s) waiting for approval',
+                'timestamp' => $latestPendingFarmer?->created_at ?? now(),
+                'url' => route('admin.farmers'),
+            ];
         }
-        $total_notifications = $pending_approvals;
+    } catch (\Exception $e) {}
+
+    try {
+        // ---- 2) Escalated reports from technicians the admin hasn't acted on yet ----
+        // Same scoping as AdminSystemReportController@scopedQuery.
+        $newEscalations = \App\Models\FarmerReport::with('farmer')->whereNotNull('escalated_at')
+            ->where('admin_status', 'pending')
+            ->when(!$isDeveloperActorNotif, function ($q) use ($user) {
+                $q->whereHas('farmer', function ($fq) use ($user) {
+                    $fq->where('province_id', $user->province_id)->where('city_id', $user->city_id);
+                });
+            })
+            ->orderByDesc('escalated_at')
+            ->limit(5)
+            ->get();
+
+        foreach ($newEscalations as $r) {
+            $notificationItems[] = [
+                'icon' => 'fa-flag', 'color' => 'danger',
+                'title' => 'New Escalated Report',
+                'subtitle' => 'A technician escalated a farmer report needing your review',
+                'timestamp' => $r->escalated_at,
+                'url' => route('admin.system_report'),
+            ];
+        }
+    } catch (\Exception $e) {}
+
+    // Sort newest first and flag which ones are "new" since the admin last opened the bell.
+    usort($notificationItems, fn ($a, $b) => $b['timestamp'] <=> $a['timestamp']);
+    foreach ($notificationItems as &$ni) {
+        $ni['is_new'] = \Carbon\Carbon::parse($ni['timestamp'])->gt($notifSeenAt);
+        $ni['time_human'] = \Carbon\Carbon::parse($ni['timestamp'])->diffForHumans();
+    }
+    unset($ni);
+
+    $total_notifications = collect($notificationItems)->where('is_new', true)->count();
+
+    // ---- Quick Search index: admin's own pages only ----
+    $adminSearchIndex = [
+        ['label' => 'Dashboard', 'url' => route('admin.dashboard'), 'icon' => 'fa-gauge-high'],
+        ['label' => 'User Accounts', 'url' => route('admin.users'), 'icon' => 'fa-users'],
+        ['label' => 'Farmers', 'url' => route('admin.farmers'), 'icon' => 'fa-user'],
+        ['label' => 'Technicians', 'url' => route('admin.technicians'), 'icon' => 'fa-user-gear'],
+        ['label' => 'Assignment Management', 'url' => route('admin.assignment'), 'icon' => 'fa-map-location-dot'],
+        ['label' => 'System Report', 'url' => route('admin.system_report'), 'icon' => 'fa-triangle-exclamation'],
+        ['label' => 'Diagnoses / History', 'url' => route('admin.history'), 'icon' => 'fa-clock-rotate-left'],
+        ['label' => 'Documents', 'url' => route('admin.documents'), 'icon' => 'fa-file-lines'],
+        ['label' => 'Announcements', 'url' => route('admin.announcement'), 'icon' => 'fa-bullhorn'],
+        ['label' => 'Permissions', 'url' => route('admin.permissions'), 'icon' => 'fa-user-shield'],
+        ['label' => 'Knowledge Base', 'url' => route('admin.knowledge.management'), 'icon' => 'fa-book'],
+    ];
     @endphp
 
     <div class="sidebar-container">
@@ -151,35 +233,38 @@
                 <i class="fas fa-bars fs-5"></i>
             </button>
             <ul class="navbar-nav ms-auto d-flex align-items-center gap-3">
-                <li class="nav-item dropdown">
+                <li class="nav-item dropdown" id="quickSearchDropdown">
                     <a class="nav-link text-white" href="#" data-bs-toggle="dropdown" data-bs-auto-close="outside"><i class="fas fa-search fs-5"></i></a>
                     <div class="dropdown-menu dropdown-menu-end p-3" style="width: 320px;">
-                        <input type="text" class="form-control bg-dark border-secondary text-white" placeholder="Search system..." onkeypress="if(event.key==='Enter') window.location.href='?search='+this.value">
+                        <input type="text" id="quickSearchInput" class="form-control bg-dark border-secondary text-white" placeholder="Search system..." autocomplete="off" oninput="renderQuickSearchResults(this.value)" onkeypress="if(event.key==='Enter') goToTopSearchResult()">
+                        <div id="quickSearchResults" class="mt-2" style="max-height: 260px; overflow-y: auto;"></div>
                     </div>
                 </li>
 
-                <li class="nav-item dropdown">
+                <li class="nav-item dropdown" id="notifDropdown">
                     <a class="nav-link text-white position-relative" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-bell fs-5"></i>
                         @if($total_notifications > 0)
-                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem;">{{ $total_notifications }}</span>
+                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="notifBadge" style="font-size: 0.6rem;">{{ $total_notifications }}</span>
                         @endif
                     </a>
                     <div class="dropdown-menu dropdown-menu-end p-0" style="width: 380px;">
                         <div class="p-3 border-bottom border-secondary" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); border-radius: 16px 16px 0 0;">
                             <h6 class="mb-0 text-white fw-bold"><i class="fas fa-bell me-2"></i>Notifications</h6>
                         </div>
-                        <div class="p-2">
-                            @if($pending_approvals > 0)
-                                <a href="{{ route('admin.farmers') }}" class="dropdown-item py-3 d-flex gap-3 text-white border-bottom border-secondary border-opacity-25">
-                                    <div class="text-warning"><i class="fas fa-user-clock fs-4"></i></div>
-                                    <div><h6 class="mb-1">Pending Approvals</h6><small class="text-secondary">{{ $pending_approvals }} farmer(s) waiting</small></div>
+                        <div class="p-2" style="max-height: 400px; overflow-y: auto;">
+                            @forelse($notificationItems as $ni)
+                                <a href="{{ $ni['url'] }}" class="dropdown-item py-3 d-flex gap-3 text-white border-bottom border-secondary border-opacity-25">
+                                    <div class="text-{{ $ni['color'] }}"><i class="fas {{ $ni['icon'] }} fs-4"></i></div>
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-1 d-flex align-items-center gap-2">{{ $ni['title'] }} @if($ni['is_new'])<span class="badge bg-danger" style="font-size:0.5rem;">NEW</span>@endif</h6>
+                                        <small class="text-secondary d-block">{{ $ni['subtitle'] }}</small>
+                                        <small class="text-secondary" style="font-size: 0.7rem;">{{ $ni['time_human'] }}</small>
+                                    </div>
                                 </a>
-                            @endif
-
-                            @if($total_notifications === 0)
+                            @empty
                                 <div class="p-4 text-center text-secondary small">No new notifications</div>
-                            @endif
+                            @endforelse
                         </div>
                     </div>
                 </li>
@@ -392,6 +477,48 @@
             console.error('Photo compression error:', error);
         }
     }
+
+    // --- Quick Search (role-scoped to the admin's own pages only) ---
+    const quickSearchIndex = @json($adminSearchIndex);
+
+    function renderQuickSearchResults(term) {
+        const box = document.getElementById('quickSearchResults');
+        term = term.trim().toLowerCase();
+        if (!term) { box.innerHTML = ''; return; }
+
+        const matches = quickSearchIndex.filter(item => item.label.toLowerCase().includes(term));
+        if (matches.length === 0) {
+            box.innerHTML = '<div class="text-secondary small px-2 py-2">No matching pages found.</div>';
+            return;
+        }
+        box.innerHTML = matches.map(item => `
+            <a href="${item.url}" class="dropdown-item py-2 text-white d-flex align-items-center gap-2">
+                <i class="fas ${item.icon} text-primary"></i> <span>${item.label}</span>
+            </a>
+        `).join('');
+    }
+
+    function goToTopSearchResult() {
+        const term = document.getElementById('quickSearchInput').value.trim().toLowerCase();
+        if (!term) return;
+        const match = quickSearchIndex.find(item => item.label.toLowerCase().includes(term));
+        if (match) window.location.href = match.url;
+    }
+
+    // --- Notifications: mark as seen (cookie) the moment the bell dropdown opens ---
+    (function () {
+        const notifDropdown = document.getElementById('notifDropdown');
+        if (!notifDropdown) return;
+        notifDropdown.addEventListener('show.bs.dropdown', function () {
+            const cookieName = @json($notifCookieName);
+            document.cookie = cookieName + '=' + encodeURIComponent(new Date().toISOString()) + ';path=/;max-age=31536000';
+            const badge = document.getElementById('notifBadge');
+            if (badge) badge.remove();
+            document.querySelectorAll('#notifDropdown .badge.bg-danger').forEach(b => {
+                if (b.textContent.trim() === 'NEW') b.remove();
+            });
+        });
+    })();
 
     // --- 3. Smarter Save Function ---
     async function saveProfile(formId) {

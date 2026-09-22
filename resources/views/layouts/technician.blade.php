@@ -123,21 +123,167 @@
     @php
         $user = Auth::user();
         $userFullName = $user->full_name ?? $user->name ?? 'Technician';
-        
+
         // Base64 Image Handling (matching admin logic)
         if (!empty($user->profile_photo)) {
             $profile_pic = $user->profile_photo;
         } else {
             $profile_pic = 'https://ui-avatars.com/api/?name=' . urlencode($userFullName) . '&background=0ea5e9&color=fff&size=140&bold=true';
         }
-        
-        // Notifications
-        $total_notifications = 0;
+
+        // ============================================================
+        // NOTIFICATIONS (technician)
+        // Every source below is scoped to THIS technician's own id/
+        // barangay assignment(s) only — same rules
+        // FarmerReportController@technicianQuery and
+        // AdminAssignmentController already use for this role — so a
+        // technician never sees another technician's assignments,
+        // reports, or messages.
+        // ============================================================
+        $notifCookieName = 'rg_notif_seen_' . $user->role . '_' . $user->id;
+        $notifSeenAt = request()->cookie($notifCookieName)
+            ? \Carbon\Carbon::parse(request()->cookie($notifCookieName))
+            : now()->subDays(14); // first-ever visit: only flag the last 2 weeks as "new", not all history
+
+        $notificationItems = [];
+
         try {
-            $total_notifications = DB::table('messages')->where('to_user_id', $user->id)->count();
-        } catch (\Exception $e) {
-            $total_notifications = 0;
+            // ---- 1) New assignments (barangay coverage) given to THIS technician ----
+            $myAssignments = \App\Models\Assignment::where('user_id', $user->id)
+                ->where('user_type', 'technician')
+                ->with(['barangay', 'assignedBy'])
+                ->orderByDesc('created_at')
+                ->limit(5)
+                ->get();
+
+            foreach ($myAssignments as $a) {
+                $assignerName = optional($a->assignedBy)->full_name ?? optional($a->assignedBy)->name ?? 'An administrator';
+                $assignerRole = optional($a->assignedBy)->role ?? 'admin';
+                $notificationItems[] = [
+                    'icon' => 'fa-map-location-dot', 'color' => 'primary',
+                    'title' => 'New Assignment',
+                    'subtitle' => 'Assigned to ' . (optional($a->barangay)->name ?? 'a barangay') . ' by ' . $assignerName . ' (' . ucfirst($assignerRole) . ')',
+                    'timestamp' => $a->created_at,
+                    'url' => route('technician.assignment'),
+                ];
+            }
+        } catch (\Exception $e) {}
+
+        try {
+            // ---- 2) Admin has taken action on a report THIS technician escalated ----
+            $barangayIds = \App\Models\Assignment::active()
+                ->where('user_id', $user->id)
+                ->where('user_type', 'technician')
+                ->pluck('barangay_id');
+
+            $adminActedReports = \App\Models\FarmerReport::with('farmer')
+                ->whereHas('farmer', fn ($q) => $q->whereIn('barangay_id', $barangayIds))
+                ->where('technician_id', $user->id)
+                ->whereNotNull('escalated_at')
+                ->where('admin_status', '!=', 'pending')
+                ->orderByDesc('admin_status_updated_at')
+                ->limit(5)
+                ->get();
+
+            $adminStatusLabels = \App\Http\Controllers\FarmerReportController::ADMIN_STATUSES;
+
+            foreach ($adminActedReports as $r) {
+                $statusLabel = $adminStatusLabels[$r->admin_status]['label'] ?? ucfirst($r->admin_status);
+                $notificationItems[] = [
+                    'icon' => 'fa-check-double', 'color' => 'info',
+                    'title' => 'Admin Update on Escalated Report',
+                    'subtitle' => 'Admin marked your escalated report as "' . $statusLabel . '"',
+                    'timestamp' => $r->admin_status_updated_at ?? $r->updated_at,
+                    'url' => route('technician.reports'),
+                ];
+            }
+        } catch (\Exception $e) {}
+
+        try {
+            // ---- 3) New farmer reports waiting in this technician's queue ----
+            $barangayIds = $barangayIds ?? \App\Models\Assignment::active()
+                ->where('user_id', $user->id)
+                ->where('user_type', 'technician')
+                ->pluck('barangay_id');
+
+            $newFarmerReports = \App\Models\FarmerReport::with('farmer')
+                ->whereHas('farmer', fn ($q) => $q->whereIn('barangay_id', $barangayIds))
+                ->whereNull('reviewed_at')
+                ->orderByDesc('created_at')
+                ->limit(5)
+                ->get();
+
+            foreach ($newFarmerReports as $r) {
+                $farmerName = optional($r->farmer)->full_name ?? optional($r->farmer)->name ?? 'A farmer';
+                $notificationItems[] = [
+                    'icon' => 'fa-triangle-exclamation', 'color' => 'warning',
+                    'title' => 'New Farmer Report',
+                    'subtitle' => $farmerName . ' submitted a report that needs your review',
+                    'timestamp' => $r->created_at,
+                    'url' => route('technician.reports'),
+                ];
+            }
+        } catch (\Exception $e) {}
+
+        try {
+            // ---- 4) Messages (fixed: only actually-new messages, not the all-time total) ----
+            $unreadMessagesCount = DB::table('messages')
+                ->where('to_user_id', $user->id)
+                ->where('created_at', '>', $notifSeenAt)
+                ->count();
+            $latestMessage = DB::table('messages')
+                ->where('to_user_id', $user->id)
+                ->orderByDesc('created_at')
+                ->first();
+
+            if ($latestMessage) {
+                $notificationItems[] = [
+                    'icon' => 'fa-message', 'color' => 'info',
+                    'title' => 'Farmer Messages',
+                    'subtitle' => $unreadMessagesCount > 0 ? $unreadMessagesCount . ' new message(s)' : 'View inbox',
+                    'timestamp' => $latestMessage->created_at,
+                    'url' => route('technician.live_com'),
+                ];
+            }
+        } catch (\Exception $e) {}
+
+        try {
+            // ---- 5) Admin announcements (kept from the old feature) ----
+            $latestAnnouncement = DB::table('announcements')->orderByDesc('created_at')->first();
+            if ($latestAnnouncement) {
+                $notificationItems[] = [
+                    'icon' => 'fa-bullhorn', 'color' => 'warning',
+                    'title' => 'Admin Updates',
+                    'subtitle' => $latestAnnouncement->title ?? 'New announcement posted',
+                    'timestamp' => $latestAnnouncement->created_at,
+                    'url' => route('technician.announcement'),
+                ];
+            }
+        } catch (\Exception $e) {}
+
+        // Sort newest first and flag which ones are "new" since this technician last opened the bell.
+        usort($notificationItems, fn ($a, $b) => strtotime($b['timestamp']) <=> strtotime($a['timestamp']));
+        foreach ($notificationItems as &$ni) {
+            $ni['is_new'] = \Carbon\Carbon::parse($ni['timestamp'])->gt($notifSeenAt);
+            $ni['time_human'] = \Carbon\Carbon::parse($ni['timestamp'])->diffForHumans();
         }
+        unset($ni);
+
+        $total_notifications = collect($notificationItems)->where('is_new', true)->count();
+
+        // ---- Quick Search index: technician's own pages only ----
+        $technicianSearchIndex = [
+            ['label' => 'Dashboard', 'url' => route('technician.dashboard'), 'icon' => 'fa-gauge-high'],
+            ['label' => 'Farmer Reports', 'url' => route('technician.reports'), 'icon' => 'fa-flag'],
+            ['label' => 'My Assignment', 'url' => route('technician.assignment'), 'icon' => 'fa-map-location-dot'],
+            ['label' => 'Farmers', 'url' => route('technician.farmers'), 'icon' => 'fa-user'],
+            ['label' => 'Technicians', 'url' => route('technician.technicians'), 'icon' => 'fa-user-gear'],
+            ['label' => 'Field Map', 'url' => route('technician.field_map'), 'icon' => 'fa-map'],
+            ['label' => 'Records', 'url' => route('technician.records'), 'icon' => 'fa-clock-rotate-left'],
+            ['label' => 'Documents', 'url' => route('technician.documents'), 'icon' => 'fa-file-lines'],
+            ['label' => 'Announcements', 'url' => route('technician.announcement'), 'icon' => 'fa-bullhorn'],
+            ['label' => 'Messages', 'url' => route('technician.live_com'), 'icon' => 'fa-message'],
+        ];
     @endphp
 
     <div class="sidebar-container">
@@ -150,37 +296,38 @@
                 <i class="fas fa-bars fs-5"></i>
             </button>
             <ul class="navbar-nav ms-auto d-flex align-items-center gap-3">
-                <li class="nav-item dropdown">
+                <li class="nav-item dropdown" id="quickSearchDropdown">
                     <a class="nav-link text-white" href="#" data-bs-toggle="dropdown" data-bs-auto-close="outside"><i class="fas fa-search fs-5"></i></a>
                     <div class="dropdown-menu dropdown-menu-end p-3" style="width: 320px;">
-                        <input type="text" class="form-control bg-dark border-secondary text-white" placeholder="Search records..." onkeypress="if(event.key==='Enter') window.location.href='?search='+this.value">
+                        <input type="text" id="quickSearchInput" class="form-control bg-dark border-secondary text-white" placeholder="Search records..." autocomplete="off" oninput="renderQuickSearchResults(this.value)" onkeypress="if(event.key==='Enter') goToTopSearchResult()">
+                        <div id="quickSearchResults" class="mt-2" style="max-height: 260px; overflow-y: auto;"></div>
                     </div>
                 </li>
 
-                <li class="nav-item dropdown">
+                <li class="nav-item dropdown" id="notifDropdown">
                     <a class="nav-link text-white position-relative" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-bell fs-5"></i>
                         @if($total_notifications > 0)
-                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem;">{{ $total_notifications }}</span>
+                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="notifBadge" style="font-size: 0.6rem;">{{ $total_notifications }}</span>
                         @endif
                     </a>
-                    <div class="dropdown-menu dropdown-menu-end p-0" style="width: 340px;">
+                    <div class="dropdown-menu dropdown-menu-end p-0" style="width: 360px;">
                         <div class="p-3 border-bottom border-secondary" style="background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%); border-radius: 16px 16px 0 0;">
                             <h6 class="mb-0 text-white fw-bold"><i class="fas fa-bell me-2"></i>Notifications</h6>
                         </div>
-                        <div class="p-2">
-                            <a href="{{ route('technician.live_com') }}" class="dropdown-item py-3 d-flex gap-3 text-white border-bottom border-secondary border-opacity-25">
-                                <div class="text-info"><i class="fas fa-message fs-4"></i></div>
-                                <div><h6 class="mb-1">Farmer Messages</h6><small class="text-secondary">View inbox</small></div>
-                            </a>
-                            <a href="{{ route('technician.announcement') }}" class="dropdown-item py-3 d-flex gap-3 text-white border-bottom border-secondary border-opacity-25">
-                                <div class="text-warning"><i class="fas fa-bullhorn fs-4"></i></div>
-                                <div><h6 class="mb-1">Admin Updates</h6><small class="text-secondary">View announcements</small></div>
-                            </a>
-
-                            @if($total_notifications === 0)
+                        <div class="p-2" style="max-height: 400px; overflow-y: auto;">
+                            @forelse($notificationItems as $ni)
+                                <a href="{{ $ni['url'] }}" class="dropdown-item py-3 d-flex gap-3 text-white border-bottom border-secondary border-opacity-25">
+                                    <div class="text-{{ $ni['color'] }}"><i class="fas {{ $ni['icon'] }} fs-4"></i></div>
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-1 d-flex align-items-center gap-2">{{ $ni['title'] }} @if($ni['is_new'])<span class="badge bg-danger" style="font-size:0.5rem;">NEW</span>@endif</h6>
+                                        <small class="text-secondary d-block">{{ $ni['subtitle'] }}</small>
+                                        <small class="text-secondary" style="font-size: 0.7rem;">{{ $ni['time_human'] }}</small>
+                                    </div>
+                                </a>
+                            @empty
                                 <div class="p-4 text-center text-secondary small">No new notifications</div>
-                            @endif
+                            @endforelse
                         </div>
                     </div>
                 </li>
@@ -384,6 +531,48 @@
     }
 
     // --- 3. Instant UI Update Save Logic ---
+    // --- Quick Search (role-scoped to the technician's own pages only) ---
+    const quickSearchIndex = @json($technicianSearchIndex);
+
+    function renderQuickSearchResults(term) {
+        const box = document.getElementById('quickSearchResults');
+        term = term.trim().toLowerCase();
+        if (!term) { box.innerHTML = ''; return; }
+
+        const matches = quickSearchIndex.filter(item => item.label.toLowerCase().includes(term));
+        if (matches.length === 0) {
+            box.innerHTML = '<div class="text-secondary small px-2 py-2">No matching pages found.</div>';
+            return;
+        }
+        box.innerHTML = matches.map(item => `
+            <a href="${item.url}" class="dropdown-item py-2 text-white d-flex align-items-center gap-2">
+                <i class="fas ${item.icon} text-info"></i> <span>${item.label}</span>
+            </a>
+        `).join('');
+    }
+
+    function goToTopSearchResult() {
+        const term = document.getElementById('quickSearchInput').value.trim().toLowerCase();
+        if (!term) return;
+        const match = quickSearchIndex.find(item => item.label.toLowerCase().includes(term));
+        if (match) window.location.href = match.url;
+    }
+
+    // --- Notifications: mark as seen (cookie) the moment the bell dropdown opens ---
+    (function () {
+        const notifDropdown = document.getElementById('notifDropdown');
+        if (!notifDropdown) return;
+        notifDropdown.addEventListener('show.bs.dropdown', function () {
+            const cookieName = @json($notifCookieName);
+            document.cookie = cookieName + '=' + encodeURIComponent(new Date().toISOString()) + ';path=/;max-age=31536000';
+            const badge = document.getElementById('notifBadge');
+            if (badge) badge.remove();
+            document.querySelectorAll('#notifDropdown .badge.bg-danger').forEach(b => {
+                if (b.textContent.trim() === 'NEW') b.remove();
+            });
+        });
+    })();
+
     async function saveProfile(formId) {
         const form = document.getElementById(formId);
         const formData = new FormData(form);

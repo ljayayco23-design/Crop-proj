@@ -146,7 +146,7 @@
                                     data-city="{{ $row->city->name ?? '' }}"
                                     data-barangay="{{ $row->barangay->name ?? '' }}"
                                     style="display:none;">
-                                    <td>
+                                    <td data-label="User">
                                         <div class="d-flex align-items-center gap-2">
                                             @if(!empty($row->profile_photo))
                                                 <img src="{{ $row->profile_photo }}" alt="{{ $row->full_name }}" class="avatar-circle avatar-photo">
@@ -159,13 +159,13 @@
                                             </div>
                                         </div>
                                     </td>
-                                    <td>
+                                    <td data-label="User Type">
                                         <span class="badge role-pill role-pill-{{ $roleKey }}">{{ ucfirst($roleKey) }}</span>
                                     </td>
-                                    <td>{{ $row->province->name ?? '—' }}</td>
-                                    <td>{{ $row->city->name ?? '—' }}</td>
-                                    <td>{{ $row->barangay->name ?? '—' }}</td>
-                                    <td>
+                                    <td data-label="Province">{{ $row->province->name ?? '—' }}</td>
+                                    <td data-label="City / Municipality">{{ $row->city->name ?? '—' }}</td>
+                                    <td data-label="Barangay">{{ $row->barangay->name ?? '—' }}</td>
+                                    <td data-label="Device Location">
                                         @if(!empty($row->device_latitude) && !empty($row->device_longitude))
                                             <a href="https://maps.google.com/?q={{ $row->device_latitude }},{{ $row->device_longitude }}"
                                                target="_blank" rel="noopener"
@@ -180,13 +180,13 @@
                                             <span class="text-muted">—</span>
                                         @endif
                                     </td>
-                                    <td>{{ $row->created_at?->format('M d, Y') }}</td>
-                                    <td>
+                                    <td data-label="Joined">{{ $row->created_at?->format('M d, Y') }}</td>
+                                    <td data-label="Status">
                                         <span class="badge status-pill status-{{ $row->status ?? 'pending' }}">
                                             {{ ucfirst($row->status ?? 'pending') }}
                                         </span>
                                     </td>
-                                    <td class="text-end">
+                                    <td class="text-end" data-label="Actions">
                                         @include('partials.admin-user-actions', ['user' => $row])
                                     </td>
                                 </tr>
@@ -427,6 +427,222 @@
     .uas-page-btn:disabled { opacity: .35; cursor: not-allowed; }
     .uas-page-dots { color: #6b7688; padding: 0 .35rem; }
     .uas-page-size { width: auto; }
+
+    /* =====================================================================
+       MOBILE: collapse the table into modern, compact grid-cards so phones
+       never need horizontal scrolling. Only kicks in below 768px — tablets
+       and desktop keep the exact original table above. Every <td> already
+       carries a data-label attribute (added server-side, invisible on
+       desktop); on mobile we map each data-label straight onto a named
+       CSS Grid area, so the card lays out as:
+           [ avatar  name/email        ]
+           [ role pill        status pill ]
+           [ Province          City       ]
+           [ Barangay          Joined     ]
+           [ Device location (full width) ]
+           [ ————————————————————————— ]
+           [ actions (kebab, right)       ]
+    ===================================================================== */
+    @media (max-width: 767.98px) {
+        .uas-panel .card-body { padding: .875rem; }
+        .uas-panel { border-radius: 18px; }
+
+        .uas-table thead { display: none; }
+        .uas-table,
+        .uas-table tbody { display: block; width: 100%; }
+
+        .uas-table tbody tr.role-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-areas:
+                "user     user"
+                "type     status"
+                "province city"
+                "barangay joined"
+                "device   device"
+                "actions  actions";
+            column-gap: 12px;
+            background: linear-gradient(180deg, #0f1a2d 0%, #0b1422 100%);
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 16px;
+            padding: 16px 16px 10px;
+            margin-bottom: 14px;
+            box-shadow: 0 6px 18px rgba(0,0,0,.28);
+            transition: border-color .15s ease, transform .1s ease;
+        }
+        .uas-table tbody tr.role-row:active { transform: scale(.99); }
+        .uas-table tbody tr.role-row:last-child { margin-bottom: 0; }
+
+        .uas-table tbody td {
+            display: block;
+            width: 100%;
+            padding: 0;
+            border: none;
+            white-space: normal;
+            color: #e2e8f0;
+        }
+
+        /* ---- Header: avatar + name/email, full width ---- */
+        .uas-table tbody td[data-label="User"] {
+            grid-area: user;
+            padding-bottom: 12px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid rgba(255,255,255,.07);
+        }
+        .uas-table tbody td[data-label="User"] .avatar-circle { width: 40px; height: 40px; font-size: .95rem; }
+        .uas-table tbody td[data-label="User"] .fw-semibold { font-size: .95rem; }
+        .uas-table tbody td[data-label="User"] .text-muted.small { font-size: .78rem; word-break: break-all; }
+
+        /* ---- Role + status pills, side by side under the name ---- */
+        .uas-table tbody td[data-label="User Type"] { grid-area: type; display: flex; align-items: center; margin-bottom: 12px; }
+        .uas-table tbody td[data-label="Status"]    { grid-area: status; display: flex; align-items: center; justify-content: flex-end; margin-bottom: 12px; }
+        .uas-table tbody td[data-label="User Type"] .badge,
+        .uas-table tbody td[data-label="Status"] .badge { font-size: .7rem; padding: .4em .8em; }
+
+        /* Defensively strip any dark background the theme's own table/cell
+           styles might still be painting behind these cells (this is what
+           was showing as a leftover dark box) — every cell that isn't
+           explicitly given a chip background below stays fully transparent,
+           matching the card. */
+        .uas-table tbody td {
+            background: transparent !important;
+        }
+
+        /* ---- Info fields: 2-up grid, each with a small muted label ---- */
+        .uas-table tbody td[data-label="Province"]            { grid-area: province; }
+        .uas-table tbody td[data-label="City / Municipality"] { grid-area: city; }
+        .uas-table tbody td[data-label="Barangay"]             { grid-area: barangay; }
+        .uas-table tbody td[data-label="Joined"]               { grid-area: joined; }
+        .uas-table tbody td[data-label="Device Location"]      { grid-area: device; }
+
+        .uas-table tbody td[data-label="Province"],
+        .uas-table tbody td[data-label="City / Municipality"],
+        .uas-table tbody td[data-label="Barangay"],
+        .uas-table tbody td[data-label="Joined"],
+        .uas-table tbody td[data-label="Device Location"] {
+            background: rgba(255,255,255,.03) !important;
+            border: 1px solid rgba(255,255,255,.05);
+            border-radius: 10px;
+            padding: 8px 10px;
+            margin-bottom: 8px;
+            font-size: .82rem;
+        }
+
+        .uas-table tbody td[data-label]:not([data-label="User"]):not([data-label="Actions"]):not([data-label="User Type"]):not([data-label="Status"])::before {
+            content: attr(data-label);
+            display: block;
+            font-size: .62rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: #6b7688;
+            margin-bottom: 3px;
+        }
+
+        .uas-table tbody td .uas-geo-link { max-width: 100%; }
+
+        /* ---- Actions: right-aligned footer strip, plain icon-only kebab (no circle/fill) ---- */
+        .uas-table tbody td[data-label="Actions"] {
+            grid-area: actions;
+            text-align: right;
+            padding-top: 10px;
+            margin-top: 4px;
+            border-top: 1px solid rgba(255,255,255,.07);
+        }
+        /* The dropdown wrapper + toggle button inherit the theme's default
+           .btn styling (which can stretch full-width on mobile); reset every
+           box property explicitly so the kebab stays a small, plain, inline
+           icon with no background/border/circle. */
+        .uas-table tbody td[data-label="Actions"] .dropdown {
+            display: inline-block !important;
+            width: auto !important;
+        }
+        .uas-table tbody td[data-label="Actions"] .dropdown .btn,
+        .uas-table tbody td[data-label="Actions"] .dropdown button[data-bs-toggle="dropdown"] {
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            width: auto !important;
+            height: auto !important;
+            min-width: 0 !important;
+            padding: 10px 6px !important;
+            margin: 0 !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            color: #9aa4b8 !important;
+            font-size: 1.05rem;
+            line-height: 1;
+        }
+        .uas-table tbody td[data-label="Actions"] .dropdown .btn:active,
+        .uas-table tbody td[data-label="Actions"] .dropdown .btn:focus,
+        .uas-table tbody td[data-label="Actions"] .dropdown button[data-bs-toggle="dropdown"]:active,
+        .uas-table tbody td[data-label="Actions"] .dropdown button[data-bs-toggle="dropdown"]:focus {
+            color: #4d8dff !important;
+            background: transparent !important;
+            box-shadow: none !important;
+        }
+        .uas-table tbody td[data-label="Actions"] .dropdown-toggle::after { display: none; } /* hide bootstrap caret, icon-only kebab */
+
+        /* Belt-and-suspenders: force the correct open/closed state regardless
+           of any conflicting theme rule, so the menu reliably shows when
+           toggled and stays hidden otherwise. */
+        .uas-table tbody td[data-label="Actions"] .dropdown-menu {
+            display: none;
+        }
+        .uas-table tbody td[data-label="Actions"] .dropdown-menu.show {
+            display: block;
+        }
+
+        .uas-table tbody tr.role-empty-row {
+            display: block;
+            text-align: center;
+        }
+        .uas-table tbody tr.role-empty-row td {
+            border: none;
+            padding: 1.5rem 0;
+        }
+
+        /* Toolbar: stop the horizontally-scrolling filter strip — stack everything full-width instead */
+        .uas-toolbar { flex-wrap: wrap; }
+        .uas-filters {
+            flex-wrap: wrap !important;
+            overflow-x: visible !important;
+            width: 100%;
+            row-gap: .5rem;
+        }
+        .uas-filters .uas-search-wrap,
+        .uas-filters select.uas-input,
+        .uas-export-wrap {
+            flex: 1 1 100% !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+        }
+        .uas-input.form-control, .uas-input.form-select { border-radius: 10px; min-height: 42px; }
+        .uas-export-btn { width: 100%; justify-content: center; border-radius: 10px; }
+
+        /* Footer (entries label + pagination + page-size) stacks cleanly */
+        .uas-footer { flex-direction: column; align-items: stretch !important; gap: .75rem; }
+        .uas-footer > div { justify-content: space-between; }
+        #pagination-controls { flex-wrap: wrap; }
+
+        /* This table no longer needs horizontal scrolling — and leaving
+           overflow-x:auto on .table-responsive was clipping the "Actions"
+           dropdown menu at the bottom of the last card (overflow-x:auto
+           implicitly sets overflow-y:auto too, cutting the popup off). */
+        .uas-panel .table-responsive { overflow: visible; }
+    }
+
+    /* Detached dropdown menu (see script below) — kept above everything,
+       including neighbouring cards, and never clipped by any ancestor. */
+    .uas-menu-fixed {
+        position: fixed !important;
+        margin: 0 !important;
+        z-index: 3050 !important;
+        min-width: 170px;
+    }
 </style>
 @endsection
 
@@ -673,6 +889,96 @@
         const modalElement = document.getElementById('userInfoModal');
         if (modalElement) infoModal = new bootstrap.Modal(modalElement);
     });
+
+    // ---------- Mobile fix: keep the "Actions" kebab dropdown fully visible ----------
+    // On phones the table becomes stacked cards and doesn't need horizontal
+    // scrolling, but Bootstrap still positions each dropdown-menu relative to
+    // its row — which sits inside .table-responsive / .uas-panel and can end
+    // up clipped or hidden behind the next card. To make the list reliably
+    // "display" no matter which card it's opened from, every dropdown inside
+    // the user-accounts panel is detached to <body> while open and placed
+    // with fixed coordinates next to its toggle button, then moved back to
+    // its original spot when closed. Works with any standard Bootstrap
+    // `.dropdown > .dropdown-toggle + .dropdown-menu` markup.
+    (function () {
+        function isInPanel(el) { return !!el.closest('.uas-panel'); }
+
+        // Safety net: guarantee every kebab button actually has a working
+        // Bootstrap Dropdown instance, even for rows swapped in by the 5s
+        // auto-refresh, even if something on the page ever interferes with
+        // Bootstrap's own automatic data-attribute initialization.
+        document.addEventListener('click', function (e) {
+            const toggle = e.target.closest('.uas-panel [data-bs-toggle="dropdown"]');
+            if (!toggle || typeof bootstrap === 'undefined' || !bootstrap.Dropdown) return;
+            bootstrap.Dropdown.getOrCreateInstance(toggle);
+        }, true);
+
+        document.addEventListener('show.bs.dropdown', function (e) {
+            // Bootstrap fires dropdown events on the .dropdown-menu's PARENT
+            // element (the wrapper div), not on the toggle button — resolve
+            // the actual button + menu explicitly instead of assuming e.target.
+            const wrapper = e.target.closest('.dropdown') || e.target;
+            const button = wrapper.matches('[data-bs-toggle="dropdown"]')
+                ? wrapper
+                : wrapper.querySelector('[data-bs-toggle="dropdown"]');
+            const menu = wrapper.querySelector(':scope > .dropdown-menu') || wrapper.querySelector('.dropdown-menu');
+            if (!button || !menu || !isInPanel(button)) return;
+
+            button._uasMenu = menu;
+            button._uasParent = wrapper;
+            button._uasNextSibling = menu.nextElementSibling;
+
+            document.body.appendChild(menu);
+            // Bootstrap/Popper may have already stamped an inline transform
+            // on the menu for its own (now-abandoned) positioning — clear it
+            // so it can't stack with the top/left we set below and throw the
+            // menu off-screen.
+            menu.style.transform = 'none';
+            menu.classList.add('uas-menu-fixed');
+
+            const position = () => {
+                const rect = button.getBoundingClientRect();
+                const menuRect = menu.getBoundingClientRect();
+                let left = rect.right - menuRect.width;
+                left = Math.max(8, Math.min(left, window.innerWidth - menuRect.width - 8));
+                let top = rect.bottom + 6;
+                if (top + menuRect.height > window.innerHeight - 8) {
+                    top = rect.top - menuRect.height - 6; // flip above the button if no room below
+                }
+                menu.style.left = left + 'px';
+                menu.style.top = top + 'px';
+            };
+            requestAnimationFrame(position);
+            window.addEventListener('scroll', position, { passive: true, capture: true });
+            window.addEventListener('resize', position);
+            button._uasReposition = position;
+        });
+
+        document.addEventListener('hidden.bs.dropdown', function (e) {
+            const wrapper = e.target.closest('.dropdown') || e.target;
+            const button = wrapper.matches('[data-bs-toggle="dropdown"]')
+                ? wrapper
+                : wrapper.querySelector('[data-bs-toggle="dropdown"]');
+            if (!button) return;
+
+            const menu = button._uasMenu;
+            const parent = button._uasParent;
+            if (!menu || !parent) return;
+
+            if (button._uasNextSibling) parent.insertBefore(menu, button._uasNextSibling);
+            else parent.appendChild(menu);
+
+            menu.classList.remove('uas-menu-fixed');
+            menu.style.left = '';
+            menu.style.top = '';
+
+            if (button._uasReposition) {
+                window.removeEventListener('scroll', button._uasReposition, { capture: true });
+                window.removeEventListener('resize', button._uasReposition);
+            }
+            button._uasMenu = button._uasParent = button._uasNextSibling = button._uasReposition = null;
+        });
+    })();
 
     function viewFarmerInfo(userId) {
         if (infoModal) infoModal.show();
