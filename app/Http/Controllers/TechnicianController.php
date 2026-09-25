@@ -143,6 +143,7 @@ class TechnicianController extends Controller
 
         $hasGroqSnapshotColumn = \Illuminate\Support\Facades\Schema::hasColumn('user_detections', 'groq_snapshot');
         $hasSourceColumn = \Illuminate\Support\Facades\Schema::hasColumn('user_detections', 'source');
+        $hasDetectionBoxesColumn = \Illuminate\Support\Facades\Schema::hasColumn('user_detections', 'detection_boxes');
 
         $allUsersData = [];
 
@@ -206,7 +207,15 @@ class TechnicianController extends Controller
                         }
                     }
 
-                    $source = ($hasSourceColumn && isset($row->source) && $row->source === 'groq') ? 'groq' : 'model';
+                    // Same three-way engine check as FarmerHistoryController@index
+                    // ('groq' / 'yolo11n' / fallback 'model') — this used to only
+                    // ever check for 'groq' and call everything else "model",
+                    // which is why every yolo11n scan showed up here badged
+                    // "Model" with no box data at all.
+                    $source = 'model';
+                    if ($hasSourceColumn && isset($row->source) && in_array($row->source, ['groq', 'yolo11n'], true)) {
+                        $source = $row->source;
+                    }
 
                     $snapshot = null;
                     if ($source === 'groq' && $hasGroqSnapshotColumn && !empty($row->groq_snapshot)) {
@@ -220,9 +229,22 @@ class TechnicianController extends Controller
                         $anyInstanceIsPest = (bool) $snapshot['is_pest'];
                     }
 
+                    // Same YOLO11n bounding-box decode as FarmerHistoryController@index
+                    // — this is the piece that was missing entirely here, which is
+                    // why Records never had anything to draw on click even after
+                    // the blade templates were fixed to draw it.
+                    $boxes = null;
+                    if ($source === 'yolo11n' && $hasDetectionBoxesColumn && !empty($row->detection_boxes)) {
+                        $decodedBoxes = json_decode($row->detection_boxes, true);
+                        if (is_array($decodedBoxes) && !empty($decodedBoxes['boxes'])) {
+                            $boxes = $decodedBoxes;
+                        }
+                    }
+
                     $instances[] = [
                         'id'               => $row->id,
                         'image'            => $image,
+                        'boxes'            => $boxes,
                         'confidence'       => isset($row->confidence) ? (int) $row->confidence : 0,
                         'date'             => $row->created_at ? \Carbon\Carbon::parse($row->created_at)->format('M d, Y g:i A') : null,
                         'source'           => $source,

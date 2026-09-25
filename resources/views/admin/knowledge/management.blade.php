@@ -100,7 +100,9 @@
                             {{ $row->type }}
                         </span>
                     </td>
-                    <td class="fw-bold text-white">{{ ucwords(str_replace('_', ' ', $row->disease)) }}</td>
+                    <td class="fw-bold text-white">
+                        {{ $row->type === 'disease' ? ($diseaseNames[$row->disease] ?? ucfirst($row->disease)) : ($pestNames[$row->disease] ?? ucfirst($row->disease)) }}
+                    </td>
                     <td class="text-secondary">{{ $row->updated_by ?? 'Groq AI' }}</td>
                     <td class="text-end pe-4">
                         <div class="dropdown d-inline-block">

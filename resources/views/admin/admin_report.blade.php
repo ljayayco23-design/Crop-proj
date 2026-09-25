@@ -203,7 +203,21 @@
         position: fixed; inset: 0; z-index: 1250; background: rgba(2,6,12,.85);
         display: flex; align-items: center; justify-content: center; padding: 1.5rem;
     }
-    .fr-lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 12px; }
+    .fr-lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 12px; display: block; }
+    /* Report photos stay plain everywhere; YOLO11n boxes are painted on this
+       canvas only while the photo is enlarged (same as History). */
+    .sr-lightbox-wrap { position: relative; display: inline-block; max-width: 100%; }
+    .sr-lightbox-canvas { position: absolute; left: 0; top: 0; pointer-events: none; border-radius: 12px; }
+    /* Model name chip in the modal header, next to the report ID — never on
+       top of the photo. */
+    .sr-model-chip {
+        display: inline-flex; align-items: center;
+        background: rgba(16,185,129,.16); color: #34d399;
+        border: 1px solid rgba(16,185,129,.4);
+        font-size: .68rem; font-weight: 800; letter-spacing: .03em;
+        padding: 3px 9px; border-radius: 6px; text-transform: uppercase;
+        white-space: nowrap;
+    }
 
     /* ---------- "Wrong Detection" summary (donut + legend) ----------
        Pure CSS conic-gradient ring, painted by JS from $wrongDetectionStats
@@ -399,13 +413,25 @@
                         </tr>
                     </thead>
                     <tbody id="sr-table-body">
+                        @php
+                            // Exact model behind each detection (same names as the
+                            // detection page). AI-Model rows show it in the Type
+                            // badge instead of the generic "AI Model" text; the
+                            // Type filter still works off the category below.
+                            $modelLabels = ['yolo11n' => 'YOLO11n', 'groq' => 'Groq AI', 'model' => 'MobileNetV2'];
+                        @endphp
                         @foreach($reports as $report)
+                            @php
+                                $rowModel = $report['type_key'] === 'ai_model'
+                                    ? ($modelLabels[$report['detection']['source'] ?? ''] ?? null)
+                                    : null;
+                            @endphp
                             <tr data-id="{{ $report['id'] }}"
                                 data-status="{{ $report['admin_status'] }}"
                                 data-type="{{ $report['type'] }}"
                                 data-search="{{ strtolower($report['sr_code'].' '.$report['report_id'].' '.$report['farmer_name'].' '.$report['detection']['class_name'].' '.$report['category'].' '.$report['description']) }}">
                                 <td class="fw-bold" data-label="Report ID">#{{ $report['sr_code'] }}</td>
-                                <td data-label="Type"><span class="sr-badge sr-type-{{ $report['type_key'] }}">{{ $report['type'] }}</span></td>
+                                <td data-label="Type"><span class="sr-badge sr-type-{{ $report['type_key'] }}" title="{{ $report['type'] }}">{{ $rowModel ?? $report['type'] }}</span></td>
                                 <td data-label="Category">{{ $report['category'] }}</td>
                                 <td class="sr-desc" data-label="Description">{{ $report['description'] }}</td>
                                 <td class="text-secondary" data-label="Date">{{ $report['escalated_date'] }}</td>
@@ -447,6 +473,7 @@
         <div class="rg-report-head">
             <div class="d-flex align-items-center gap-2 flex-wrap">
                 <h6 class="mb-0 fw-bold text-white">System Report <span id="sr-m-id">#SR-000</span></h6>
+                <span id="sr-m-model" class="sr-model-chip fr-hidden"></span>
                 <span id="sr-m-status" class="sr-badge sr-status-pending">Pending</span>
                 <span id="sr-m-type" class="sr-badge sr-type-system">System</span>
             </div>
@@ -467,7 +494,7 @@
                     </div>
 
                     <div class="rg-report-top mb-3">
-                        <img id="sr-d-image" class="rg-report-thumb fr-hidden" alt="Reported detection" onclick="srZoom(this.src)">
+                        <img id="sr-d-image" class="rg-report-thumb fr-hidden" alt="Reported detection" onclick="srZoom(this.src, srDetailBoxes)">
                         <div id="sr-d-image-missing" class="rg-report-thumb d-flex align-items-center justify-content-center text-secondary fr-hidden"><i class="fas fa-image"></i></div>
                         <div id="sr-block-name" class="rg-flag-block rg-flag-chip rg-report-top-info" data-section="name">
                             <div id="sr-type-badge" class="rg-type-badge">
@@ -512,8 +539,6 @@
                     </div>
                     
                     <div id="sr-d-info"></div>
-
-                                        <div class="small text-secondary mb-3">Engine: <span id="sr-d-source" class="text-light">—</span></div>
 
                 </div>
 
@@ -598,7 +623,10 @@
 </div>
 
 <div id="sr-lightbox" class="fr-lightbox fr-hidden" onclick="srCloseZoom()">
-    <img id="sr-lightbox-img" src="" alt="Enlarged photo">
+    <div class="sr-lightbox-wrap">
+        <img id="sr-lightbox-img" src="" alt="Enlarged photo">
+        <canvas id="sr-lightbox-canvas" class="sr-lightbox-canvas"></canvas>
+    </div>
 </div>
 @endsection
 
@@ -610,8 +638,13 @@ const srStatuses  = @json($statuses);
 const srStatusUrl = "{{ route('admin.system_report.status', ['report' => '__ID__']) }}";
 const SR_CSRF     = "{{ csrf_token() }}";
 
-// Same engine names the technician page shows.
-const srEngineLabels = { model: 'MobileNetV2 (On-Device)', yollo11n: 'yollo11n', groq: 'Groq AI' };
+// Same engine names the detection page / technician page show. (The key used
+// to be misspelled "yollo11n", so YOLO11n reports never matched a label.)
+const srEngineLabels = { model: 'MobileNetV2', yolo11n: 'YOLO11n', groq: 'Groq AI' };
+
+// The open report's YOLO11n boxes ({boxes:[...], src_w, src_h} or null), so the
+// thumbnail's onclick can hand them to the lightbox.
+let srDetailBoxes = null;
 
 const srAssessmentLabels = {
     correct:          'AI result is correct',
@@ -804,13 +837,83 @@ function srSetImage(imgId, missingId, src) {
     }
 }
 
-window.srZoom = function (src) {
+// Boxes are in the ORIGINAL photo's pixel space (src_w x src_h); the photo is
+// drawn whole inside the lightbox, so scale/offset come from its own size.
+let srLightboxBoxes = null;
+
+function srDrawLightboxBoxes() {
+    const canvas = document.getElementById('sr-lightbox-canvas');
+    const img = document.getElementById('sr-lightbox-img');
+    if (!canvas || !img) return;
+
+    // While the lightbox is display:none the <img> reads 0x0 — a later call
+    // (image load / next frame / resize) does the drawing.
+    const w = img.clientWidth, h = img.clientHeight;
+    if (!w || !h) return;
+
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+
+    const data = srLightboxBoxes;
+    const srcW = Number(data && data.src_w), srcH = Number(data && data.src_h);
+    if (!data || !Array.isArray(data.boxes) || !data.boxes.length || !srcW || !srcH) return;
+
+    const scale = Math.min(w / srcW, h / srcH);
+    const rw = srcW * scale, rh = srcH * scale;
+    const ox = (w - rw) / 2, oy = (h - rh) / 2;
+
+    data.boxes.forEach(d => {
+        if (!d || !d.box) return;
+        const x = ox + d.box.x * scale;
+        const y = oy + d.box.y * scale;
+        const bw = d.box.width * scale;
+        const bh = d.box.height * scale;
+
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, bw, bh);
+
+        const label = d.label || d.className || '';
+        if (!label) return;
+        ctx.font = '600 13px system-ui, sans-serif';
+        const textW = ctx.measureText(label).width + 10;
+        const labelH = 19;
+        ctx.fillStyle = '#10b981';
+        ctx.fillRect(x, Math.max(0, y - labelH), textW, labelH);
+        ctx.fillStyle = '#06281f';
+        ctx.fillText(label, x + 5, Math.max(13, y - 5));
+    });
+}
+
+// Redraw whenever the enlarged photo's rendered size changes (lightbox just
+// opened, image finished loading, window resized).
+if (window.ResizeObserver) {
+    new ResizeObserver(() => srDrawLightboxBoxes()).observe(document.getElementById('sr-lightbox-img'));
+}
+
+// boxes: the report's detection.boxes (or null — supporting photo, older
+// reports, other engines). The lightbox is shown FIRST so the photo has a
+// real size to measure, then the overlay is drawn.
+window.srZoom = function (src, boxes) {
     if (!src) return;
-    document.getElementById('sr-lightbox-img').src = src;
+    const img = document.getElementById('sr-lightbox-img');
+    const canvas = document.getElementById('sr-lightbox-canvas');
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+
+    srLightboxBoxes = boxes || null;
+    img.onload = srDrawLightboxBoxes;
+    img.src = src;
     document.getElementById('sr-lightbox').classList.remove('fr-hidden');
+    // Already-decoded (cached / same data URI) photos don't fire onload again.
+    requestAnimationFrame(srDrawLightboxBoxes);
 };
 window.srCloseZoom = function () {
     document.getElementById('sr-lightbox').classList.add('fr-hidden');
+    srLightboxBoxes = null;
 };
 
 // Same thresholds/colors as the farmer and technician pages.
@@ -916,7 +1019,9 @@ function srOpenModal(r) {
     sb.textContent = statusMeta.label;
     const tb = document.getElementById('sr-m-type');
     tb.className = 'sr-badge sr-type-' + r.type_key;
-    tb.textContent = r.type;
+    // AI-Model reports show the exact model that made the detection.
+    tb.textContent = (r.type_key === 'ai_model' && srEngineLabels[r.detection.source]) || r.type;
+    tb.title = r.type;
 
     document.getElementById('sr-m-code').textContent = '#' + r.report_id;
     document.getElementById('sr-m-farmer').textContent = r.farmer_name;
@@ -924,6 +1029,7 @@ function srOpenModal(r) {
     document.getElementById('sr-m-escalated').textContent = r.escalated_at || '—';
 
     srSetImage('sr-d-image', 'sr-d-image-missing', r.detection.image);
+    srDetailBoxes = r.detection.boxes || null;
     document.getElementById('sr-d-class').textContent = r.detection.class_name;
 
     const sevColor = srSeverityColor(r.detection.severity_percent);
@@ -934,7 +1040,11 @@ function srOpenModal(r) {
     dmgEl.textContent = Number.isFinite(Number(r.detection.severity_percent)) ? r.detection.severity_percent + '%' : '—';
     dmgEl.className = 'rg-report-stat-value ' + sevColor;
 
-    document.getElementById('sr-d-source').textContent = srEngineLabels[r.detection.source] || r.detection.source || '—';
+    // Model name next to the report ID (hidden when the engine is unknown).
+    const modelChip = document.getElementById('sr-m-model');
+    const modelLabel = srEngineLabels[r.detection.source] || null;
+    modelChip.textContent = modelLabel || '';
+    modelChip.classList.toggle('fr-hidden', !modelLabel);
 
     // 'nutrient' only exists in a disease snapshot (pests never carry it).
     srUpdateTypeBadge(!(r.info && ('nutrient' in r.info)));

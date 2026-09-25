@@ -51,7 +51,7 @@
                         @foreach ($items as $jsonKey => $versions)
                             <div class="mb-5">
                                 <h5 class="fw-bold text-white border-bottom border-secondary pb-2 mb-4 d-flex align-items-center justify-content-between">
-                                    {{ strtoupper(str_replace('_', ' ', $jsonKey)) }}
+                                    {{ strtoupper(($type === 'disease' ? ($diseaseNames[$jsonKey] ?? null) : ($pestNames[$jsonKey] ?? null)) ?? str_replace('_', ' ', $jsonKey)) }}
                                     <span class="badge {{ $type === 'disease' ? 'bg-primary' : 'bg-danger' }} fs-6">
                                         {{ strtoupper($type) }}
                                     </span>
@@ -114,7 +114,7 @@
                         @foreach ($items as $jsonKey => $versions)
                             <div class="mb-5">
                                 <h5 class="fw-bold text-info border-bottom border-info pb-2 mb-4 d-flex align-items-center justify-content-between">
-                                    {{ strtoupper(str_replace('_', ' ', $jsonKey)) }}
+                                    {{ strtoupper(($type === 'disease' ? ($diseaseNames[$jsonKey] ?? null) : ($pestNames[$jsonKey] ?? null)) ?? str_replace('_', ' ', $jsonKey)) }}
                                     <span class="badge {{ $type === 'disease' ? 'bg-primary' : 'bg-danger' }} fs-6">
                                         {{ strtoupper($type) }}
                                     </span>

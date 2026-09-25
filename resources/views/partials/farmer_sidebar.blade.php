@@ -37,6 +37,11 @@
                     <i class="fas fa-map-location-dot me-2"></i> Field Map & Weather
                 </a>
             </li>
+            <li class="nav-item mb-2">
+                <a href="{{ route('farmer.schedule') }}" class="nav-link {{ request()->routeIs('farmer.schedule*') ? 'active' : '' }}">
+                    <i class="fas fa-calendar-days me-2"></i> Schedule
+                </a>
+            </li>
             {{-- Detection feedback: the farmer's own submitted reports and
                  the technician's resolution for each one. --}}
             <li class="nav-item mb-2">

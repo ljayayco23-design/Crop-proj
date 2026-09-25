@@ -204,8 +204,9 @@ class FarmerReportController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
-        $hasGroqSnapshotColumn = Schema::hasColumn('user_detections', 'groq_snapshot');
-        $hasSourceColumn       = Schema::hasColumn('user_detections', 'source');
+        $hasGroqSnapshotColumn   = Schema::hasColumn('user_detections', 'groq_snapshot');
+        $hasSourceColumn         = Schema::hasColumn('user_detections', 'source');
+        $hasDetectionBoxesColumn = Schema::hasColumn('user_detections', 'detection_boxes');
 
         $grouped = $rawDetections->groupBy(fn ($row) => strtolower(trim($row->class_key)));
 
@@ -227,7 +228,15 @@ class FarmerReportController extends Controller
                     }
                 }
 
-                $source = ($hasSourceColumn && isset($row->source) && $row->source === 'groq') ? 'groq' : 'model';
+                // Same three-way engine check FarmerHistoryController uses —
+                // this used to collapse everything that wasn't 'groq' into
+                // 'model', which silently relabeled every yolo11n scan as
+                // the old MobileNetV2 classifier the moment it was picked
+                // for a report. Recognize yolo11n explicitly instead.
+                $source = 'model';
+                if ($hasSourceColumn && isset($row->source) && in_array($row->source, ['groq', 'yolo11n'], true)) {
+                    $source = $row->source;
+                }
 
                 $snapshot = null;
                 if ($source === 'groq' && $hasGroqSnapshotColumn && !empty($row->groq_snapshot)) {
@@ -241,9 +250,22 @@ class FarmerReportController extends Controller
                     $anyInstanceIsPest = (bool) $snapshot['is_pest'];
                 }
 
+                // Same YOLO11n bounding-box decode as FarmerHistoryController@index
+                // — kept independent of the image itself, so the "Create a
+                // Report" picker can draw the exact same overlay History does
+                // when the farmer previews a past scan before reporting it.
+                $boxes = null;
+                if ($source === 'yolo11n' && $hasDetectionBoxesColumn && !empty($row->detection_boxes)) {
+                    $decodedBoxes = json_decode($row->detection_boxes, true);
+                    if (is_array($decodedBoxes) && !empty($decodedBoxes['boxes'])) {
+                        $boxes = $decodedBoxes;
+                    }
+                }
+
                 $instances[] = [
                     'id'               => $row->id,
                     'image'            => $image,
+                    'boxes'            => $boxes,
                     'confidence'       => isset($row->confidence) ? (int) $row->confidence : 0,
                     'date'             => $row->created_at ? \Carbon\Carbon::parse($row->created_at)->timezone('Asia/Manila')->format('M d, Y g:i A') : null,
                     'source'           => $source,
@@ -351,6 +373,18 @@ class FarmerReportController extends Controller
             'source'             => 'nullable|string|max:20',
             'image_base64'       => 'nullable|string',
             'support_image'      => 'nullable|string',
+            // Raw YOLO11n box coordinates for the reported photo, same
+            // shape saveDetection() accepts on the History side. The live
+            // "Report the Problem" modal already bakes boxes into
+            // image_base64 for yolo11n (buildYoloDetectionSnapshot() in
+            // the detection page), so these are only actually populated
+            // when a report is created from a past scan instead — but
+            // accepting them here means the technician review page can
+            // draw the same overlay History does either way.
+            'detection_boxes'    => 'nullable|array',
+            'detection_boxes.*'  => 'array',
+            'boxes_src_w'        => 'nullable|numeric',
+            'boxes_src_h'        => 'nullable|numeric',
             'info'               => 'nullable|array',
             'problem_types'      => 'required|array|min:1',
             'problem_types.*'    => 'string|max:100',
@@ -365,7 +399,7 @@ class FarmerReportController extends Controller
         $flagged = array_values(array_intersect($data['flagged_sections'] ?? [], array_keys(self::SECTIONS)));
         $info    = array_intersect_key($data['info'] ?? [], self::SECTIONS);
 
-        $report = FarmerReport::create([
+        $reportData = [
             'report_code'        => FarmerReport::nextReportCode(),
             'user_id'            => $actor->id,
             'class_key'          => $data['class_key'] ?? null,
@@ -382,7 +416,31 @@ class FarmerReportController extends Controller
             'message'            => $data['message'],
             'suggested_class'    => $data['suggested_class'] ?? null,
             'status'             => 'pending',
-        ]);
+        ];
+
+        $report = FarmerReport::create($reportData);
+
+        // YOLO11n box coordinates for the reported photo (same shape History
+        // stores in user_detections.detection_boxes). Written with a direct
+        // query on purpose: FarmerReport::create() silently drops any column
+        // that isn't in the model's $fillable, and a model cast on this column
+        // would double-encode the JSON — neither can happen this way. Needs the
+        // farmer_reports.detection_boxes column (see the add_detection_boxes
+        // migration); if it hasn't been run the report still saves, just
+        // without boxes, and the failure is logged instead of hidden.
+        if (!empty($data['detection_boxes']) && !empty($data['boxes_src_w']) && !empty($data['boxes_src_h'])) {
+            if (Schema::hasColumn('farmer_reports', 'detection_boxes')) {
+                DB::table('farmer_reports')->where('id', $report->id)->update([
+                    'detection_boxes' => json_encode([
+                        'boxes' => array_values($data['detection_boxes']),
+                        'src_w' => $data['boxes_src_w'],
+                        'src_h' => $data['boxes_src_h'],
+                    ]),
+                ]);
+            } else {
+                \Log::warning('farmer_reports.detection_boxes column is missing — run the add_detection_boxes_to_farmer_reports migration. Boxes for report ' . $report->report_code . ' were not saved.');
+            }
+        }
 
         return response()->json([
             'success'     => true,
@@ -626,6 +684,22 @@ class FarmerReportController extends Controller
             $sevPercent = self::SEVERITY_PERCENT_MAP[$classKey] ?? null;
         }
 
+        // Same decode as FarmerHistoryController@index / myDetectionsForReport()
+        // above — only present at all once the detection_boxes migration has
+        // been run on farmer_reports. Every yolo11n report (live from the
+        // detection page or created from a past scan) keeps the plain photo in
+        // image_path and its boxes here; the views draw them on zoom.
+        $boxes = null;
+        if (Schema::hasColumn('farmer_reports', 'detection_boxes')) {
+            // getRawOriginal(): the JSON string exactly as stored, so a cast
+            // or accessor on the model can't change what we decode.
+            $rawBoxes = $r->getRawOriginal('detection_boxes');
+            $decodedBoxes = is_string($rawBoxes) ? json_decode($rawBoxes, true) : (is_array($rawBoxes) ? $rawBoxes : null);
+            if (is_array($decodedBoxes) && !empty($decodedBoxes['boxes'])) {
+                $boxes = $decodedBoxes;
+            }
+        }
+
         return [
             'id'               => $r->id,
             'report_id'        => $r->report_code,
@@ -647,6 +721,7 @@ class FarmerReportController extends Controller
                 'severity_percent' => $sevPercent,
                 'source'           => $r->source,
                 'image'            => $this->normalizeImage($r->image_path),
+                'boxes'            => $boxes,
             ],
             'support_image'    => $this->normalizeImage($r->support_image_path),
             'info'             => $r->info ?? [],

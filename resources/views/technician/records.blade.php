@@ -236,7 +236,10 @@
                 <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body text-center p-0">
-                <img id="modalImageBig" src="" class="img-fluid rounded shadow-lg" style="max-height: 85vh; object-fit: contain;">
+                <div id="modalImageWrap" style="position: relative; display: inline-block; max-width: 100%;">
+                    <img id="modalImageBig" src="" class="img-fluid rounded shadow-lg" style="max-height: 85vh; object-fit: contain; display: block;">
+                    <canvas id="modalImageBoxes" style="position: absolute; left: 0; top: 0; pointer-events: none;"></canvas>
+                </div>
             </div>
         </div>
     </div>
@@ -247,17 +250,106 @@
 @section('scripts')
 <script>
     let imgModal = null;
+    let pendingModalBoxes = null, pendingModalSrcW = 0, pendingModalSrcH = 0;
 
     document.addEventListener("DOMContentLoaded", () => {
         imgModal = new bootstrap.Modal(document.getElementById('imageModal'));
 
         document.getElementById('imageModal').addEventListener('hidden.bs.modal', function () {
             document.getElementById('modalImageBig').src = '';
+            const canvas = document.getElementById('modalImageBoxes');
+            if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        });
+
+        // Same fix as History: drawing on the <img>'s load event alone
+        // doesn't work because Bootstrap's modal is still display:none at
+        // that instant (its fade-in transition hasn't finished), so
+        // img.clientWidth/clientHeight both read 0 and the canvas ends up
+        // sized 0x0 — nothing visibly wrong, it just silently draws
+        // nothing. shown.bs.modal only fires once the modal is actually
+        // visible on screen with real dimensions.
+        document.getElementById('imageModal').addEventListener('shown.bs.modal', function () {
+            drawModalBoxes(pendingModalBoxes, pendingModalSrcW, pendingModalSrcH);
         });
     });
 
-    function showImageModal(src) {
-        document.getElementById('modalImageBig').src = src;
+    function getModalContainRect(boxW, boxH, srcW, srcH) {
+        const scale = Math.min(boxW / srcW, boxH / srcH);
+        const renderW = srcW * scale, renderH = srcH * scale;
+        return { x: (boxW - renderW) / 2, y: (boxH - renderH) / 2, width: renderW, height: renderH };
+    }
+
+    // Same drawing code as history.blade.php's drawModalBoxes(), so a
+    // farmer's YOLO11n scan overlays identically whether a technician is
+    // looking at it here (Records) or the farmer is looking at it in their
+    // own History.
+    function drawModalBoxes(boxes, srcW, srcH) {
+        const canvas = document.getElementById('modalImageBoxes');
+        const img = document.getElementById('modalImageBig');
+        if (!canvas || !img) return;
+
+        const w = img.clientWidth, h = img.clientHeight;
+        if (!w || !h) return; // image not laid out yet — nothing to draw against
+
+        const ctx = canvas.getContext('2d');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.style.width = w + 'px';
+        canvas.style.height = h + 'px';
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (!boxes || !boxes.length || !srcW || !srcH) return;
+
+        const rect = getModalContainRect(canvas.width, canvas.height, srcW, srcH);
+        const scaleX = rect.width / srcW;
+        const scaleY = rect.height / srcH;
+
+        boxes.forEach(d => {
+            const x = rect.x + d.box.x * scaleX;
+            const y = rect.y + d.box.y * scaleY;
+            const bw = d.box.width * scaleX;
+            const bh = d.box.height * scaleY;
+
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, bw, bh);
+
+            const label = d.label || d.className || '';
+            if (!label) return;
+            ctx.font = '600 13px system-ui, sans-serif';
+            const textW = ctx.measureText(label).width + 10;
+            const labelH = 19;
+            ctx.fillStyle = '#10b981';
+            ctx.fillRect(x, Math.max(0, y - labelH), textW, labelH);
+            ctx.fillStyle = '#06281f';
+            ctx.fillText(label, x + 5, Math.max(13, y - 5));
+        });
+    }
+
+    // Same signature detection_row.blade.php's <img onclick> now calls:
+    // showImageModal(src, boxesJson, boxesSrcW, boxesSrcH). boxesJson is
+    // only ever non-empty for a yolo11n scan that saved box data.
+    function showImageModal(src, boxesJson, boxesSrcW, boxesSrcH) {
+        if (!src) return;
+        const canvas = document.getElementById('modalImageBoxes');
+        if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+
+        let boxes = null;
+        if (boxesJson) {
+            try { boxes = JSON.parse(boxesJson); } catch (e) { boxes = null; }
+        }
+
+        pendingModalBoxes = boxes;
+        pendingModalSrcW = parseFloat(boxesSrcW) || 0;
+        pendingModalSrcH = parseFloat(boxesSrcH) || 0;
+
+        const img = document.getElementById('modalImageBig');
+        // Belt and suspenders, same as History: also try on image load in
+        // case the modal happens to already be visible by the time the
+        // image finishes loading. drawModalBoxes() safely no-ops if the
+        // image isn't sized yet.
+        img.onload = () => drawModalBoxes(pendingModalBoxes, pendingModalSrcW, pendingModalSrcH);
+        img.src = src;
         imgModal.show();
     }
 

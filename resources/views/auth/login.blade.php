@@ -23,6 +23,11 @@
             <div class="mb-6 p-4 bg-emerald-700 rounded-2xl text-center">{{ session('success') }}</div>
         @endif
 
+        <!-- Filled/shown by the offline-login script below when it's used
+             (either to report an offline success, or that no cached
+             account matches on this device). Stays empty/hidden otherwise. -->
+        <div id="offlineLoginMsg" class="hidden mb-6 p-4 rounded-2xl text-center"></div>
+
         <form method="POST" action="{{ route('login.post') }}" id="loginForm">
             @csrf
 
@@ -910,4 +915,174 @@ document.addEventListener('DOMContentLoaded', function () {
             window.location.reload();
         }
     });
+</script>
+
+<script>
+// ============================================================
+// OFFLINE LOGIN
+// ------------------------------------------------------------
+// The first time someone logs in on THIS device while online, we cache
+// (in IndexedDB, not localStorage — survives longer, and works from the
+// service worker's origin too) a SHA-256 hash of their password plus
+// their role/redirect/name. We never store the raw password.
+//
+// Next time they open this same cached login page with no connection,
+// the exact same form re-hashes what they type and compares it to what
+// was saved. A match logs them straight into whichever dashboard URL
+// they landed on last time — which sw.js has already cached from that
+// earlier successful visit (see the 'navigate' handler in sw.js: every
+// page it fetches successfully while online gets cached, so the
+// dashboard HTML is already sitting there offline).
+//
+// This is a convenience layer, not real authentication: there's no
+// server round-trip while offline, so it only proves "this device has
+// seen this email+password combination succeed once before." Treat it
+// the same way you'd treat any other locally-cached PWA session.
+// ============================================================
+(function () {
+    const loginForm = document.getElementById('loginForm');
+    if (!loginForm) return;
+
+    const submitBtn   = document.getElementById('loginSubmitBtn');
+    const emailInput  = document.getElementById('email_input');
+    const passInput   = document.getElementById('password_input');
+    const msgBox      = document.getElementById('offlineLoginMsg');
+
+    const DB_NAME  = 'riceguard_offline_auth';
+    const STORE    = 'credentials';
+    const SALT_KEY = 'rg_offline_salt';
+
+    function openDb() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(DB_NAME, 1);
+            req.onupgradeneeded = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains(STORE)) {
+                    db.createObjectStore(STORE, { keyPath: 'email' });
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    // Per-device salt so the stored hash isn't just a bare SHA-256(password)
+    // that would match across every device. Generated once, kept in
+    // localStorage (fine to lose — worst case, a re-login online restores it).
+    function getSalt() {
+        let salt = localStorage.getItem(SALT_KEY);
+        if (!salt) {
+            salt = crypto.getRandomValues(new Uint8Array(16)).join('-');
+            localStorage.setItem(SALT_KEY, salt);
+        }
+        return salt;
+    }
+
+    async function hashPassword(email, password) {
+        const data = new TextEncoder().encode(getSalt() + ':' + email.toLowerCase() + ':' + password);
+        const digest = await crypto.subtle.digest('SHA-256', data);
+        return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function cacheForOffline(email, password, { redirect, role, full_name }) {
+        try {
+            const passwordHash = await hashPassword(email, password);
+            const db = await openDb();
+            db.transaction(STORE, 'readwrite').objectStore(STORE).put({
+                email: email.toLowerCase(),
+                passwordHash,
+                redirect,
+                role,
+                full_name,
+                savedAt: Date.now(),
+            });
+        } catch (e) {
+            console.warn('[Offline Login] could not cache this login for offline use:', e);
+        }
+    }
+
+    async function attemptOfflineLogin(email, password) {
+        try {
+            const passwordHash = await hashPassword(email, password);
+            const db = await openDb();
+            return await new Promise((resolve) => {
+                const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(email.toLowerCase());
+                req.onsuccess = () => {
+                    const row = req.result;
+                    resolve(row && row.passwordHash === passwordHash ? row : null);
+                };
+                req.onerror = () => resolve(null);
+            });
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function showMsg(text, ok) {
+        msgBox.textContent = text;
+        msgBox.classList.remove('hidden', 'bg-emerald-700', 'bg-red-700');
+        msgBox.classList.add(ok ? 'bg-emerald-700' : 'bg-red-700');
+    }
+
+    async function goOffline(email, password) {
+        const row = await attemptOfflineLogin(email, password);
+        if (row) {
+            showMsg('Naka-offline login gamit ang naka-cache na account. Nagbubukas...', true);
+            setTimeout(() => { window.location.href = row.redirect; }, 350);
+        } else {
+            showMsg('Walang naka-cache na account na tugma dito sa device na ito. Kailangan mo munang mag-login nang isang beses habang online.', false);
+            submitBtn.disabled = false;
+        }
+    }
+
+    loginForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const email = emailInput.value.trim();
+        const password = passInput.value;
+        submitBtn.disabled = true;
+
+        // No connection at all: don't even try the network, go straight
+        // to the offline check.
+        if (!navigator.onLine) {
+            await goOffline(email, password);
+            return;
+        }
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+            const res = await fetch(loginForm.action, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                },
+                body: new FormData(loginForm),
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+
+            const data = await res.json();
+
+            if (data.success) {
+                // Cache this device's credentials for next time, then go.
+                await cacheForOffline(email, password, {
+                    redirect: data.redirect,
+                    role: data.role,
+                    full_name: data.full_name,
+                });
+                window.location.href = data.redirect;
+            } else {
+                showMsg(data.message || 'Mali ang email o password.', false);
+                submitBtn.disabled = false;
+            }
+        } catch (err) {
+            // fetch() itself failed — no real connectivity even though
+            // navigator.onLine said yes (flaky wifi, server unreachable,
+            // timed out, etc). Fall back to the offline check.
+            await goOffline(email, password);
+        }
+    });
+})();
 </script>

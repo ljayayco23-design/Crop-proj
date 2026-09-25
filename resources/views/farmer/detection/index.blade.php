@@ -349,7 +349,36 @@
         width: 92px; height: 92px; object-fit: cover;
         border-radius: 12px; background: #000; flex: 0 0 auto;
         box-shadow: 0 4px 14px rgba(0,0,0,.4);
+        cursor: zoom-in;
     }
+
+    /* Wraps the report thumbnail (and the lightbox's enlarged copy) so the
+       model-name badge can float on top of the <img> without needing its
+       own layout. The photo itself is ALWAYS the plain, untouched photo —
+       YOLO11n's boxes are never baked into its pixels. They're drawn as a
+       canvas overlay (#rg-lightbox-boxes) only once the photo is opened
+       full-size in the lightbox, exactly like History's zoom modal does. */
+    .rg-thumb-wrap { position: relative; display: inline-block; flex: 0 0 auto; }
+    .rg-thumb-wrap .rg-report-thumb { display: block; border-radius: 12px; }
+    .rg-model-badge {
+        position: absolute; top: 6px; left: 6px; z-index: 2;
+        background: rgba(16,185,129,.94); color: #06281f;
+        font-size: .6rem; font-weight: 800; letter-spacing: .03em;
+        padding: 2px 7px; border-radius: 6px; text-transform: uppercase;
+        pointer-events: none; box-shadow: 0 1px 4px rgba(0,0,0,.35);
+    }
+
+    /* Floating lightbox for the report thumbnail — click to zoom, and the
+       YOLO11n boxes are drawn on top of the enlarged photo (canvas overlay,
+       sized to the <img> after the lightbox is actually visible). */
+    .rg-lightbox-backdrop {
+        position: fixed; inset: 0; z-index: 2000; background: rgba(2,6,12,.86);
+        display: flex; align-items: center; justify-content: center; padding: 1.5rem;
+    }
+    .rg-lightbox-backdrop .rg-thumb-wrap { max-width: 92vw; max-height: 88vh; }
+    #rg-lightbox-img { max-width: 92vw; max-height: 88vh; border-radius: 12px; display: block; }
+    #rg-lightbox-boxes { position: absolute; left: 0; top: 0; pointer-events: none; border-radius: 12px; }
+    .rg-lightbox-backdrop .rg-model-badge { font-size: .72rem; padding: 4px 10px; }
 
     /* ---------- Report modal header: thumb + name/type + confidence gauge ----------
        Mirrors the Detection Report card layout: image on the left, the
@@ -507,7 +536,7 @@
                         @endforeach
                     </select>
                 </div>
-                <div id="status" class="pill-badge bg-warning text-dark">Model loading...</div>
+                <div id="status" class="pill-badge bg-warning text-dark">Loading YOLO11n...</div>
             </div>
         </div>
     </div>
@@ -534,7 +563,6 @@
 
                             <div id="capture-box" class="rounded-3 text-center mb-4 position-relative overflow-hidden">
                                 <input type="file" id="file-input" accept="image/*" style="display:none;">
-                                <canvas id="camera-canvas" style="display:none;"></canvas>
 
                                 <!-- Upload: nothing selected yet -->
                                 <div id="state-upload-empty" class="capture-state" onclick="browsePhoto()">
@@ -555,6 +583,7 @@
                                 <!-- Upload: image selected — fills the box; click it to pick another -->
                                 <div id="state-image-preview" class="capture-state hidden position-relative" style="cursor:pointer;" onclick="browsePhoto()">
                                     <img id="preview-image" class="w-100" alt="Preview" style="max-height: 380px; object-fit: contain; display:block;">
+                                    <canvas id="yolo-preview-overlay" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
                                     <button type="button" class="btn btn-sm btn-danger position-absolute" style="top:10px; right:10px;" onclick="event.stopPropagation(); clearPreview()" title="Remove image">
                                         <i class="fa-solid fa-xmark"></i>
                                     </button>
@@ -565,7 +594,10 @@
 
                                 <!-- Camera: live feed -->
                                 <div id="state-camera-live" class="capture-state hidden p-0">
-                                    <video id="camera-video" autoplay playsinline muted class="w-100" style="max-height:380px; object-fit:cover; background:#000; display:block;"></video>
+                                    <div class="position-relative">
+                                        <video id="camera-video" autoplay playsinline muted class="w-100" style="max-height:380px; object-fit:cover; background:#000; display:block;"></video>
+                                        <canvas id="yolo-live-overlay" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+                                    </div>
                                     <div class="p-3 bg-black bg-opacity-50">
                                         <button type="button" class="btn btn-success px-4 py-2 fw-bold" onclick="capturePhoto()">
                                             <i class="fa-solid fa-camera me-2"></i> CAPTURE
@@ -593,16 +625,16 @@
 
                                     <div class="engine-dropdown">
                                     <button type="button" id="engine-dropdown-btn" class="btn btn-dark border border-secondary engine-dropdown-btn" onclick="toggleEngineDropdown()" title="Classification engine">
-                                        <i class="fa-solid fa-microchip text-success" id="engine-dropdown-icon"></i>
-                                        <span id="engine-dropdown-label">MobileNetV2</span>
+                                        <i class="fa-solid fa-eye text-success" id="engine-dropdown-icon"></i>
+                                        <span id="engine-dropdown-label">YOLO11n</span>
                                         <i class="fa-solid fa-chevron-up small ms-1"></i>
                                     </button>
                                     <div id="engine-dropdown-menu" class="engine-dropdown-menu hidden">
-                                        <button type="button" class="engine-option active" data-engine="model" onclick="setEngine('model')">
-                                            <i class="fa-solid fa-microchip me-2"></i> MobileNetV2 (On-Device)
+                                        <button type="button" class="engine-option active" data-engine="yolo11n" onclick="setEngine('yolo11n')">
+                                            <i class="fa-solid fa-eye me-2"></i> YOLO11n (On-Device, Live Detection)
                                         </button>
-                                        <button type="button" class="engine-option" data-engine="yollo11n" onclick="setEngine('yollo11n')">
-                                            <i class="fa-solid fa-eye me-2"></i> yollo11n
+                                        <button type="button" class="engine-option" data-engine="model" onclick="setEngine('model')">
+                                            <i class="fa-solid fa-microchip me-2"></i> MobileNetV2 (On-Device)
                                         </button>
                                         <button type="button" class="engine-option" data-engine="groq" onclick="setEngine('groq')">
                                             <i class="fa-solid fa-bolt me-2"></i> Groq AI
@@ -625,6 +657,26 @@
                                 <i class="fa-solid fa-seedling fa-5x text-secondary mb-4 opacity-50"></i>
                                 <h5>No image classified yet</h5>
                                 <p class="text-secondary">Upload a clear photo or use the camera to start detection</p>
+                            </div>
+
+                            <!-- Shown instead of #results-panel when the ACTIVE engine
+                                 predicted a raw class label that isn't in the shared
+                                 knowledge-base taxonomy (YOLO11n's canonical class list,
+                                 which every engine's lookup is keyed against). Each
+                                 engine runs its own model/classes independently — this
+                                 is just an honest "no knowledge entry for that yet"
+                                 notice instead of a results panel silently rendered
+                                 with blank treatment/causes/severity fields. -->
+                            <div id="untrained-panel" class="text-center py-5 hidden">
+                                <i class="fa-solid fa-circle-question fa-5x text-warning mb-4 opacity-75"></i>
+                                <h5 class="text-white mb-2">Not Yet Trained for This Class</h5>
+                                <p class="text-secondary mb-1">
+                                    <span id="untrained-engine" class="fw-bold text-white"></span> detected
+                                    "<span id="untrained-label" class="fw-bold text-warning"></span>"
+                                    (<span id="untrained-confidence"></span>% confidence), but this class
+                                    isn't in the shared knowledge base yet.
+                                </p>
+                                <p class="text-secondary small mb-0">Try YOLO11n for the widest coverage, or use "Report a Problem" once available for this class.</p>
                             </div>
 
                             <div id="results-panel" class="hidden">
@@ -758,7 +810,10 @@
                  way as the Detection Report card: thumbnail, type badge +
                  name, confidence gauge on the right. -->
             <div class="rg-report-top mb-3">
-                <img id="report-thumb" class="rg-report-thumb" alt="Detected image">
+                <div class="rg-thumb-wrap">
+                    <img id="report-thumb" class="rg-report-thumb" alt="Detected image" onclick="rgZoomReportThumb()">
+                    <span id="report-thumb-badge" class="rg-model-badge hidden"></span>
+                </div>
                 <div id="rm-block-name" class="rg-flag-block rg-flag-chip rg-report-top-info" data-section="name">
                     <div id="report-type-badge" class="rg-type-badge rg-report-type-badge">
                         <i class="fa-solid fa-bug" id="report-type-badge-icon"></i>
@@ -874,6 +929,18 @@
     </div>
 </div>
 
+<!-- ============ Report photo zoom (floating lightbox) ============
+     Enlarges the plain photo the report modal is about to submit. The
+     YOLO11n boxes are drawn on the canvas below, on top of the photo, only
+     while this lightbox is open (never baked into the photo itself). -->
+<div id="rg-lightbox" class="rg-lightbox-backdrop hidden" onclick="if (event.target === this) rgCloseLightbox()">
+    <div class="rg-thumb-wrap" onclick="event.stopPropagation()">
+        <img id="rg-lightbox-img" src="" alt="Enlarged detection photo">
+        <canvas id="rg-lightbox-boxes"></canvas>
+        <span id="rg-lightbox-badge" class="rg-model-badge hidden"></span>
+    </div>
+</div>
+
 <!-- ============ Report Submitted (floating popup) ============
      Confirmation only. The report ID is generated client-side as a
      placeholder — no record exists server-side yet, and notifications are
@@ -921,6 +988,7 @@
 @section('scripts')
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js"></script>
 
 <script>
 // ==================== DATA ====================
@@ -943,10 +1011,34 @@ let currentGroqData = null;
 let lastPredictions = null;
 let isShowingFallback = false;
 
-// Which engine the switch is currently set to. Default: on-device model.
-// classifyCurrentImage() reads this and ONLY calls that engine — there is
-// no automatic fallback from one to the other anymore.
-let selectedEngine = 'model';
+// ==================== YOLO11n (on-device, ONNX Runtime Web) ====================
+// Class order confirmed directly from best.onnx's own embedded Ultralytics
+// metadata (names dict) — this MUST stay in this exact index order, since
+// the model's output tensor encodes each class as a fixed column index.
+const YOLO_CLASSES = [
+    "applesnail_eggs", "bacterial_leaf_blight", "bacterial_leaf_streak",
+    "brown_planthopper", "brown_spot", "dead_heart", "downy_mildew",
+    "green_leafhopper", "healthy_rice_plant", "leaf_blast", "leaf_folders",
+    "leafhopper", "rice_bug", "rice_false_smut", "rice_gall_midg",
+    "rice_hispa", "rice_leaf_roller", "rice_stem_borer", "rice_thrips",
+    "rice_water_weevil", "sheath_blight", "tungro_virus", "whorl_maggot"
+];
+const YOLO_INPUT_SIZE = 640;   // matches best.onnx's exported imgsz
+const YOLO_CONF_THRESHOLD = 0.35;
+const YOLO_IOU_THRESHOLD = 0.45;
+const YOLO_MODEL_URL = "{{ asset('model/best.onnx') }}";
+
+let yoloSession = null;
+let isYoloReady = false;
+let liveDetectLoopId = null;
+let lastLiveDetections = [];
+let lastYoloDebugBest = { score: 0, className: null }; // diagnostic only — best raw score seen on the last run, even below threshold
+
+// Which engine the switch is currently set to. Default: YOLO11n on-device
+// live detector. classifyCurrentImage() reads this and ONLY calls that
+// engine — there is no automatic fallback from one to the other, except
+// the one-time availability fallback each loader does at load time below.
+let selectedEngine = 'yolo11n';
 
 // Smallest amount of time the "ANALYZING..." state must stay visible for,
 // so a very fast on-device prediction doesn't just flash and disappear.
@@ -954,18 +1046,13 @@ const MIN_LOADING_MS = 500;
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 window.setEngine = function(engine) {
-    // yollo11n isn't wired up yet — just tell the farmer and leave whatever
-    // engine was already selected untouched (no dropdown highlight change,
-    // no selectedEngine change, nothing else happens).
-    if (engine === 'yollo11n') {
-        alert("Coming soon, please select another model.");
-        closeEngineDropdown();
-        return;
-    }
+    if (engine !== 'model' && engine !== 'groq' && engine !== 'yolo11n') return;
 
-    if (engine !== 'model' && engine !== 'groq') return;
     const modelBtn = document.querySelector('.engine-option[data-engine="model"]');
     if (engine === 'model' && modelBtn && modelBtn.disabled) return; // model unavailable
+
+    const yoloBtn = document.querySelector('.engine-option[data-engine="yolo11n"]');
+    if (engine === 'yolo11n' && yoloBtn && yoloBtn.disabled) return; // yolo unavailable
 
     selectedEngine = engine;
     document.querySelectorAll('.engine-option').forEach(btn => {
@@ -974,8 +1061,15 @@ window.setEngine = function(engine) {
 
     const labelEl = document.getElementById('engine-dropdown-label');
     const iconEl = document.getElementById('engine-dropdown-icon');
-    if (labelEl) labelEl.textContent = engine === 'groq' ? 'Groq AI' : 'MobileNetV2';
-    if (iconEl) iconEl.className = engine === 'groq' ? 'fa-solid fa-bolt text-primary' : 'fa-solid fa-microchip text-success';
+    if (labelEl) labelEl.textContent = engine === 'groq' ? 'Groq AI' : (engine === 'yolo11n' ? 'YOLO11n' : 'MobileNetV2');
+    if (iconEl) iconEl.className = engine === 'groq' ? 'fa-solid fa-bolt text-primary' : (engine === 'yolo11n' ? 'fa-solid fa-eye text-success' : 'fa-solid fa-microchip text-success');
+
+    // Live bounding-box detection only ever runs for the YOLO11n engine —
+    // start/stop the loop as the switch changes while the camera is open.
+    if (currentMode === 'camera') {
+        if (engine === 'yolo11n') startYoloLiveLoop();
+        else stopYoloLiveLoop();
+    }
 
     closeEngineDropdown();
 };
@@ -1097,27 +1191,415 @@ async function compressImageFile(file) {
 
 async function loadModel() {
     const statusEl = document.getElementById('status');
-    statusEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Loading TF model...`;
+    if (selectedEngine === 'model' && statusEl) {
+        statusEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Loading TF model...`;
+    }
     try {
         model = await tmImage.load(modelURL, metadataURL);
-        statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> Model ready`;
-        statusEl.className = "pill-badge bg-success text-white";
         isModelReady = true;
+        if (selectedEngine === 'model' && statusEl) {
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> Model ready`;
+            statusEl.className = "pill-badge bg-success text-white";
+        }
     } catch (e) {
-        statusEl.innerHTML = `<i class="fa-solid fa-bolt"></i> Model unavailable`;
-        statusEl.className = "pill-badge bg-warning text-dark";
-
         // The on-device model genuinely can't load in this browser/session,
-        // so switch the default over to Groq AI and disable the Model
-        // option — this is a one-time availability fallback at load time,
-        // not the per-classification auto-fallback that used to happen.
+        // so disable the option — this is a one-time availability fallback
+        // at load time, not a per-classification auto-fallback.
         const modelBtn = document.querySelector('.engine-option[data-engine="model"]');
         if (modelBtn) {
             modelBtn.disabled = true;
             modelBtn.title = 'On-device model unavailable in this browser';
         }
-        setEngine('groq');
+        if (selectedEngine === 'model') {
+            if (statusEl) {
+                statusEl.innerHTML = `<i class="fa-solid fa-bolt"></i> Model unavailable`;
+                statusEl.className = "pill-badge bg-warning text-dark";
+            }
+            setEngine('groq');
+        }
     }
+}
+
+async function loadYoloModel() {
+    const statusEl = document.getElementById('status');
+    if (selectedEngine === 'yolo11n' && statusEl) {
+        statusEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Loading YOLO11n...`;
+    }
+    try {
+        ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/";
+        yoloSession = await ort.InferenceSession.create(YOLO_MODEL_URL, { executionProviders: ['wasm'] });
+        isYoloReady = true;
+        if (selectedEngine === 'yolo11n' && statusEl) {
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> YOLO11n ready`;
+            statusEl.className = "pill-badge bg-success text-white";
+        }
+    } catch (e) {
+        console.error('[YOLO11n] failed to load model:', e);
+        isYoloReady = false;
+        const yoloBtn = document.querySelector('.engine-option[data-engine="yolo11n"]');
+        if (yoloBtn) {
+            yoloBtn.disabled = true;
+            yoloBtn.title = 'YOLO11n unavailable in this browser';
+        }
+        if (selectedEngine === 'yolo11n') {
+            if (statusEl) {
+                statusEl.innerHTML = `<i class="fa-solid fa-bolt"></i> YOLO11n unavailable`;
+                statusEl.className = "pill-badge bg-warning text-dark";
+            }
+            setEngine(isModelReady ? 'model' : 'groq');
+        }
+    }
+}
+
+// ---------- Preprocessing: letterbox to 640x640, same padding color
+// (114,114,114 = #727272) Ultralytics uses so the model sees exactly the
+// kind of input it was trained/exported on. ----------
+function letterboxToCanvas(source, targetSize) {
+    const srcW = source.videoWidth || source.naturalWidth || source.width;
+    const srcH = source.videoHeight || source.naturalHeight || source.height;
+    const scale = Math.min(targetSize / srcW, targetSize / srcH);
+    const newW = Math.round(srcW * scale);
+    const newH = Math.round(srcH * scale);
+    const padX = Math.floor((targetSize - newW) / 2);
+    const padY = Math.floor((targetSize - newH) / 2);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetSize;
+    canvas.height = targetSize;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#727272';
+    ctx.fillRect(0, 0, targetSize, targetSize);
+    ctx.drawImage(source, 0, 0, srcW, srcH, padX, padY, newW, newH);
+
+    return { canvas, scale, padX, padY, srcW, srcH };
+}
+
+// NCHW, RGB, 0-1 normalized float32 tensor data from a canvas.
+function canvasToCHWFloat(canvas) {
+    const ctx = canvas.getContext('2d');
+    const { width, height } = canvas;
+    const imgData = ctx.getImageData(0, 0, width, height).data;
+    const size = width * height;
+    const data = new Float32Array(size * 3);
+    for (let i = 0; i < size; i++) {
+        data[i] = imgData[i * 4] / 255;
+        data[size + i] = imgData[i * 4 + 1] / 255;
+        data[size * 2 + i] = imgData[i * 4 + 2] / 255;
+    }
+    return data;
+}
+
+function yoloIoU(a, b) {
+    const ax1 = a.cx - a.w / 2, ay1 = a.cy - a.h / 2, ax2 = a.cx + a.w / 2, ay2 = a.cy + a.h / 2;
+    const bx1 = b.cx - b.w / 2, by1 = b.cy - b.h / 2, bx2 = b.cx + b.w / 2, by2 = b.cy + b.h / 2;
+    const ix1 = Math.max(ax1, bx1), iy1 = Math.max(ay1, by1);
+    const ix2 = Math.min(ax2, bx2), iy2 = Math.min(ay2, by2);
+    const interArea = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
+    const areaA = (ax2 - ax1) * (ay2 - ay1);
+    const areaB = (bx2 - bx1) * (by2 - by1);
+    return interArea / (areaA + areaB - interArea + 1e-6);
+}
+
+// Runs YOLO11n on an <img>, <video>, or <canvas> source and returns
+// detections in the SOURCE's own original pixel coordinates (letterbox
+// padding/scale already undone).
+async function runYoloDetection(source) {
+    if (!isYoloReady || !yoloSession) throw new Error('YOLO11n model is not ready yet.');
+
+    const { canvas, scale, padX, padY, srcW, srcH } = letterboxToCanvas(source, YOLO_INPUT_SIZE);
+    const data = canvasToCHWFloat(canvas);
+    const inputTensor = new ort.Tensor('float32', data, [1, 3, YOLO_INPUT_SIZE, YOLO_INPUT_SIZE]);
+
+    const results = await yoloSession.run({ images: inputTensor });
+    const output = results.output0; // [1, 4+numClasses, numAnchors] — box decode already baked into the graph
+    const numAttrs = output.dims[1];
+    const numAnchors = output.dims[2];
+    const numClasses = numAttrs - 4;
+    const buf = output.data;
+
+    const candidates = [];
+    let debugBestScore = 0, debugBestClass = -1; // best score seen, regardless of threshold — diagnostic only
+    for (let a = 0; a < numAnchors; a++) {
+        let bestScore = 0, bestClass = -1;
+        for (let c = 0; c < numClasses; c++) {
+            const score = buf[(4 + c) * numAnchors + a];
+            if (score > bestScore) { bestScore = score; bestClass = c; }
+        }
+        if (bestScore > debugBestScore) { debugBestScore = bestScore; debugBestClass = bestClass; }
+        if (bestScore >= YOLO_CONF_THRESHOLD) {
+            candidates.push({
+                cx: buf[0 * numAnchors + a],
+                cy: buf[1 * numAnchors + a],
+                w:  buf[2 * numAnchors + a],
+                h:  buf[3 * numAnchors + a],
+                score: bestScore,
+                classId: bestClass
+            });
+        }
+    }
+    lastYoloDebugBest = { score: debugBestScore, className: debugBestClass >= 0 ? YOLO_CLASSES[debugBestClass] : null };
+
+    // Simple greedy NMS.
+    candidates.sort((a, b) => b.score - a.score);
+    const picked = [];
+    for (const cand of candidates) {
+        if (picked.some(p => yoloIoU(cand, p) > YOLO_IOU_THRESHOLD)) continue;
+        picked.push(cand);
+        if (picked.length >= 50) break;
+    }
+
+    return picked.map(d => {
+        const x1 = (d.cx - d.w / 2 - padX) / scale;
+        const y1 = (d.cy - d.h / 2 - padY) / scale;
+        const x2 = (d.cx + d.w / 2 - padX) / scale;
+        const y2 = (d.cy + d.h / 2 - padY) / scale;
+        const bx = Math.max(0, x1);
+        const by = Math.max(0, y1);
+        return {
+            classId: d.classId,
+            className: YOLO_CLASSES[d.classId],
+            confidence: d.score,
+            box: {
+                x: bx,
+                y: by,
+                width: Math.max(0, Math.min(srcW, x2) - bx),
+                height: Math.max(0, Math.min(srcH, y2) - by)
+            }
+        };
+    });
+}
+
+function yoloDetectionLabel(d) {
+    const name = pestNames[d.className] || diseaseNames[d.className] || d.className;
+    return `${name} ${(d.confidence * 100).toFixed(0)}%`;
+}
+
+function drawYoloBoxes(ctx, canvasW, canvasH, detections, srcW, srcH, lineWidth, fontSize, destRect = null) {
+    ctx.clearRect(0, 0, canvasW, canvasH);
+    // destRect is the sub-rectangle of the canvas where the image content
+    // actually is (used when the source is letterboxed inside a bigger
+    // box, e.g. object-fit: contain). Callers drawing 1:1 onto a canvas
+    // that exactly matches the source (live overlay, captured stills) just
+    // omit it and get the old full-canvas behavior.
+    const rect = destRect || { x: 0, y: 0, width: canvasW, height: canvasH };
+    const scaleX = rect.width / srcW;
+    const scaleY = rect.height / srcH;
+
+    detections.forEach(d => {
+        const x = rect.x + d.box.x * scaleX;
+        const y = rect.y + d.box.y * scaleY;
+        const w = d.box.width * scaleX;
+        const h = d.box.height * scaleY;
+
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = lineWidth;
+        ctx.strokeRect(x, y, w, h);
+
+        const label = yoloDetectionLabel(d);
+        ctx.font = `600 ${fontSize}px system-ui, sans-serif`;
+        const textW = ctx.measureText(label).width + 10;
+        const labelH = fontSize + 6;
+        ctx.fillStyle = '#10b981';
+        ctx.fillRect(x, Math.max(0, y - labelH), textW, labelH);
+        ctx.fillStyle = '#06281f';
+        ctx.fillText(label, x + 5, Math.max(fontSize, y - 5));
+    });
+}
+
+// preview-image is styled with object-fit: contain, so whenever the
+// photo's own aspect ratio doesn't match this box's aspect ratio, the
+// browser letterboxes it — the photo only fills part of the box (centered,
+// with empty bars on the sides or top/bottom). Boxes have to be drawn
+// against THAT rectangle, not the full element box, or they land offset
+// from the actual photo — which is exactly what "boxes don't line up with
+// the picture" was.
+function getContainRect(boxW, boxH, srcW, srcH) {
+    const scale = Math.min(boxW / srcW, boxH / srcH);
+    const renderW = srcW * scale;
+    const renderH = srcH * scale;
+    return { x: (boxW - renderW) / 2, y: (boxH - renderH) / 2, width: renderW, height: renderH };
+}
+
+// The last successfully-drawn detections, kept so the overlay can be
+// redrawn on demand — see the ResizeObserver below.
+let lastPreviewDetections = [];
+let lastPreviewSrcW = 0, lastPreviewSrcH = 0;
+
+function drawYoloBoxesOnPreview(detections, srcW, srcH) {
+    lastPreviewDetections = detections;
+    lastPreviewSrcW = srcW;
+    lastPreviewSrcH = srcH;
+    renderYoloPreviewOverlay();
+}
+
+function renderYoloPreviewOverlay() {
+    const img = document.getElementById('preview-image');
+    const overlay = document.getElementById('yolo-preview-overlay');
+    if (!img || !overlay) return;
+    overlay.width = img.clientWidth;
+    overlay.height = img.clientHeight;
+    overlay.style.width = img.clientWidth + 'px';
+    overlay.style.height = img.clientHeight + 'px';
+    if (!lastPreviewDetections.length) {
+        overlay.getContext('2d').clearRect(0, 0, overlay.width || 0, overlay.height || 0);
+        return;
+    }
+    const rect = getContainRect(overlay.width, overlay.height, lastPreviewSrcW, lastPreviewSrcH);
+    drawYoloBoxes(overlay.getContext('2d'), overlay.width, overlay.height, lastPreviewDetections, lastPreviewSrcW, lastPreviewSrcH, 2, 12, rect);
+}
+
+// Draws once right when a result comes in — but that instant is exactly
+// when #detect-row gains .has-result and the upload column starts a 0.6s
+// CSS transition down to ~42% width (see .detect-row.has-result rules
+// above). A one-shot draw measured img.clientWidth/Height at the OLD
+// (wide) size, and the layout kept shrinking underneath it afterward — so
+// the boxes were correct for a box that no longer existed a moment later.
+// Instead of trying to time the draw to happen exactly after the
+// transition ends, this just watches preview-image's own actual rendered
+// size and redraws whenever it changes for ANY reason (this transition,
+// a browser resize, anything else) — so it's correct regardless of what
+// triggered the resize or when, rather than depending on that ordering.
+const _previewResizeObserver = new ResizeObserver(() => renderYoloPreviewOverlay());
+(function() {
+    const img = document.getElementById('preview-image');
+    if (img) _previewResizeObserver.observe(img);
+})();
+
+function clearYoloPreviewOverlay() {
+    lastPreviewDetections = [];
+    const overlay = document.getElementById('yolo-preview-overlay');
+    if (overlay) overlay.getContext('2d').clearRect(0, 0, overlay.width || 0, overlay.height || 0);
+}
+
+// Raw YOLO11n box data for the photo currently on screen, in the exact shape
+// saveCurrentDetection() sends to History (and submitReport() now sends to the
+// report). The photo itself stays plain — boxes travel separately as data and
+// are only painted as a canvas overlay when the photo is opened full-size.
+// Returns null unless YOLO11n is the active engine AND actually found something.
+function getCurrentDetectionBoxes() {
+    if (selectedEngine !== 'yolo11n' || !lastPreviewDetections.length) return null;
+    return {
+        boxes: lastPreviewDetections.map(d => ({
+            className: d.className,
+            label: yoloDetectionLabel(d),
+            confidence: d.confidence,
+            box: d.box
+        })),
+        src_w: lastPreviewSrcW,
+        src_h: lastPreviewSrcH
+    };
+}
+
+// ---------- Report modal: model badge + photo zoom ----------
+// Same three engines History/the report backend recognize.
+const RG_MODEL_LABELS = { yolo11n: 'YOLO11n', groq: 'Groq AI', model: 'MobileNetV2' };
+
+function rgSetModelBadge(badgeId, source) {
+    const badge = document.getElementById(badgeId);
+    if (!badge) return;
+    const label = RG_MODEL_LABELS[source] || null;
+    if (label) {
+        badge.textContent = label;
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+}
+
+// Zooms the report modal's own thumbnail. The thumbnail is the plain photo;
+// the boxes are drawn as a canvas overlay on the enlarged copy, but only once
+// the lightbox is actually visible — while it's still display:none the <img>
+// reports 0x0, so a draw at that instant would silently paint nothing (same
+// pitfall History's zoom modal documents). Hence: show first, then draw on
+// the image's load event / next frame.
+let rgLightboxBoxes = null; // { boxes, src_w, src_h } | null
+
+function rgDrawLightboxBoxes() {
+    const img = document.getElementById('rg-lightbox-img');
+    const canvas = document.getElementById('rg-lightbox-boxes');
+    if (!img || !canvas) return;
+
+    const w = img.clientWidth, h = img.clientHeight;
+    if (!w || !h) return; // not laid out yet — a later call will handle it
+
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+
+    const data = rgLightboxBoxes;
+    if (!data || !data.boxes || !data.boxes.length || !data.src_w || !data.src_h) return;
+
+    const rect = getContainRect(w, h, data.src_w, data.src_h);
+    drawYoloBoxes(ctx, w, h, data.boxes, data.src_w, data.src_h, 2, 13, rect);
+}
+
+window.rgZoomReportThumb = function() {
+    const src = document.getElementById('report-thumb').src;
+    if (!src) return;
+    const img = document.getElementById('rg-lightbox-img');
+    const canvas = document.getElementById('rg-lightbox-boxes');
+    if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+
+    rgLightboxBoxes = getCurrentDetectionBoxes();
+    img.onload = rgDrawLightboxBoxes;
+    img.src = src;
+    rgSetModelBadge('rg-lightbox-badge', selectedEngine);
+    document.getElementById('rg-lightbox').classList.remove('hidden');
+    // Cached / data-URL images may already be complete by the time the
+    // lightbox is visible, in which case onload has nothing left to fire for.
+    requestAnimationFrame(rgDrawLightboxBoxes);
+};
+window.rgCloseLightbox = function() {
+    document.getElementById('rg-lightbox').classList.add('hidden');
+    rgLightboxBoxes = null;
+};
+// Keep the overlay aligned if the window is resized while zoomed.
+window.addEventListener('resize', () => {
+    if (!document.getElementById('rg-lightbox').classList.contains('hidden')) rgDrawLightboxBoxes();
+});
+
+// ---------- Live camera detection loop (YOLO11n engine only) ----------
+async function startYoloLiveLoop() {
+    stopYoloLiveLoop();
+    const video = document.getElementById('camera-video');
+    if (!video) return;
+    let lastRun = 0;
+    const intervalMs = 220; // throttle inference so the UI thread stays responsive
+
+    async function loop(ts) {
+        if (currentMode !== 'camera' || selectedEngine !== 'yolo11n' || !cameraStream) {
+            liveDetectLoopId = null;
+            return;
+        }
+        if (!lastRun || ts - lastRun >= intervalMs) {
+            lastRun = ts;
+            if (isYoloReady && video.videoWidth > 0) {
+                try {
+                    const detections = await runYoloDetection(video);
+                    lastLiveDetections = detections;
+                    const overlay = document.getElementById('yolo-live-overlay');
+                    if (overlay) {
+                        overlay.width = video.clientWidth;
+                        overlay.height = video.clientHeight;
+                        drawYoloBoxes(overlay.getContext('2d'), overlay.width, overlay.height, detections, video.videoWidth, video.videoHeight, 2, 13);
+                    }
+                } catch (e) { /* skip this frame silently, try again next tick */ }
+            }
+        }
+        liveDetectLoopId = requestAnimationFrame(loop);
+    }
+    liveDetectLoopId = requestAnimationFrame(loop);
+}
+
+function stopYoloLiveLoop() {
+    if (liveDetectLoopId) cancelAnimationFrame(liveDetectLoopId);
+    liveDetectLoopId = null;
+    lastLiveDetections = [];
+    const overlay = document.getElementById('yolo-live-overlay');
+    if (overlay) overlay.getContext('2d').clearRect(0, 0, overlay.width || 0, overlay.height || 0);
 }
 
 window.browsePhoto = function() { document.getElementById('file-input').click(); };
@@ -1157,6 +1639,7 @@ async function startCamera() {
     try {
         cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
         document.getElementById('camera-video').srcObject = cameraStream;
+        if (selectedEngine === 'yolo11n') startYoloLiveLoop();
     } catch (err) {
         document.getElementById('camera-error-message').textContent =
             err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
@@ -1167,6 +1650,7 @@ async function startCamera() {
 }
 
 function stopCamera() {
+    stopYoloLiveLoop();
     if (cameraStream) {
         cameraStream.getTracks().forEach(track => track.stop());
         cameraStream = null;
@@ -1175,15 +1659,66 @@ function stopCamera() {
 
 window.capturePhoto = function() {
     const video = document.getElementById('camera-video');
-    const canvas = document.getElementById('camera-canvas');
+
+    // Guard against capturing before the stream actually has a frame to
+    // give up (readyState < 2 / videoWidth 0) — drawImage() on a video
+    // with no data yet silently paints nothing, which is the single
+    // biggest cause of "the image disappears" reports: the canvas comes
+    // out blank before anything else even runs.
+    if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+        alert("Camera isn't ready yet. Please wait a moment and try again.");
+        return;
+    }
+
+    // In-memory canvas — NEVER the hidden #camera-canvas DOM element.
+    // A display:none canvas is unreliable for drawImage(video, ...) on a
+    // lot of mobile browsers/WebViews: the video frame paint silently
+    // comes out blank/black. compressImageFile() and letterboxToCanvas()
+    // already avoid this by using an in-memory canvas; this keeps
+    // capturePhoto() in line with them.
+    const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    canvas.toBlob(blob => {
+    // IMPORTANT: the boxes are deliberately NOT baked into the canvas's
+    // own pixels anymore. Baking them in used to mean that the instant
+    // anything went wrong with the frame grab above, the photo and its
+    // boxes vanished together — there was nothing left to show, and
+    // classification was then also run on a photo with green boxes drawn
+    // over the actual lesions/insects, which hurts accuracy. Instead, the
+    // live detections captured at this instant are kept as a snapshot and
+    // drawn as a separate overlay on top of the preview image — the exact
+    // same resize-safe overlay mechanism (drawYoloBoxesOnPreview /
+    // renderYoloPreviewOverlay + ResizeObserver) already used after a
+    // normal classification, so it can't get out of sync with the photo
+    // or disappear when the layout shifts.
+    const capturedDetections = (selectedEngine === 'yolo11n') ? lastLiveDetections.slice() : [];
+    const srcW = video.videoWidth;
+    const srcH = video.videoHeight;
+
+    const toFile = (blob) => {
+        if (!blob) {
+            // toBlob() returned nothing on this browser/WebView — fall
+            // back to toDataURL(), which is older but far more reliably
+            // supported, so the captured frame is never silently lost.
+            try {
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                const byteStr = atob(dataUrl.split(',')[1]);
+                const bytes = new Uint8Array(byteStr.length);
+                for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i);
+                blob = new Blob([bytes], { type: 'image/jpeg' });
+            } catch (e) {
+                alert("Failed to capture the photo. Please try again.");
+                return;
+            }
+        }
         const file = new File([blob], 'camera_capture.jpg', { type: 'image/jpeg' });
-        handleFile(file);
-    }, 'image/jpeg', 0.9);
+        handleFile(file, { detections: capturedDetections, srcW, srcH });
+    };
+
+    canvas.toBlob(toFile, 'image/jpeg', 0.9);
 };
 
 function setupUpload() {
@@ -1203,7 +1738,7 @@ function setupUpload() {
     });
 }
 
-async function handleFile(file) {
+async function handleFile(file, capturedOverlay) {
     if (!file.type.startsWith('image/')) return alert('Please select a valid image file');
 
     // A file can arrive via browse, drag-and-drop, or camera capture while
@@ -1219,12 +1754,40 @@ async function handleFile(file) {
         hasUploadedImage = true;
         showCaptureState('state-image-preview');
 
-        currentImage = new Image();
-        currentImage.src = window.compressedBase64;
-        currentImage.onload = () => document.getElementById('classify-btn').disabled = false;
+        if (capturedOverlay && capturedOverlay.detections && capturedOverlay.detections.length) {
+            // Camera capture: show the boxes the farmer just saw live,
+            // drawn on top of the preview via the same overlay path used
+            // after classification — never baked into the photo itself.
+            drawYoloBoxesOnPreview(capturedOverlay.detections, capturedOverlay.srcW, capturedOverlay.srcH);
+        } else {
+            clearYoloPreviewOverlay();
+        }
+
+        // Classification must run on the image at (near) its original
+        // resolution. window.compressedBase64 is deliberately downscaled
+        // (max 512px wide, quality 0.6) for a fast preview/upload payload —
+        // feeding that degraded copy into YOLO11n loses exactly the detail
+        // (small lesions/insects) needed to clear YOLO_CONF_THRESHOLD, even
+        // though the very same subject is detected fine from a full-res
+        // live camera frame. So classification loads straight from the
+        // original file instead of from compressedBase64.
+        currentImage = await loadFullResImage(file);
+        document.getElementById('classify-btn').disabled = false;
     } catch (err) {
         alert("Failed to process the image.");
     }
+}
+
+// Loads `file` into an <img> at its native resolution, for classification
+// only (kept separate from the compressed preview/upload copy above).
+function loadFullResImage(file) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(file);
+        img.onload = () => { URL.revokeObjectURL(objectUrl); resolve(img); };
+        img.onerror = (err) => { URL.revokeObjectURL(objectUrl); reject(err); };
+        img.src = objectUrl;
+    });
 }
 
 function clearPreview() {
@@ -1234,7 +1797,9 @@ function clearPreview() {
     window.compressedBase64 = null;
     currentImage = null;
     currentGroqData = null;
+    clearYoloPreviewOverlay();
     document.getElementById('results-panel').classList.add('hidden');
+    document.getElementById('untrained-panel')?.classList.add('hidden');
     document.getElementById('no-result').classList.remove('hidden');
     document.getElementById('detect-row')?.classList.remove('has-result');
 }
@@ -1283,6 +1848,111 @@ window.classifyCurrentImage = async function() {
 
     // The engine switch decides everything below — whichever side is
     // active is the ONLY engine that runs. No automatic fallback either way.
+    if (selectedEngine === 'yolo11n') {
+        if (!isYoloReady) {
+            showEngineError(
+                "YOLO11n not ready yet",
+                "The YOLO11n model isn't ready yet. Wait a moment and try again, or switch engines.",
+                'groq', 'Switch to Groq AI'
+            );
+            btn.disabled = false;
+            return;
+        }
+
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ANALYZING WITH YOLO11n...`;
+        statusEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> YOLO11n analyzing...`;
+        statusEl.className = "pill-badge bg-success text-white";
+
+        try {
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+            const predictStart = performance.now();
+            const detections = await runYoloDetection(currentImage);
+            const elapsed = performance.now() - predictStart;
+            if (elapsed < MIN_LOADING_MS) await sleep(MIN_LOADING_MS - elapsed);
+
+            if (!detections.length) {
+                statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> YOLO11n ready`;
+                statusEl.className = "pill-badge bg-success text-white";
+                // Diagnostic only (not shown to the farmer): tells you whether
+                // the model saw something faint (a near-miss just under
+                // YOLO_CONF_THRESHOLD — likely an image-quality/size issue)
+                // or saw essentially nothing at all (score near 0 — the class
+                // genuinely isn't in this photo, e.g. it's not one of the 23
+                // trained classes).
+                console.log(
+                    `[YOLO11n] no detection above ${YOLO_CONF_THRESHOLD}. ` +
+                    `Best raw score was ${(lastYoloDebugBest.score * 100).toFixed(1)}% ` +
+                    `(${lastYoloDebugBest.className ?? 'n/a'}) on a ${currentImage.naturalWidth}x${currentImage.naturalHeight} image.`
+                );
+                showEngineError(
+                    "Nothing detected",
+                    "YOLO11n couldn't find any rice disease or pest in this image. Try a clearer, closer photo.",
+                    null, null
+                );
+                return;
+            }
+
+            drawYoloBoxesOnPreview(detections, currentImage.naturalWidth, currentImage.naturalHeight);
+
+            // A photo can contain several boxes of the SAME class (e.g. two
+            // snail eggs) — collapse those down to one entry per class,
+            // keeping that class's best (highest-confidence) box, before
+            // this ever becomes a ranked list.
+            const byClass = new Map();
+            for (const d of detections) {
+                const existing = byClass.get(d.className);
+                if (!existing || d.confidence > existing.confidence) byClass.set(d.className, d);
+            }
+            const uniqueDetections = Array.from(byClass.values());
+
+            // Reuse the exact same result-rendering path as the MobileNetV2
+            // engine — same knowledge base lookups, severity table,
+            // translations, save/report payload shape. displayResults()
+            // expects {className, probability} objects, and always shows
+            // every one of them, ranked by their own honest confidence.
+            const predictions = uniqueDetections
+                .slice()
+                .sort((a, b) => b.confidence - a.confidence)
+                .map(d => ({ className: d.className, probability: d.confidence }));
+
+            // Which class actually LEADS as the headline result. Raw
+            // confidence alone is misleading with multiple boxes in one
+            // photo: a small, incidental detection elsewhere in frame (say,
+            // leaf discoloration in the background) can edge out, by a
+            // couple of points, the box the farmer actually centered the
+            // camera on (say, a snail up close). Box area is a reasonable
+            // stand-in for "the thing being photographed", so it's folded
+            // into the ranking — but only enough to swing a close call, not
+            // enough to override a detection that's clearly more confident.
+            // Every detection still shows up in the ranked list below
+            // (predictions above, rendered by displayResults) regardless of
+            // which one wins this — tapping any row re-leads with that one.
+            const maxArea = Math.max(...uniqueDetections.map(d => d.box.width * d.box.height), 1);
+            const leadDetection = uniqueDetections.slice().sort((a, b) => {
+                const scoreA = a.confidence * (0.5 + 0.5 * (a.box.width * a.box.height) / maxArea);
+                const scoreB = b.confidence * (0.5 + 0.5 * (b.box.width * b.box.height) / maxArea);
+                return scoreB - scoreA;
+            })[0];
+
+            displayResults(predictions, leadDetection.className);
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> YOLO11n ready`;
+            statusEl.className = "pill-badge bg-success text-white";
+        } catch (err) {
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> YOLO11n failed`;
+            statusEl.className = "pill-badge bg-danger text-white";
+            showEngineError(
+                "YOLO11n analysis failed",
+                "The YOLO11n model failed to analyze this image. You can try again, or switch to Groq AI.",
+                'groq', 'Switch to Groq AI'
+            );
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+        return;
+    }
+
     if (selectedEngine === 'model') {
         if (!isModelReady) {
             showEngineError(
@@ -1455,47 +2125,121 @@ function displayGroqResults(data) {
     }
 }
 
-function displayResults(predictions) {
+// Every engine's model and class list runs completely independently —
+// MobileNetV2 (metadata.json's own 15 labels), YOLO11n (best.onnx's own 23
+// classes), and Groq (its own vision output) never reference each other's
+// predictions. What IS shared is the knowledge base itself, and it's keyed
+// off exactly ONE canonical taxonomy: YOLO11n's class list (diseaseNames +
+// pestNames, both supplied by KnowledgeController and already kept in sync
+// with best.onnx). YOLO11n's own raw output always matches it by
+// definition. MobileNetV2 was trained on its own separate label set
+// (metadata.json) and some of those raw labels never lined up with it
+// (typos like "left_blast", old spellings like "rice_gall_midge"/"snail",
+// or classes like "random" that have no knowledge entry at all) — this is
+// the check that catches that mismatch instead of silently rendering an
+// empty-looking results panel.
+function isKnownTaxonomyClass(className) {
+    return Object.prototype.hasOwnProperty.call(diseaseNames, className)
+        || Object.prototype.hasOwnProperty.call(pestNames, className);
+}
+
+function engineDisplayName() {
+    return selectedEngine === 'model' ? 'MobileNetV2' : (selectedEngine === 'yolo11n' ? 'YOLO11n' : 'Groq AI');
+}
+
+function showUntrainedResult(rawLabel, confidence) {
+    isShowingFallback = true;
+    currentGroqData = null;
+
+    document.getElementById('no-result').classList.add('hidden');
+    document.getElementById('results-panel').classList.add('hidden');
+    document.getElementById('untrained-panel').classList.remove('hidden');
+    document.getElementById('detect-row')?.classList.add('has-result');
+
+    const safeSetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    safeSetText('untrained-engine', engineDisplayName());
+    safeSetText('untrained-label', rawLabel);
+    safeSetText('untrained-confidence', confidence);
+}
+
+// Lets the farmer tap any row in the ranked detections list and have that
+// class become the lead result instead — uses the same scan's predictions
+// (lastPredictions), no re-inference needed.
+window.selectDetection = function(className) {
+    if (!lastPredictions) return;
+    displayResults(lastPredictions, className);
+};
+
+function displayResults(predictions, forcedTopClassName = null) {
     lastPredictions = predictions;
     isShowingFallback = true;
     currentGroqData = null;
+
+    let filtered = predictions.filter(p => p.probability >= 0.01);
+    filtered.sort((a, b) => b.probability - a.probability);
+    // Normally the highest raw confidence leads. forcedTopClassName lets a
+    // caller (the YOLO area-aware ranking, or a farmer tapping a row in the
+    // list below) pick a different one to lead with instead — the ranked
+    // list itself is never reordered or hidden, just which one is "in front".
+    let top = filtered[0];
+    if (forcedTopClassName) {
+        const forced = filtered.find(p => p.className.trim().toLowerCase().replace(/\s+/g, '_') === forcedTopClassName);
+        if (forced) top = forced;
+    }
+
+    const className = top.className.trim().toLowerCase().replace(/\s+/g, '_');
+    lastClassKey = className;
+    // Each engine's own top-1 confidence for this image, exactly as it came
+    // out of that engine — just clamped 0-100 the same way so every engine
+    // is normalized identically.
+    lastConfidence = Math.max(0, Math.min(100, Math.round((top.probability || 0) * 100)));
+
+    // This engine predicted a class outside the shared knowledge-base
+    // taxonomy — say so plainly instead of continuing on to render a
+    // results panel with blank treatment/causes/severity fields.
+    if (!isKnownTaxonomyClass(className)) {
+        showUntrainedResult(top.className, lastConfidence);
+        return;
+    }
+
     const lang = document.getElementById('language-selector').value;
     const t = uiTranslations[lang];
 
+    document.getElementById('untrained-panel').classList.add('hidden');
     document.getElementById('no-result').classList.add('hidden');
     document.getElementById('results-panel').classList.remove('hidden');
     document.getElementById('detect-row')?.classList.add('has-result');
     setResultTab('treatment');
     const safeSet = (id, html) => { const el = document.getElementById(id); if(el) el.innerHTML = html; };
 
-    let filtered = predictions.filter(p => p.probability >= 0.01);
-    filtered.sort((a, b) => b.probability - a.probability);
-    const top = filtered[0];
-
-    const className = top.className.trim().toLowerCase().replace(/\s+/g, '_');
-    lastClassKey = className;
-    // MobileNetV2's own top-1 softmax probability for this image, exactly
-    // as it came out of model.predict() — just clamped 0-100 the same way
-    // Groq's confidence is, so both engines are normalized identically.
-    lastConfidence = Math.max(0, Math.min(100, Math.round((top.probability || 0) * 100)));
-
     // --- AGRONOMIC DATA SEVERITY ESTIMATES ---
     // These reflect real-world potential yield loss/damage for each pest or disease
     const severityEstimates = {
+        // -- diseases --
         'healthy_rice_plant': { label: 'HEALTHY', percent: 0, message: 'The plant appears to be in good condition.' },
         'bacterial_leaf_blight': { label: 'SEVERE', percent: 60, message: 'Can cause up to 60% yield loss if left untreated during the tillering stage.' },
+        'bacterial_leaf_streak': { label: 'MODERATE', percent: 35, message: 'Bacterial streaking reduces leaf area for photosynthesis, typically causing moderate yield loss.' },
+        'brown_spot': { label: 'MODERATE', percent: 30, message: 'Weakens grain filling; can cause notable yield and quality loss under nutrient-poor soil.' },
+        'downy_mildew': { label: 'MODERATE', percent: 35, message: 'Stunts growth and distorts leaves, moderately reducing yield if it spreads early.' },
         'leaf_blast': { label: 'SEVERE', percent: 80, message: 'Highly destructive; neck blast infections can cause up to 80% yield loss.' },
         'rice_false_smut': { label: 'MODERATE', percent: 30, message: 'Generally causes 10-30% yield loss depending on weather and severity.' },
         'sheath_blight': { label: 'MODERATE', percent: 40, message: 'Often causes 20-50% yield loss, especially in dense, high-fertilizer canopies.' },
         'tungro_virus': { label: 'SEVERE', percent: 85, message: 'Can wipe out crops entirely if infection happens early in the vegetative stage.' },
+        // -- pests --
+        'applesnail_eggs': { label: 'SEVERE', percent: 75, message: 'Golden apple snails can completely destroy young seedlings and seedbeds quickly.' },
         'brown_planthopper': { label: 'SEVERE', percent: 90, message: 'Causes severe hopperburn, leading to massive or complete yield loss.' },
+        'dead_heart': { label: 'MODERATE', percent: 30, message: 'A stem borer symptom in the vegetative stage; typically causes 10-30% tiller loss.' },
+        'green_leafhopper': { label: 'MODERATE', percent: 30, message: 'Direct feeding damage is moderate, but it is a key vector for tungro virus.' },
         'leaf_folders': { label: 'LOW', percent: 20, message: 'Damage looks severe but usually only results in minor yield loss (up to 20%).' },
         'leafhopper': { label: 'MODERATE', percent: 30, message: 'Direct damage is moderate, but they are dangerous vectors for viral diseases.' },
         'rice_bug': { label: 'SEVERE', percent: 80, message: 'Sucks sap from developing grains, capable of causing up to 80% empty grains.' },
-        'rice_gall_midge': { label: 'MODERATE', percent: 40, message: 'Damages tillers (onion shoots), causing moderate yield reduction.' },
+        'rice_gall_midg': { label: 'MODERATE', percent: 40, message: 'Damages tillers (onion shoots), causing moderate yield reduction.' },
+        'rice_hispa': { label: 'MODERATE', percent: 35, message: 'Larvae mine leaf tissue and adults scrape leaf surfaces, moderately reducing yield.' },
         'rice_leaf_roller': { label: 'LOW', percent: 20, message: 'Similar to leaf folders; rarely causes total crop failure.' },
         'rice_stem_borer': { label: 'MODERATE', percent: 30, message: 'Causes deadhearts and whiteheads; typically results in 10-30% yield loss.' },
-        'snail': { label: 'SEVERE', percent: 75, message: 'Golden apple snails can completely destroy young seedlings and seedbeds quickly.' }
+        'rice_thrips': { label: 'LOW', percent: 15, message: 'Causes leaf curling and silvering in seedlings; usually only minor yield impact.' },
+        'rice_water_weevil': { label: 'MODERATE', percent: 35, message: 'Larvae prune roots, moderately reducing tillering and yield.' },
+        'whorl_maggot': { label: 'LOW', percent: 20, message: 'Scars young leaves as they unfurl; usually only minor yield impact.' }
     };
 
     const estimate = severityEstimates[className] || { label: 'UNKNOWN', percent: 0, message: 'Severity estimate data unavailable.' };
@@ -1527,7 +2271,8 @@ function displayResults(predictions) {
     let html = '';
     filtered.forEach(pred => {
         let pName = pred.className.trim().toLowerCase().replace(/\s+/g, '_');
-        html += `<div class="d-flex justify-content-between mb-2"><span>${nameMap[pName] || pred.className}</span><span class="text-secondary">${(pred.probability * 100).toFixed(1)}%</span></div>`;
+        const isActive = pName === className;
+        html += `<div class="d-flex justify-content-between mb-2${isActive ? ' fw-bold text-white' : ''}" style="cursor:pointer;" onclick="window.selectDetection('${pName}')" title="Show this detection's info instead"><span>${nameMap[pName] || pred.className}</span><span class="text-secondary">${(pred.probability * 100).toFixed(1)}%</span></div>`;
     });
     safeSet('predictions-list', html);
 
@@ -1651,7 +2396,7 @@ function applyReportFlags() {
     window.currentReportFlags = Array.from(flagged);
 }
 
-window.openReportModal = function() {
+window.openReportModal = async function() {
     // No detection on screen = nothing to report. The button lives inside
     // #results-panel so this is really just a safety net.
     if (!lastClassKey) {
@@ -1659,7 +2404,13 @@ window.openReportModal = function() {
         return;
     }
 
+    // Always the plain compressed photo — same as what gets submitted and
+    // what History stores. Boxes are never baked into these pixels (that's
+    // what used to turn the thumbnail into a black square); for YOLO11n they
+    // are drawn as an overlay when the thumbnail is clicked to enlarge it
+    // (rgZoomReportThumb).
     document.getElementById('report-thumb').src = window.compressedBase64 || '';
+    rgSetModelBadge('report-thumb-badge', selectedEngine);
     document.getElementById('report-detection-name').textContent =
         document.getElementById('top-label').textContent || '—';
 
@@ -1830,7 +2581,11 @@ window.submitReport = async function() {
             // "90%" -> 90
             severity_percent: parseInt((document.getElementById('severity-percent').textContent || '0').replace('%', ''), 10) || 0,
             source:           selectedEngine,
-            image_base64:     window.compressedBase64,
+            // Plain photo, same as History. For YOLO11n the boxes go
+            // alongside as raw coordinates (detection_boxes below) so the
+            // technician/admin views can draw them on zoom, exactly like
+            // History does.
+            image_base64:     window.compressedBase64 || null,
             support_image:    await readSupportImage(),
             info:             collectReportInfoSnapshot(),
             problem_types:    problems,
@@ -1840,6 +2595,14 @@ window.submitReport = async function() {
             message:          description,
             suggested_class:  document.getElementById('report-suggested').value || null
         };
+
+        // Same three fields saveCurrentDetection() sends to History.
+        const boxData = getCurrentDetectionBoxes();
+        if (boxData) {
+            payload.detection_boxes = boxData.boxes;
+            payload.boxes_src_w     = boxData.src_w;
+            payload.boxes_src_h     = boxData.src_h;
+        }
 
         const response = await fetch("{{ route('farmer.reports.store') }}", {
             method: 'POST',
@@ -1896,11 +2659,30 @@ window.saveCurrentDetection = async function() {
         field_key: document.getElementById('field-selector') ? document.getElementById('field-selector').value : 'main',
         class_key: lastClassKey,
         confidence: lastConfidence,
+        // Plain compressed photo, same as every other engine. Boxes are
+        // NOT baked into these pixels — history.blade.php draws them as a
+        // canvas overlay only when the photo is opened full-size (zoomed),
+        // using detection_boxes below. Keeping the saved photo itself
+        // plain means it can never come out corrupted/black regardless of
+        // what happens in the overlay-drawing code.
         image_base64: window.compressedBase64,
         // Only ever send real Groq output, and only when Groq was the
         // engine used — never the model's fallback text mislabeled as Groq.
         groq_data: (selectedEngine === 'groq') ? currentGroqData : null,
-        source: selectedEngine
+        source: selectedEngine,
+        // Raw YOLO11n box coordinates for THIS exact photo — lastPreviewDetections/
+        // lastPreviewSrcW/H are exactly what was last analyzed into
+        // window.compressedBase64 (set in the "Analyze" flow), so the
+        // coordinates line up with the photo being saved.
+        detection_boxes: (selectedEngine === 'yolo11n' && lastPreviewDetections.length) ?
+            lastPreviewDetections.map(d => ({
+                className: d.className,
+                label: yoloDetectionLabel(d),
+                confidence: d.confidence,
+                box: d.box
+            })) : null,
+        boxes_src_w: (selectedEngine === 'yolo11n' && lastPreviewDetections.length) ? lastPreviewSrcW : null,
+        boxes_src_h: (selectedEngine === 'yolo11n' && lastPreviewDetections.length) ? lastPreviewSrcH : null
     };
 
     const success = await sendToServer(payload);
@@ -1953,7 +2735,7 @@ async function saveLocally(payload) {
 }
 
 window.onload = async () => {
-    await loadModel();
+    await Promise.all([loadYoloModel(), loadModel()]);
     setupUpload();
 };
 </script>

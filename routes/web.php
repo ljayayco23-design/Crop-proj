@@ -18,6 +18,7 @@ use App\Http\Controllers\Admin\AdminAssignmentController;
 use App\Http\Controllers\Admin\AdminSystemReportController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\FarmerReportController;
+use App\Http\Controllers\ScheduleController;
 
 Route::get('/locations/provinces', [LocationController::class, 'provinces']);
 Route::get('/locations/cities/{province}', [LocationController::class, 'cities']);
@@ -196,6 +197,16 @@ Route::prefix('technician')->middleware(['auth', 'role:technician'])->group(func
     })->name('technician.documents');
     Route::get('/dashboard', [TechnicianController::class, 'dashboard'])->name('technician.dashboard');
     Route::get('/records', [TechnicianController::class, 'records'])->name('technician.records');
+
+    // 📅 SCHEDULE (this technician's own schedule — always online, plain
+    // CRUD. Shares the ScheduleController + schedules table with the
+    // farmer side above, but NOT the offline/service-worker sync: that
+    // machinery is farmer-only, see technician/schedule.blade.php.)
+    Route::get('/schedule', [ScheduleController::class, 'technicianIndex'])->name('technician.schedule');
+    Route::get('/schedule/events', [ScheduleController::class, 'technicianEvents'])->name('technician.schedule.events');
+    Route::post('/schedule', [ScheduleController::class, 'technicianStore'])->name('technician.schedule.store');
+    Route::put('/schedule/{uuid}', [ScheduleController::class, 'technicianUpdate'])->name('technician.schedule.update');
+    Route::delete('/schedule/{uuid}', [ScheduleController::class, 'technicianDestroy'])->name('technician.schedule.destroy');
     Route::post('/knowledge/update', [TechnicianController::class, 'updateKnowledge'])->name('technician.knowledge.update');
 
     Route::get('/announcement', [AnnouncementController::class, 'technicianIndex'])->name('technician.announcement');
@@ -255,6 +266,12 @@ Route::prefix('farmer')->middleware(['auth'])->group(function () {
 
     Route::get('/dashboard', function () { return view('farmer.dashboard'); })->name('farmer.dashboard');
 
+    // 📅 SCHEDULE (offline-first: the page keeps its own copy in the browser and
+    // pushes/pulls through /schedule/sync whenever the device is online)
+    Route::get('/schedule', [ScheduleController::class, 'index'])->name('farmer.schedule');
+    Route::get('/schedule/events', [ScheduleController::class, 'events'])->name('farmer.schedule.events');
+    Route::post('/schedule/sync', [ScheduleController::class, 'sync'])->name('farmer.schedule.sync');
+
     // "Live Camera" on the dashboard used to point at a route that was
     // never defined (farmer.camera), which crashed the whole dashboard
     // with RouteNotFoundException. The detection page already has the
@@ -269,6 +286,9 @@ Route::prefix('farmer')->middleware(['auth'])->group(function () {
     Route::get('/history', [FarmerHistoryController::class, 'index'])->name('farmer.history');
     Route::post('/history/save', [FarmerHistoryController::class, 'saveDetection'])->name('farmer.history.save');
     Route::post('/history/action', [FarmerHistoryController::class, 'action'])->name('farmer.history.action');
+    // Layer-2 fallback for thumbnails that fail to render inline (see
+    // resolveDetectionImageSrc() + onImageError() in history.blade.php).
+    Route::get('/history/image/{id}', [FarmerHistoryController::class, 'image'])->name('farmer.history.image');
 
     Route::get('/announcement', [AnnouncementController::class, 'farmerIndex'])->name('farmer.announcement');
     
@@ -294,8 +314,16 @@ Route::match(['get', 'post'], '/farmer/detection', function (\Illuminate\Http\Re
         if ($request->action === 'save_detection') return response()->json(['success' => true]);
     }
 
-    $diseaseNames = ['healthy_rice_plant' => "Healthy Rice Plant", 'bacterial_leaf_blight' => "Bacterial Leaf Blight", 'leaf_blast' => "Leaf Blast", 'rice_false_smut' => "Rice False Smut", 'sheath_blight' => "Sheath Blight", 'tungro_virus' => "Tungro Virus"];
-    $pestNames = ['brown_planthopper' => "Brown Planthopper", 'leaf_folders' => "Leaf Folders", 'leafhopper' => "Leafhopper", 'rice_bug' => "Rice Bug", 'rice_gall_midge' => "Rice Gall Midge", 'rice_leaf_roller' => "Rice Leaf Roller", 'rice_stem_borer' => "Rice Stem Borer", 'snail' => "Snail"];
+    // These MUST stay identical to best.onnx's own 23 classes (and to
+    // KnowledgeController's copy, which is the source of truth) — this
+    // route used to keep its own hand-typed, outdated copy here (old
+    // spellings 'snail'/'rice_gall_midge', several classes missing
+    // entirely), which meant YOLO11n's real class names — like
+    // 'applesnail_eggs' — never matched this list even when a knowledge
+    // entry for them existed, and index_blade.php's isKnownTaxonomyClass()
+    // check would wrongly show "isn't in the shared knowledge base yet".
+    $diseaseNames = \App\Http\Controllers\KnowledgeController::diseaseNames();
+    $pestNames = \App\Http\Controllers\KnowledgeController::pestNames();
 
     $knowledgeBase = [];
     try {

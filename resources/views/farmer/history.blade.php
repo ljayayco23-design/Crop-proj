@@ -234,7 +234,7 @@
                                     <div class="detection-instances-list d-flex flex-column gap-3">
                                         @foreach($det['instances'] as $inst)
                                             @php
-                                                $instIsGroq = ($inst['source'] ?? 'model') === 'groq';
+                                                $instSource = $inst['source'] ?? 'model';
                                                 $ikb = $inst['kb'] ?? [];
                                                 $iSevLabel = $inst['severity_label'] ?? ($severityLabelMap[$det['class_key']] ?? null);
                                                 $iSevPercent = $inst['severity_percent'] ?? ($severityMap[$det['class_key']] ?? null);
@@ -263,9 +263,9 @@
                                                             <i class="fas fa-hashtag me-1"></i>ID: {{ $inst['id'] }}
                                                         </span>
                                                         @endif
-                                                        <span class="badge {{ $instIsGroq ? 'bg-info text-dark' : 'bg-secondary' }}">
-                                                            <i class="fas {{ $instIsGroq ? 'fa-robot' : 'fa-microchip' }} me-1"></i>
-                                                            {{ $instIsGroq ? 'Groq AI' : 'Model' }}
+                                                        <span class="badge {{ $instSource === 'groq' ? 'bg-info text-dark' : ($instSource === 'yolo11n' ? 'bg-success text-white' : 'bg-secondary') }}">
+                                                            <i class="fas {{ $instSource === 'groq' ? 'fa-robot' : ($instSource === 'yolo11n' ? 'fa-bullseye' : 'fa-microchip') }} me-1"></i>
+                                                            {{ $instSource === 'groq' ? 'Groq AI' : ($instSource === 'yolo11n' ? 'YOLO11n' : 'Model') }}
                                                         </span>
                                                         <span class="text-secondary small detection-date">{{ $inst['date'] ?? '—' }}</span>
                                                     </div>
@@ -284,10 +284,45 @@
                                                 <!-- Picture + type badge/name + confidence gauge, styled the same
                                                      way as the "Report the Problem" modal's detection header. -->
                                                 <div class="rg-report-top mb-3">
+                                                    {{-- YOLO11n scans carry their own bounding-box data
+                                                         (className/label/confidence/box, in the ORIGINAL
+                                                         photo's pixel coordinates) plus the src_w/src_h that
+                                                         data was measured against. Never baked into the
+                                                         photo's pixels — showImageModal() reads these data-*
+                                                         attributes off whichever <img> was clicked and draws
+                                                         the boxes as a canvas overlay on the full-size photo
+                                                         once the zoom modal is actually visible. --}}
+                                                    @php
+                                                        $iBoxesJson = !empty($inst['boxes']['boxes']) ? json_encode($inst['boxes']['boxes']) : '';
+                                                        $iBoxesSrcW = $inst['boxes']['src_w'] ?? '';
+                                                        $iBoxesSrcH = $inst['boxes']['src_h'] ?? '';
+                                                    @endphp
                                                     @if(!empty($inst['image']))
-                                                        <img src="{{ $inst['image'] }}" class="rg-report-thumb" alt="Detected image" onclick="showImageModal('{{ addslashes($inst['image']) }}')" style="cursor: pointer;">
+                                                        <img src="{{ $inst['image'] }}" class="rg-report-thumb" alt="Detected image"
+                                                             data-detection-id="{{ $inst['id'] ?? '' }}"
+                                                             data-fallback-url="{{ $inst['image_fallback_url'] ?? '' }}"
+                                                             data-fallback-stage="0"
+                                                             data-boxes="{{ $iBoxesJson }}"
+                                                             data-boxes-src-w="{{ $iBoxesSrcW }}"
+                                                             data-boxes-src-h="{{ $iBoxesSrcH }}"
+                                                             onclick="showImageModal(this.currentSrc || this.src, this.dataset.boxes, this.dataset.boxesSrcW, this.dataset.boxesSrcH)"
+                                                             onerror="handleThumbImageError(this)"
+                                                             style="cursor: pointer;">
+                                                    @elseif(!empty($inst['image_fallback_url']))
+                                                        {{-- Layer 1 couldn't resolve an inline src, but we still have
+                                                             the detection id — go straight to the Layer-2 endpoint. --}}
+                                                        <img src="{{ $inst['image_fallback_url'] }}" class="rg-report-thumb" alt="Detected image"
+                                                             data-detection-id="{{ $inst['id'] ?? '' }}"
+                                                             data-fallback-url=""
+                                                             data-fallback-stage="1"
+                                                             data-boxes="{{ $iBoxesJson }}"
+                                                             data-boxes-src-w="{{ $iBoxesSrcW }}"
+                                                             data-boxes-src-h="{{ $iBoxesSrcH }}"
+                                                             onclick="showImageModal(this.currentSrc || this.src, this.dataset.boxes, this.dataset.boxesSrcW, this.dataset.boxesSrcH)"
+                                                             onerror="handleThumbImageError(this)"
+                                                             style="cursor: pointer;">
                                                     @else
-                                                        <div class="rg-report-thumb d-flex align-items-center justify-content-center text-secondary"><i class="fas fa-image"></i></div>
+                                                        <div class="rg-report-thumb d-flex align-items-center justify-content-center text-secondary" title="No image was saved for this scan"><i class="fas fa-image"></i></div>
                                                     @endif
                                                     <div class="rg-report-top-info">
                                                         <div class="rg-type-badge {{ $isPest ? '' : 'is-disease' }}">
@@ -421,7 +456,7 @@
                                     <div class="detection-instances-list d-flex flex-column gap-3">
                                         @foreach($det['instances'] as $inst)
                                             @php
-                                                $instIsGroq = ($inst['source'] ?? 'model') === 'groq';
+                                                $instSource = $inst['source'] ?? 'model';
                                                 $ikb = $inst['kb'] ?? [];
                                                 $iSevLabel = $inst['severity_label'] ?? ($severityLabelMap[$det['class_key']] ?? null);
                                                 $iSevPercent = $inst['severity_percent'] ?? ($severityMap[$det['class_key']] ?? null);
@@ -450,9 +485,9 @@
                                                             <i class="fas fa-hashtag me-1"></i>ID: {{ $inst['id'] }}
                                                         </span>
                                                         @endif
-                                                        <span class="badge {{ $instIsGroq ? 'bg-info text-dark' : 'bg-secondary' }}">
-                                                            <i class="fas {{ $instIsGroq ? 'fa-robot' : 'fa-microchip' }} me-1"></i>
-                                                            {{ $instIsGroq ? 'Groq AI' : 'Model' }}
+                                                        <span class="badge {{ $instSource === 'groq' ? 'bg-info text-dark' : ($instSource === 'yolo11n' ? 'bg-success text-white' : 'bg-secondary') }}">
+                                                            <i class="fas {{ $instSource === 'groq' ? 'fa-robot' : ($instSource === 'yolo11n' ? 'fa-bullseye' : 'fa-microchip') }} me-1"></i>
+                                                            {{ $instSource === 'groq' ? 'Groq AI' : ($instSource === 'yolo11n' ? 'YOLO11n' : 'Model') }}
                                                         </span>
                                                         <span class="text-secondary small detection-date">{{ $inst['date'] ?? '—' }}</span>
                                                     </div>
@@ -471,10 +506,45 @@
                                                 <!-- Picture + type badge/name + confidence gauge, styled the same
                                                      way as the "Report the Problem" modal's detection header. -->
                                                 <div class="rg-report-top mb-3">
+                                                    {{-- YOLO11n scans carry their own bounding-box data
+                                                         (className/label/confidence/box, in the ORIGINAL
+                                                         photo's pixel coordinates) plus the src_w/src_h that
+                                                         data was measured against. Never baked into the
+                                                         photo's pixels — showImageModal() reads these data-*
+                                                         attributes off whichever <img> was clicked and draws
+                                                         the boxes as a canvas overlay on the full-size photo
+                                                         once the zoom modal is actually visible. --}}
+                                                    @php
+                                                        $iBoxesJson = !empty($inst['boxes']['boxes']) ? json_encode($inst['boxes']['boxes']) : '';
+                                                        $iBoxesSrcW = $inst['boxes']['src_w'] ?? '';
+                                                        $iBoxesSrcH = $inst['boxes']['src_h'] ?? '';
+                                                    @endphp
                                                     @if(!empty($inst['image']))
-                                                        <img src="{{ $inst['image'] }}" class="rg-report-thumb" alt="Detected image" onclick="showImageModal('{{ addslashes($inst['image']) }}')" style="cursor: pointer;">
+                                                        <img src="{{ $inst['image'] }}" class="rg-report-thumb" alt="Detected image"
+                                                             data-detection-id="{{ $inst['id'] ?? '' }}"
+                                                             data-fallback-url="{{ $inst['image_fallback_url'] ?? '' }}"
+                                                             data-fallback-stage="0"
+                                                             data-boxes="{{ $iBoxesJson }}"
+                                                             data-boxes-src-w="{{ $iBoxesSrcW }}"
+                                                             data-boxes-src-h="{{ $iBoxesSrcH }}"
+                                                             onclick="showImageModal(this.currentSrc || this.src, this.dataset.boxes, this.dataset.boxesSrcW, this.dataset.boxesSrcH)"
+                                                             onerror="handleThumbImageError(this)"
+                                                             style="cursor: pointer;">
+                                                    @elseif(!empty($inst['image_fallback_url']))
+                                                        {{-- Layer 1 couldn't resolve an inline src, but we still have
+                                                             the detection id — go straight to the Layer-2 endpoint. --}}
+                                                        <img src="{{ $inst['image_fallback_url'] }}" class="rg-report-thumb" alt="Detected image"
+                                                             data-detection-id="{{ $inst['id'] ?? '' }}"
+                                                             data-fallback-url=""
+                                                             data-fallback-stage="1"
+                                                             data-boxes="{{ $iBoxesJson }}"
+                                                             data-boxes-src-w="{{ $iBoxesSrcW }}"
+                                                             data-boxes-src-h="{{ $iBoxesSrcH }}"
+                                                             onclick="showImageModal(this.currentSrc || this.src, this.dataset.boxes, this.dataset.boxesSrcW, this.dataset.boxesSrcH)"
+                                                             onerror="handleThumbImageError(this)"
+                                                             style="cursor: pointer;">
                                                     @else
-                                                        <div class="rg-report-thumb d-flex align-items-center justify-content-center text-secondary"><i class="fas fa-image"></i></div>
+                                                        <div class="rg-report-thumb d-flex align-items-center justify-content-center text-secondary" title="No image was saved for this scan"><i class="fas fa-image"></i></div>
                                                     @endif
                                                     <div class="rg-report-top-info">
                                                         <div class="rg-type-badge {{ $isPest ? '' : 'is-disease' }}">
@@ -578,7 +648,13 @@
                 <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body text-center p-0">
-                <img id="modalImageBig" src="" class="img-fluid rounded shadow-lg" style="max-height: 85vh; object-fit: contain;">
+                <div id="modalImageWrap" style="position: relative; display: inline-block; max-width: 100%;">
+                    <img id="modalImageBig" src="" class="img-fluid rounded shadow-lg" style="max-height: 85vh; object-fit: contain; display: block;" onerror="handleModalImageError(this)">
+                    <canvas id="modalImageBoxes" style="position: absolute; left: 0; top: 0; pointer-events: none;"></canvas>
+                </div>
+                <div id="modalImageErrorMsg" class="text-danger small mt-3" style="display:none;">
+                    <i class="fas fa-triangle-exclamation me-1"></i> This image could not be loaded.
+                </div>
             </div>
         </div>
     </div>
@@ -592,17 +668,168 @@
     const actionUrl = "{{ route('farmer.history.action') }}";
     let imgModal = null;
 
+    let pendingModalBoxes = null, pendingModalSrcW = 0, pendingModalSrcH = 0;
+
     document.addEventListener("DOMContentLoaded", () => {
         imgModal = new bootstrap.Modal(document.getElementById('imageModal'));
-        
+
         document.getElementById('imageModal').addEventListener('hidden.bs.modal', function () {
-            document.getElementById('modalImageBig').src = '';
+            const img = document.getElementById('modalImageBig');
+            img.src = '';
+            img.style.display = '';
+            const msg = document.getElementById('modalImageErrorMsg');
+            if (msg) msg.style.display = 'none';
+            const canvas = document.getElementById('modalImageBoxes');
+            if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        });
+
+        // THIS is the fix for the boxes not appearing: drawing on the
+        // <img>'s load event alone doesn't work, because Bootstrap's
+        // modal is still display:none at that instant (its fade-in
+        // transition hasn't finished), so img.clientWidth/clientHeight
+        // both read as 0 and the canvas ends up sized 0x0 — nothing
+        // visibly wrong, it just silently draws nothing. shown.bs.modal
+        // only fires once the modal is actually visible on screen with
+        // real dimensions, so drawing here is what actually works.
+        document.getElementById('imageModal').addEventListener('shown.bs.modal', function () {
+            console.debug('[History] modal shown, redrawing boxes', pendingModalBoxes);
+            drawModalBoxes(pendingModalBoxes, pendingModalSrcW, pendingModalSrcH);
         });
     });
 
-    function showImageModal(src) {
-        document.getElementById('modalImageBig').src = src;
+    function getModalContainRect(boxW, boxH, srcW, srcH) {
+        const scale = Math.min(boxW / srcW, boxH / srcH);
+        const renderW = srcW * scale, renderH = srcH * scale;
+        return { x: (boxW - renderW) / 2, y: (boxH - renderH) / 2, width: renderW, height: renderH };
+    }
+
+    function drawModalBoxes(boxes, srcW, srcH) {
+        const canvas = document.getElementById('modalImageBoxes');
+        const img = document.getElementById('modalImageBig');
+        if (!canvas || !img) return;
+
+        const w = img.clientWidth, h = img.clientHeight;
+        console.debug('[History] drawModalBoxes: img size', w, 'x', h, 'boxes:', boxes ? boxes.length : 0, 'srcW/H:', srcW, srcH);
+
+        if (!w || !h) {
+            // Image not actually laid out yet (0-size) — nothing to draw
+            // against. shown.bs.modal should prevent this, but bail
+            // safely instead of drawing garbage if it ever happens.
+            console.debug('[History] drawModalBoxes: image has no rendered size yet, skipping');
+            return;
+        }
+
+        const ctx = canvas.getContext('2d');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.style.width = w + 'px';
+        canvas.style.height = h + 'px';
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (!boxes || !boxes.length || !srcW || !srcH) return;
+
+        const rect = getModalContainRect(canvas.width, canvas.height, srcW, srcH);
+        const scaleX = rect.width / srcW;
+        const scaleY = rect.height / srcH;
+
+        boxes.forEach(d => {
+            const x = rect.x + d.box.x * scaleX;
+            const y = rect.y + d.box.y * scaleY;
+            const bw = d.box.width * scaleX;
+            const bh = d.box.height * scaleY;
+
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, bw, bh);
+
+            const label = d.label || d.className || '';
+            if (!label) return;
+            ctx.font = '600 13px system-ui, sans-serif';
+            const textW = ctx.measureText(label).width + 10;
+            const labelH = 19;
+            ctx.fillStyle = '#10b981';
+            ctx.fillRect(x, Math.max(0, y - labelH), textW, labelH);
+            ctx.fillStyle = '#06281f';
+            ctx.fillText(label, x + 5, Math.max(13, y - 5));
+        });
+    }
+
+    function showImageModal(src, boxesJson, boxesSrcW, boxesSrcH) {
+        if (!src) return; // nothing resolved to show — avoid opening an empty modal
+        const img = document.getElementById('modalImageBig');
+        const msg = document.getElementById('modalImageErrorMsg');
+        const canvas = document.getElementById('modalImageBoxes');
+        img.style.display = '';
+        if (msg) msg.style.display = 'none';
+        if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+
+        let boxes = null;
+        if (boxesJson) {
+            try { boxes = JSON.parse(boxesJson); } catch (e) { console.warn('[History] failed to parse boxes JSON', e); boxes = null; }
+        }
+        console.debug('[History] showImageModal boxesJson raw:', boxesJson, 'parsed:', boxes);
+
+        pendingModalBoxes = boxes;
+        pendingModalSrcW = parseFloat(boxesSrcW) || 0;
+        pendingModalSrcH = parseFloat(boxesSrcH) || 0;
+
+        // Also try on image load, in case the modal happens to already be
+        // visible (shown.bs.modal already fired) by the time the image
+        // finishes loading — belt and suspenders, drawModalBoxes() is
+        // idempotent and safely no-ops if the image isn't sized yet.
+        img.onload = () => drawModalBoxes(pendingModalBoxes, pendingModalSrcW, pendingModalSrcH);
+
+        img.src = src;
         imgModal.show();
+    }
+
+    // Full-size preview failed too (separate code path from the thumbnail
+    // fallback below — by the time someone clicks a thumb, it already
+    // rendered once, so a failure here usually means a transient network
+    // blip rather than a bad image, hence no automatic retry here).
+    function handleModalImageError(img) {
+        if (!img.src) return; // cleared on modal close — ignore
+        console.error('[History] Full-size image preview failed to load. src length:', img.src.length);
+        img.style.display = 'none';
+        const msg = document.getElementById('modalImageErrorMsg');
+        if (msg) msg.style.display = 'block';
+    }
+
+    // --- Two-layer thumbnail image loading, with error handling that
+    // identifies exactly which detection/layer failed ---
+    //
+    // Layer 1: the <img src> rendered straight from PHP (resolveDetectionImageSrc()
+    //          in FarmerHistoryController) — a data URI, a remote URL, or an
+    //          asset() path.
+    // Layer 2: if Layer 1 fails to actually render, we retry through
+    //          route('farmer.history.image', $id) — a dedicated endpoint that
+    //          re-reads and re-validates that same row server-side, independent
+    //          of whatever Layer 1 guessed.
+    // If BOTH fail, we swap the <img> for a visible "no image" placeholder
+    // (instead of leaving a blank black square) and log the detection id so
+    // the underlying bad row can be found and fixed.
+    function handleThumbImageError(img) {
+        const stage = img.getAttribute('data-fallback-stage') || '0';
+        const detId = img.getAttribute('data-detection-id') || 'unknown';
+        const fallbackUrl = img.getAttribute('data-fallback-url');
+
+        if (stage === '0' && fallbackUrl) {
+            console.error(`[History] Image failed to load for detection #${detId} via the inline src (Layer 1). Retrying via the fallback endpoint (Layer 2)...`);
+            img.setAttribute('data-fallback-stage', '1');
+            img.onerror = () => handleThumbImageError(img); // keep the handler for the layer-2 attempt
+            img.src = fallbackUrl;
+            return;
+        }
+
+        // Both layers failed (or there was never a fallback URL to try) —
+        // this is the row to go fix.
+        console.error(`[History] Image permanently unavailable for detection #${detId}. Both the inline src and the fallback endpoint failed — check the FarmerHistory image logs for detection_id ${detId}.`);
+
+        const placeholder = document.createElement('div');
+        placeholder.className = 'rg-report-thumb d-flex flex-column align-items-center justify-content-center text-danger';
+        placeholder.title = `Image unavailable (detection #${detId}) — the stored photo could not be loaded or decoded.`;
+        placeholder.innerHTML = '<i class="fas fa-triangle-exclamation"></i><span style="font-size:9px; margin-top:2px;">No image</span>';
+        img.replaceWith(placeholder);
     }
 
     // Toggle the floating detail panel for a detection row (only one open at a time)
@@ -910,7 +1137,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                                     <p class="text-secondary small mb-2 text-end">Offline Image (1)</p>
                                     <div class="image-gallery d-flex flex-wrap gap-2 justify-content-end">
                                         <div class="img-container">
-                                            <img src="${record.image_base64}" class="rounded-3 shadow-sm" style="width: 80px; height: 80px; object-fit: cover;" onclick="showImageModal(this.src)">
+                                            <img src="${record.image_base64}" class="rounded-3 shadow-sm" style="width: 80px; height: 80px; object-fit: cover;" onclick="showImageModal(this.src)" onerror="console.error('[History] Offline (IndexedDB) image failed to render for local record id', ${record.id}); this.replaceWith(Object.assign(document.createElement('div'), { className: 'rounded-3 shadow-sm d-flex align-items-center justify-content-center text-danger bg-dark', style: 'width:80px;height:80px;', title: 'This offline photo is corrupted and could not be displayed.', innerHTML: '<i class=\'fas fa-triangle-exclamation\'></i>' }));">
                                         </div>
                                     </div>
                                 </div>

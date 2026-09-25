@@ -78,8 +78,21 @@
         <div class="detection-instances-list d-flex flex-column gap-3">
             @foreach($det['instances'] as $inst)
                 @php
-                    $instIsGroq = ($inst['source'] ?? 'model') === 'groq';
+                    // Same three-way engine check as history.blade.php's
+                    // inline block ('groq' / 'yolo11n' / fallback 'model') —
+                    // this used to only ever check for 'groq' and call
+                    // everything else "Model", which mislabeled every
+                    // yolo11n scan shown here the same way the Report page
+                    // did before it was fixed.
+                    $instSource = $inst['source'] ?? 'model';
                     $ikb = $inst['kb'] ?? [];
+                    // YOLO11n bounding-box data for this instance's photo,
+                    // same shape history.blade.php reads — decoded
+                    // independently of the image, so a missing/old row here
+                    // just means no overlay is drawn, never a broken image.
+                    $iBoxesJson = !empty($inst['boxes']['boxes']) ? json_encode($inst['boxes']['boxes']) : '';
+                    $iBoxesSrcW = $inst['boxes']['src_w'] ?? '';
+                    $iBoxesSrcH = $inst['boxes']['src_h'] ?? '';
                     $iSevLabel = $inst['severity_label'] ?? ($severityLabelMap[$det['class_key']] ?? null);
                     $iSevPercent = $inst['severity_percent'] ?? ($severityMap[$det['class_key']] ?? null);
                     $iSevMessage = $inst['severity_message'] ?? null;
@@ -100,9 +113,9 @@
                 <div class="instance-full-card rounded-3 border border-secondary bg-dark bg-opacity-25 p-3">
                     <div class="d-flex justify-content-between align-items-start gap-3 mb-3 flex-wrap">
                         <div class="d-flex align-items-center gap-2 flex-wrap">
-                            <span class="badge {{ $instIsGroq ? 'bg-info text-dark' : 'bg-secondary' }}">
-                                <i class="fas {{ $instIsGroq ? 'fa-robot' : 'fa-microchip' }} me-1"></i>
-                                {{ $instIsGroq ? 'Groq AI' : 'Model' }}
+                            <span class="badge {{ $instSource === 'groq' ? 'bg-info text-dark' : ($instSource === 'yolo11n' ? 'bg-success text-white' : 'bg-secondary') }}">
+                                <i class="fas {{ $instSource === 'groq' ? 'fa-robot' : ($instSource === 'yolo11n' ? 'fa-bullseye' : 'fa-microchip') }} me-1"></i>
+                                {{ $instSource === 'groq' ? 'Groq AI' : ($instSource === 'yolo11n' ? 'YOLO11n' : 'Model') }}
                             </span>
                             <span class="text-secondary small detection-date">{{ $inst['date'] ?? '—' }}</span>
                         </div>
@@ -119,7 +132,12 @@
 
                     <div class="rg-report-top mb-3">
                         @if(!empty($inst['image']))
-                            <img src="{{ $inst['image'] }}" class="rg-report-thumb" alt="Detected image" onclick="showImageModal('{{ addslashes($inst['image']) }}')" style="cursor: pointer;">
+                            <img src="{{ $inst['image'] }}" class="rg-report-thumb" alt="Detected image"
+                                 data-boxes="{{ $iBoxesJson }}"
+                                 data-boxes-src-w="{{ $iBoxesSrcW }}"
+                                 data-boxes-src-h="{{ $iBoxesSrcH }}"
+                                 onclick="showImageModal(this.currentSrc || this.src, this.dataset.boxes, this.dataset.boxesSrcW, this.dataset.boxesSrcH)"
+                                 style="cursor: pointer;">
                         @else
                             <div class="rg-report-thumb d-flex align-items-center justify-content-center text-secondary"><i class="fas fa-image"></i></div>
                         @endif

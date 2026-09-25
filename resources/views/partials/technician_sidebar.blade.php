@@ -58,6 +58,15 @@
                 <i class="fas fa-folder-open me-2"></i> Technician Record
             </a>
         </li>
+
+        {{-- SCHEDULE — this technician's own schedule (always-online CRUD,
+             no offline/service-worker sync — that's farmer-only). Route:
+             GET /technician/schedule -> ScheduleController@technicianIndex --}}
+        <li class="nav-item mb-2">
+            <a href="{{ route('technician.schedule') }}" class="nav-link text-white {{ request()->routeIs('technician.schedule') ? 'active' : '' }}">
+                <i class="fa-regular fa-calendar-days me-2"></i> Schedule
+            </a>
+        </li>
         
         {{-- FARMER REPORTS — the review queue for problems farmers raised
              on their detection results. Visible to any technician: it is

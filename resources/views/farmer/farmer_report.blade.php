@@ -57,6 +57,25 @@
     }
     .fr-lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 12px; }
 
+    /* Report photos are ALWAYS shown plain (thumbnails never carry boxes).
+       YOLO11n's boxes are stored as data (detection_boxes) and painted as a
+       canvas overlay only when the photo is opened full-size in the
+       lightbox — same approach as History and the detection page. The
+       model name is a normal chip in the header (next to the report ID),
+       never drawn on top of the picture. */
+    .rg-thumb-wrap { position: relative; display: inline-block; flex: 0 0 auto; }
+    .rg-thumb-wrap img { display: block; border-radius: 12px; }
+    .rg-thumb-canvas { position: absolute; top: 0; left: 0; pointer-events: none; border-radius: 12px; }
+    .fr-model-chip {
+        display: inline-flex; align-items: center; align-self: center;
+        background: rgba(16,185,129,.16); color: #34d399;
+        border: 1px solid rgba(16,185,129,.4);
+        font-size: .68rem; font-weight: 800; letter-spacing: .03em;
+        padding: 3px 9px; border-radius: 6px; text-transform: uppercase;
+        white-space: nowrap;
+    }
+    .fr-lightbox-inner { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
     /* ---------- Mirrored detection header (same look everywhere) ----------
        Identical markup/classes to the "Report the Problem" modal on the
        detection page and to the technician's Farmer Reports review screen:
@@ -195,6 +214,89 @@
     }
     .fr-action-item:hover { background: rgba(255,255,255,.06); color: #fff; }
     .fr-action-item.text-danger:hover { background: rgba(239,68,68,.12); color: #f87171 !important; }
+
+    /* ===================== MOBILE (phones) ===================== */
+    @media (max-width: 767px) {
+        .page-header { gap: .5rem; margin-bottom: 1rem !important; }
+        .page-header-title h4 { font-size: 1.05rem; }
+
+        .fr-card { padding: .9rem !important; border-radius: 10px; }
+        .fr-panel { padding: 11px; }
+
+        /* ---- report list -> stacked cards ---- */
+        .table-responsive { overflow: visible; }
+        .fr-table { min-width: 0; display: block; font-size: .78rem; }
+        .fr-table thead { display: none; }
+        .fr-table, .fr-table tbody { display: block; width: 100%; }
+
+        .fr-table tbody tr {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-areas:
+                "id       detection"
+                "problem  problem"
+                "date     status"
+                "actions  actions";
+            column-gap: 12px;
+            background: transparent;
+            border: 1px solid #263349;
+            border-radius: 14px;
+            padding: 14px 14px 10px;
+            margin-bottom: 12px;
+        }
+        .fr-table tbody tr:last-child { margin-bottom: 0; }
+
+        .fr-table tbody td {
+            display: block;
+            width: 100%;
+            padding: 0;
+            border: none !important;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            background: transparent !important;
+        }
+
+        #fr-table-body td[data-label="Report ID"]  { grid-area: id; font-size: .95rem; margin-bottom: 10px; }
+        #fr-table-body td[data-label="Detection"]  { grid-area: detection; text-align: right; margin-bottom: 10px; }
+        #fr-table-body td[data-label="Problem"]    { grid-area: problem; margin-bottom: 8px; }
+        #fr-table-body td[data-label="Date"]       { grid-area: date; }
+        #fr-table-body td[data-label="Status"]     { grid-area: status; text-align: right; }
+        #fr-table-body td[data-label="Action"] {
+            grid-area: actions; text-align: right;
+            padding-top: 10px; margin-top: 6px;
+            border-top: 1px solid #1d2636 !important;
+        }
+
+        .fr-table td[data-label]:not([data-label="Report ID"]):not([data-label="Detection"]):not([data-label="Status"]):not([data-label="Action"])::before {
+            content: attr(data-label);
+            display: block;
+            font-size: .62rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: #64748b;
+            margin-bottom: 3px;
+        }
+
+        /* ---- detail view (my report vs technician resolution) ---- */
+        #fr-detail-view .fr-card { padding: .9rem !important; }
+        .rg-report-top { gap: 10px; }
+        .rg-report-thumb, #fr-d-image-missing, #cr-d-image-missing { width: 72px; height: 72px; }
+        .rg-confidence-gauge { width: 118px; height: 70px; }
+        .rg-report-name { font-size: 1rem; }
+        .rg-report-stat { padding: 8px 10px; }
+
+        /* ---- Create a Report (floating modal) ---- */
+        .rg-report-backdrop { padding: 1rem .6rem; }
+        .rg-report-dialog { border-radius: 12px; }
+        .rg-report-head { padding: 12px 14px; }
+        .rg-report-body { padding: 12px 14px; }
+        .rg-report-foot { flex-wrap: wrap; padding: 10px 14px; }
+        .rg-report-foot .btn { flex: 1 1 auto; }
+
+        /* ---- lightbox ---- */
+        .fr-lightbox { padding: 1rem .75rem; }
+    }
 </style>
 
 <div class="nxl-content">
@@ -231,19 +333,19 @@
                                     <th class="text-end">Action</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="fr-table-body">
                                 @foreach($reports as $report)
                                     <tr>
-                                        <td class="fw-bold">#{{ $report['report_id'] }}</td>
-                                        <td>{{ $report['detection']['class_name'] }}</td>
-                                        <td>{{ $report['problem_summary'] }}</td>
-                                        <td class="text-secondary">{{ $report['date'] }}</td>
-                                        <td>
+                                        <td class="fw-bold" data-label="Report ID">#{{ $report['report_id'] }}</td>
+                                        <td data-label="Detection">{{ $report['detection']['class_name'] }}</td>
+                                        <td data-label="Problem">{{ $report['problem_summary'] }}</td>
+                                        <td class="text-secondary" data-label="Date">{{ $report['date'] }}</td>
+                                        <td data-label="Status">
                                             <span class="badge {{ $statuses[$report['status']]['class'] }}">
                                                 {{ $statuses[$report['status']]['label'] }}
                                             </span>
                                         </td>
-                                        <td class="text-end">
+                                        <td class="text-end" data-label="Action">
                                             <div class="fr-action-dd">
                                                 <button type="button" class="fr-action-dd-toggle" onclick="frToggleActionDropdown(this)" title="Actions">
                                                     <i class="fa-solid fa-ellipsis-vertical"></i>
@@ -280,6 +382,7 @@
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <div class="d-flex align-items-center gap-2">
                             <h6 class="mb-0 fw-bold text-white">Report <span id="fr-d-id">#—</span></h6>
+                            <span id="fr-d-model" class="fr-model-chip fr-hidden"></span>
                             <span id="fr-d-status" class="badge bg-warning text-dark">Pending</span>
                         </div>
                         <button type="button" class="btn btn-sm btn-secondary" onclick="frBackToList()">
@@ -296,7 +399,9 @@
                             <div class="fr-col-head">What I reported</div>
 
                             <div class="rg-report-top mb-3">
-                                <img id="fr-d-image" class="rg-report-thumb fr-hidden" alt="Reported detection" onclick="frZoom(this.src)">
+                                <div class="rg-thumb-wrap">
+                                    <img id="fr-d-image" class="rg-report-thumb fr-hidden" alt="Reported detection" onclick="frZoom(this.src, frDetailBoxes, frDetailSource)">
+                                </div>
                                 <div id="fr-d-image-missing" class="rg-report-thumb d-flex align-items-center justify-content-center text-secondary fr-hidden"><i class="fas fa-image"></i></div>
                                 <div id="fr-block-name" class="rg-flag-block rg-flag-chip rg-report-top-info" data-section="name">
                                     <div id="fr-type-badge" class="rg-type-badge">
@@ -413,7 +518,13 @@
 </div>
 
 <div id="fr-lightbox" class="fr-lightbox fr-hidden" onclick="frCloseZoom()">
-    <img id="fr-lightbox-img" src="" alt="Enlarged photo">
+    <div class="fr-lightbox-inner" onclick="event.stopPropagation()">
+        <span id="fr-lightbox-badge" class="fr-model-chip fr-hidden"></span>
+        <div class="rg-thumb-wrap">
+            <img id="fr-lightbox-img" src="" alt="Enlarged photo">
+            <canvas id="fr-lightbox-canvas" class="rg-thumb-canvas fr-hidden"></canvas>
+        </div>
+    </div>
 </div>
 
 {{-- ============ Create a Report (floating modal) ============
@@ -459,12 +570,17 @@
                 <div class="col-lg-6">
                     <div class="fr-panel h-100">
                         <div class="d-flex align-items-center justify-content-between mb-2">
-                            <div class="small fw-bold text-white">Detection information</div>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="small fw-bold text-white">Detection information</div>
+                                <span id="cr-d-model" class="fr-model-chip fr-hidden"></span>
+                            </div>
                             <span class="rg-mirror-note">Red underline = marked as wrong</span>
                         </div>
 
                         <div class="rg-report-top mb-3">
-                            <img id="cr-d-image" class="rg-report-thumb fr-hidden" alt="Selected scan" onclick="frZoom(this.src)">
+                            <div class="rg-thumb-wrap">
+                                <img id="cr-d-image" class="rg-report-thumb fr-hidden" alt="Selected scan" onclick="frZoom(this.src, crSelectedInstance ? crSelectedInstance.boxes : null, crSelectedInstance ? crSelectedInstance.source : null)">
+                            </div>
                             <div id="cr-d-image-missing" class="rg-report-thumb d-flex align-items-center justify-content-center text-secondary fr-hidden"><i class="fas fa-image"></i></div>
                             <div id="cr-block-name" class="rg-flag-block rg-flag-chip rg-report-top-info" data-section="name">
                                 <div id="cr-type-badge" class="rg-type-badge">
@@ -559,6 +675,100 @@
 const frReports  = @json($reports);
 const frSections = @json($sections);
 const frStatuses = @json($statuses);
+
+// ---------- YOLO11n box overlay + model name (same approach as History) ----------
+// The stored photo is always the plain photo. Its boxes travel separately in
+// detection.boxes / instance.boxes ({boxes, src_w, src_h}, in the original
+// photo's pixel coordinates) and are painted on a canvas ONLY inside the
+// lightbox, once it is actually visible — never on the small thumbnails.
+const FR_MODEL_LABELS = { yolo11n: 'YOLO11n', groq: 'Groq AI', model: 'MobileNetV2' };
+
+// Tracks whichever boxes/source are currently loaded into the detail
+// view's thumbnail, so its onclick (fixed markup, can't read live state
+// otherwise) always zooms with the right overlay.
+let frDetailBoxes = null;
+let frDetailSource = null;
+
+// Fills a model-name chip (or hides it when the engine is unknown).
+function frSetModelBadge(badgeId, source) {
+    const badge = document.getElementById(badgeId);
+    if (!badge) return;
+    const label = FR_MODEL_LABELS[source] || null;
+    if (label) {
+        badge.textContent = label;
+        badge.classList.remove('fr-hidden');
+    } else {
+        badge.classList.add('fr-hidden');
+    }
+}
+
+// Boxes are in the original photo's coordinate space; the lightbox <img>
+// renders the whole photo (object-fit: contain), so scale/offset come from
+// the photo's own size, not just the element box.
+function frContainRect(boxW, boxH, srcW, srcH) {
+    const scale = Math.min(boxW / srcW, boxH / srcH);
+    const renderW = srcW * scale, renderH = srcH * scale;
+    return { x: (boxW - renderW) / 2, y: (boxH - renderH) / 2, width: renderW, height: renderH };
+}
+
+function frDrawLightboxBoxes() {
+    const canvas = document.getElementById('fr-lightbox-canvas');
+    const img = document.getElementById('fr-lightbox-img');
+    if (!canvas || !img) return;
+
+    // While the lightbox is display:none the <img> reads as 0x0 — nothing to
+    // draw against yet. A later call (image load / next frame / resize) does it.
+    const w = img.clientWidth, h = img.clientHeight;
+    if (!w || !h) return;
+
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+
+    const data = window.frLightboxBoxes;
+    const srcW = Number(data && data.src_w), srcH = Number(data && data.src_h);
+    if (!data || !Array.isArray(data.boxes) || !data.boxes.length || !srcW || !srcH) {
+        canvas.classList.add('fr-hidden');
+        return;
+    }
+    canvas.classList.remove('fr-hidden');
+
+    const rect = frContainRect(w, h, srcW, srcH);
+    const scaleX = rect.width / srcW;
+    const scaleY = rect.height / srcH;
+
+    data.boxes.forEach(d => {
+        if (!d || !d.box) return;
+        const x = rect.x + d.box.x * scaleX;
+        const y = rect.y + d.box.y * scaleY;
+        const bw = d.box.width * scaleX;
+        const bh = d.box.height * scaleY;
+
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, bw, bh);
+
+        const label = d.label || d.className || '';
+        if (!label) return;
+        ctx.font = '600 13px system-ui, sans-serif';
+        const textW = ctx.measureText(label).width + 10;
+        const labelH = 19;
+        ctx.fillStyle = '#10b981';
+        ctx.fillRect(x, Math.max(0, y - labelH), textW, labelH);
+        ctx.fillStyle = '#06281f';
+        ctx.fillText(label, x + 5, Math.max(13, y - 5));
+    });
+}
+
+// Redraw whenever the enlarged photo's rendered size changes for any reason:
+// the lightbox just having opened (0x0 -> real size), the image finishing
+// loading, or a window resize.
+if (window.ResizeObserver) {
+    new ResizeObserver(() => frDrawLightboxBoxes()).observe(document.getElementById('fr-lightbox-img'));
+}
 
 window.frBackToList = function() {
     document.getElementById('fr-detail-view').classList.add('fr-hidden');
@@ -669,13 +879,27 @@ function frSetImage(imgId, missingId, src) {
     }
 }
 
-window.frZoom = function(src) {
+window.frZoom = function(src, boxesData, source) {
     if (!src) return;
-    document.getElementById('fr-lightbox-img').src = src;
+    const img = document.getElementById('fr-lightbox-img');
+    const canvas = document.getElementById('fr-lightbox-canvas');
+    window.frLightboxBoxes = boxesData || null;
+
+    // Clear any overlay left from the previous photo, then show the
+    // lightbox FIRST so the <img> has a real size to measure.
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    canvas.classList.add('fr-hidden');
+    frSetModelBadge('fr-lightbox-badge', source);
+
+    img.onload = frDrawLightboxBoxes;
+    img.src = src;
     document.getElementById('fr-lightbox').classList.remove('fr-hidden');
+    // Already-decoded (cached / same data URI) images don't fire onload again.
+    requestAnimationFrame(frDrawLightboxBoxes);
 };
 window.frCloseZoom = function() {
     document.getElementById('fr-lightbox').classList.add('fr-hidden');
+    window.frLightboxBoxes = null;
 };
 
 window.frOpenReport = function(id) {
@@ -689,6 +913,9 @@ window.frOpenReport = function(id) {
     badge.className = 'badge ' + meta.class;
 
     frSetImage('fr-d-image', 'fr-d-image-missing', r.detection.image);
+    frDetailBoxes = r.detection.boxes || null;
+    frDetailSource = r.detection.source || null;
+    frSetModelBadge('fr-d-model', frDetailSource);
     document.getElementById('fr-d-class').textContent = r.detection.class_name;
 
     // 'nutrient' only ever appears in info for a disease result (the
@@ -1109,6 +1336,7 @@ function crEscape(text) {
 
 function renderCrDetail(group, inst) {
     frSetImage('cr-d-image', 'cr-d-image-missing', inst.image);
+    frSetModelBadge('cr-d-model', inst.source || null);
 
     const badge = document.getElementById('cr-type-badge');
     const icon = document.getElementById('cr-type-badge-icon');
@@ -1307,6 +1535,17 @@ window.submitCreateReport = async function() {
             message:          description,
             suggested_class:  document.getElementById('cr-suggested').value || null
         };
+
+        // The scan's YOLO11n boxes ({boxes, src_w, src_h}, same shape History
+        // stores) travel with the report so the enlarged photo can show them.
+        // Without this the report keeps only the plain photo and the zoom
+        // has nothing to draw.
+        const scanBoxes = crSelectedInstance.boxes;
+        if (scanBoxes && Array.isArray(scanBoxes.boxes) && scanBoxes.boxes.length && scanBoxes.src_w && scanBoxes.src_h) {
+            payload.detection_boxes = scanBoxes.boxes;
+            payload.boxes_src_w     = scanBoxes.src_w;
+            payload.boxes_src_h     = scanBoxes.src_h;
+        }
 
         const response = await fetch("{{ route('farmer.reports.store') }}", {
             method: 'POST',

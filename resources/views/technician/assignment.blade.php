@@ -361,8 +361,84 @@
 .ta-menu-item-soon { color: var(--ta-muted); cursor: not-allowed; }
 .ta-no-pin-note { font-size: .7rem; color: var(--ta-muted); font-style: italic; margin-top: 4px; }
 
+/* ===================== MOBILE (phones) ===================== */
 @media (max-width: 767px) {
-    .ta-map-wrapper { min-height: 300px; }
+    .my-assign { font-size: .92rem; }
+
+    /* header */
+    .ta-page-header { gap: .6rem; margin-bottom: 1rem; }
+    .ta-title-row { gap: .6rem; }
+    .ta-title-icon { width: 34px; height: 34px; font-size: 14px; }
+    .ta-page-header h5 { font-size: 1.02rem; }
+    .ta-page-header .text-muted { font-size: .78rem; }
+    .ta-status-pill { font-size: .72rem; padding: .35rem .7rem; }
+
+    /* panels tighten up */
+    .ta-panel { padding: .9rem; border-radius: 10px; margin-bottom: 1rem; }
+    .ta-panel-header { margin-bottom: .75rem; }
+    .ta-panel-header h6 { font-size: .92rem; }
+    .ta-panel-header p.small { font-size: .74rem; }
+
+    /* map */
+    .ta-map-header { gap: .4rem; }
+    .ta-map-wrapper { min-height: 240px; border-radius: 8px; }
+    .ta-map-controls { top: 8px; right: 8px; }
+    .ta-map-ctrl-btn { width: 30px; height: 30px; font-size: .74rem; }
+    .ta-layer-menu { right: 0; top: calc(100% + 6px); }
+    .ta-map-fallback-note { left: 8px; right: 8px; font-size: .66rem; text-align: center; }
+    .ta-map-empty-hint { font-size: .72rem; }
+
+    /* ---- assignments table -> stacked cards ---- */
+    .ta-table-panel { margin-top: 0; }
+    .ta-table-scroll { border: 0; border-radius: 0; overflow: visible; background: transparent; }
+    .ta-table { min-width: 0; display: block; font-size: .8rem; }
+    .ta-table thead { display: none; }
+    .ta-table tbody { display: block; }
+    .ta-table tr {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        column-gap: 10px;
+        row-gap: 6px;
+        align-items: start;
+        background: var(--ta-panel-2);
+        border: 1px solid var(--ta-border);
+        border-radius: 14px;
+        padding: 12px 12px 11px;
+        margin-bottom: 10px;
+    }
+    .ta-table tbody tr:hover { background: var(--ta-panel-2); }
+    .ta-table td {
+        display: block;
+        border: 0;
+        padding: 0;
+        height: auto;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        vertical-align: top;
+    }
+    /* col order: 1 Area, 2 Assigned By, 3 From, 4 To, 5 Status, 6 Actions */
+    .ta-table td:nth-child(1) { grid-column: 1 / 2; grid-row: 1; }
+    .ta-table td:nth-child(6) { grid-column: 2 / 3; grid-row: 1; justify-self: end; }
+    .ta-table td:nth-child(5) { grid-column: 1 / -1; grid-row: 2; }
+    .ta-table td:nth-child(2) { grid-column: 1 / -1; grid-row: 3; font-size: .74rem; }
+    .ta-table td:nth-child(3),
+    .ta-table td:nth-child(4) { grid-column: 1 / -1; font-size: .76rem; color: var(--ta-muted); }
+    .ta-table td:nth-child(3) { grid-row: 4; }
+    .ta-table td:nth-child(4) { grid-row: 5; }
+    .ta-table td:nth-child(3)::before { content: "From: "; color: var(--ta-muted); }
+    .ta-table td:nth-child(4)::before { content: "To: "; color: var(--ta-muted); }
+    .ta-empty-row { grid-column: 1 / -1; padding: 1.5rem !important; font-size: .8rem; }
+
+    .ta-area-cell { gap: .5rem; }
+    .ta-area-icon { width: 28px; height: 28px; font-size: .68rem; }
+    .ta-area-name { font-size: .84rem; }
+    .ta-area-sub { font-size: .7rem; }
+
+    .ta-dots-btn { width: 32px; height: 32px; }
+    .ta-dropdown-menu { min-width: 140px; }
+
+    .ta-table-footer { flex-direction: column; align-items: flex-start; gap: .5rem; }
+    .ta-entries-label { font-size: .72rem; }
 }
 </style>
 

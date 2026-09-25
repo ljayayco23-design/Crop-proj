@@ -174,6 +174,17 @@
     .fr-radio { display: flex; align-items: center; gap: 9px; font-size: .85rem; color: #cbd5e1; padding: 5px 0; cursor: pointer; }
     .fr-radio input { accent-color: #10b981; }
 
+    /* Model name chip in the header, next to the report ID — never drawn on
+       top of the photo (the photo stays plain; boxes only appear on zoom). */
+    .fr-model-chip {
+        display: inline-flex; align-items: center;
+        background: rgba(16,185,129,.16); color: #34d399;
+        border: 1px solid rgba(16,185,129,.4);
+        font-size: .68rem; font-weight: 800; letter-spacing: .03em;
+        padding: 3px 9px; border-radius: 6px; text-transform: uppercase;
+        white-space: nowrap;
+    }
+
     /* Image lightbox */
     .fr-lightbox {
         position: fixed; inset: 0; z-index: 1090; background: rgba(2,6,12,.85);
@@ -333,15 +344,15 @@
     .sr-desc { max-width: 320px; }
     .sr-badge {
         display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
-        padding: 4px 12px; border-radius: 999px; font-size: .74rem; font-weight: 700; letter-spacing: .01em;
+        background: transparent; padding: 0; border-radius: 0; font-size: .74rem; font-weight: 700; letter-spacing: .01em;
     }
-    .sr-status-pending     { background: rgba(148,163,184,.18); color: #cbd5e1; }
-    .sr-status-open        { background: rgba(244,114,182,.18); color: #f472b6; }
-    .sr-status-in_progress { background: #facc15; color: #3b2f00; }
-    .sr-status-resolved    { background: #22c55e; color: #052e16; }
-    .sr-type-ai_model       { background: #ef4444; color: #fff; }
-    .sr-type-knowledge_base { background: rgba(59,130,246,.18); color: #60a5fa; }
-    .sr-type-system         { background: rgba(148,163,184,.18); color: #cbd5e1; }
+    .sr-status-pending     { color: #cbd5e1; }
+    .sr-status-open        { color: #f472b6; }
+    .sr-status-in_progress { color: #facc15; }
+    .sr-status-resolved    { color: #22c55e; }
+    .sr-type-ai_model       { color: #ef4444; }
+    .sr-type-knowledge_base { color: #60a5fa; }
+    .sr-type-system         { color: #cbd5e1; }
 
     /* ---------- Technician resolution (bottom panel + View modal) ---------- */
     .fr-col-head {
@@ -374,6 +385,120 @@
     .fe-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid #263349; }
     .fe-body { padding: 16px 18px; overflow-y: auto; }
     .fe-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid #263349; }
+
+    /* ===================== MOBILE (phones) ===================== */
+    @media (max-width: 767px) {
+        .page-header { gap: .5rem; margin-bottom: 1rem !important; }
+        .page-header-title h4 { font-size: 1.05rem; }
+        .page-header .d-flex.flex-wrap.gap-2 { width: 100%; }
+        #fr-filter-status, #fr-filter-type, #fr-filter-search {
+            width: 100% !important; flex: 1 1 100%;
+        }
+
+        .fr-card { padding: .9rem !important; border-radius: 10px; }
+        .fr-panel { padding: 11px; }
+
+        /* ---- both report tables -> stacked cards ---- */
+        .table-responsive { overflow: visible; }
+        .fr-table { min-width: 0; display: block; font-size: .78rem; }
+        .fr-table thead { display: none; }
+        .fr-table, .fr-table tbody { display: block; width: 100%; }
+
+        .fr-table tbody tr {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-areas:
+                "id       type"
+                "category category"
+                "desc     desc"
+                "date     status"
+                "actions  actions";
+            column-gap: 12px;
+            /* No fill on the row itself — a solid/gradient background here
+               sat as a visibly different shade on top of the .fr-card panel
+               behind it. The border (color-matched, not a bright line) is
+               what separates one report from the next now. */
+            background: transparent;
+            border: 1px solid #263349;
+            border-radius: 14px;
+            padding: 14px 14px 10px;
+            margin-bottom: 12px;
+        }
+        .fr-table tbody tr:last-child { margin-bottom: 0; }
+
+        .fr-table tbody td {
+            display: block;
+            width: 100%;
+            padding: 0;
+            border: none !important;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            /* Belt-and-suspenders: the theme's own table/cell styles can
+               still paint a background on individual <td>s even with the
+               row itself transparent — that stray fill is what showed up
+               as a leftover dark/colored box. Strip it so every cell
+               matches the card. */
+            background: transparent !important;
+        }
+
+        #fe-table-body td[data-label="Report ID"]   { grid-area: id; font-size: .95rem; margin-bottom: 10px; }
+        #fe-table-body td[data-label="Type"]         { grid-area: type; text-align: right; margin-bottom: 10px; }
+        #fe-table-body td[data-label="Category"]     { grid-area: category; margin-bottom: 8px; }
+        #fe-table-body td[data-label="Description"]  { grid-area: desc; margin-bottom: 10px; }
+        #fe-table-body td[data-label="Date"]         { grid-area: date; }
+        #fe-table-body td[data-label="Status"]       { grid-area: status; text-align: right; }
+        #fe-table-body td[data-label="Action"] {
+            grid-area: actions; text-align: right;
+            padding-top: 10px; margin-top: 6px;
+            border-top: 1px solid #1d2636 !important;
+        }
+
+        #fr-table-body td[data-label="Report ID"] { grid-area: id; font-size: .95rem; margin-bottom: 10px; }
+        #fr-table-body td[data-label="Detection"]  { grid-area: type; text-align: right; margin-bottom: 10px; }
+        #fr-table-body td[data-label="Problem"]    { grid-area: category; margin-bottom: 8px; }
+        #fr-table-body td[data-label="Farmer"]     { grid-area: desc; margin-bottom: 10px; }
+        #fr-table-body td[data-label="Date"]       { grid-area: date; }
+        #fr-table-body td[data-label="Status"]     { grid-area: status; text-align: right; }
+        #fr-table-body td[data-label="Action"] {
+            grid-area: actions; text-align: right;
+            padding-top: 10px; margin-top: 6px;
+            border-top: 1px solid #1d2636 !important;
+        }
+
+        .fr-table td[data-label]:not([data-label="Report ID"]):not([data-label="Type"]):not([data-label="Detection"]):not([data-label="Status"]):not([data-label="Action"])::before {
+            content: attr(data-label);
+            display: block;
+            font-size: .62rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: #64748b;
+            margin-bottom: 3px;
+        }
+
+        .fr-table .sr-desc { max-width: 100%; }
+
+        /* ---- review view ---- */
+        .fr-detail-card { padding: .9rem !important; }
+        .rg-report-top { gap: 10px; }
+        .rg-report-thumb, #fr-d-image-missing { width: 72px; height: 72px; }
+        .rg-confidence-gauge { width: 118px; height: 70px; }
+        .rg-report-name { font-size: 1rem; }
+        .rg-report-stat { padding: 8px 10px; }
+
+        .fe-backdrop { padding: 1rem .6rem; }
+        .fe-dialog { border-radius: 12px; }
+        .fe-head { padding: 12px 14px; }
+        .fe-body { padding: 12px 14px; }
+        .fe-foot { flex-wrap: wrap; padding: 10px 14px; }
+        .fe-foot .btn { flex: 1 1 auto; }
+
+        #fr-detail-view .fe-foot { flex-direction: column-reverse; }
+        #fr-detail-view .fe-foot .btn { width: 100%; }
+
+        .fr-resolve-split { gap: 10px; }
+        .fr-resolve-split > div { flex: 1 1 100%; }
+    }
 </style>
 
 <div class="nxl-content">
@@ -442,15 +567,15 @@
                                 <tbody id="fe-table-body">
                                     @foreach($escalatedReports as $esc)
                                         <tr data-esc-id="{{ $esc['id'] }}">
-                                            <td class="fw-bold">#{{ $esc['sr_code'] }}</td>
-                                            <td><span class="sr-badge sr-type-{{ $esc['type_key'] }}">{{ $esc['type'] }}</span></td>
-                                            <td>{{ $esc['category'] }}</td>
-                                            <td class="sr-desc">{{ $esc['description'] }}</td>
-                                            <td class="text-secondary">{{ $esc['escalated_date'] }}</td>
-                                            <td>
+                                            <td class="fw-bold" data-label="Report ID">#{{ $esc['sr_code'] }}</td>
+                                            <td data-label="Type"><span class="sr-badge sr-type-{{ $esc['type_key'] }}">{{ $esc['type'] }}</span></td>
+                                            <td data-label="Category">{{ $esc['category'] }}</td>
+                                            <td class="sr-desc" data-label="Description">{{ $esc['description'] }}</td>
+                                            <td class="text-secondary" data-label="Date">{{ $esc['escalated_date'] }}</td>
+                                            <td data-label="Status">
                                                 <span class="sr-badge sr-status-badge sr-status-{{ $esc['admin_status'] }}">{{ $adminStatuses[$esc['admin_status']]['label'] }}</span>
                                             </td>
-                                            <td class="text-end">
+                                            <td class="text-end" data-label="Action">
                                                 <button type="button" class="btn btn-sm btn-outline-info" onclick="frOpenEscModal({{ $esc['id'] }})">
                                                     <i class="fa-solid fa-eye me-1"></i> View
                                                 </button>
@@ -491,12 +616,12 @@
                                         data-status="{{ $report['status'] }}"
                                         data-type="{{ $report['problem_summary'] }}"
                                         data-search="{{ strtolower($report['report_id'].' '.$report['farmer_name'].' '.$report['detection']['class_name']) }}">
-                                        <td class="fw-bold">#{{ $report['report_id'] }}</td>
-                                        <td>{{ $report['detection']['class_name'] }}</td>
-                                        <td>{{ $report['problem_summary'] }}</td>
-                                        <td>{{ $report['farmer_name'] }}</td>
-                                        <td class="text-secondary">{{ $report['date'] }}</td>
-                                        <td>
+                                        <td class="fw-bold" data-label="Report ID">#{{ $report['report_id'] }}</td>
+                                        <td data-label="Detection">{{ $report['detection']['class_name'] }}</td>
+                                        <td data-label="Problem">{{ $report['problem_summary'] }}</td>
+                                        <td data-label="Farmer">{{ $report['farmer_name'] }}</td>
+                                        <td class="text-secondary" data-label="Date">{{ $report['date'] }}</td>
+                                        <td data-label="Status">
                                             <span class="badge {{ $statuses[$report['status']]['class'] }}">
                                                 {{ $statuses[$report['status']]['label'] }}
                                             </span>
@@ -506,7 +631,7 @@
                                                 </span>
                                             @endif
                                         </td>
-                                        <td class="text-end">
+                                        <td class="text-end" data-label="Action">
                                             <button type="button" class="btn btn-sm btn-outline-info"
                                                     onclick="frOpenReport('{{ $report['report_id'] }}')">
                                                 <i class="fa-solid fa-eye me-1"></i> View
@@ -534,6 +659,7 @@
                                 <div class="fr-eyebrow mb-1">Farmer Report Review</div>
                                 <div class="d-flex align-items-center gap-2">
                                     <h6 class="mb-0 fw-bold text-white">Report <span id="fr-d-id">#—</span></h6>
+                                    <span id="fr-d-model" class="fr-model-chip fr-hidden"></span>
                                     <span id="fr-d-status" class="badge bg-warning text-dark fr-d-status-pill">Pending</span>
                                 </div>
                             </div>
@@ -557,7 +683,7 @@
                                     </div>
 
                                     <div class="rg-report-top mb-3">
-                                        <img id="fr-d-image" class="rg-report-thumb fr-hidden" alt="Reported detection" onclick="frZoom(this.src)">
+                                        <img id="fr-d-image" class="rg-report-thumb fr-hidden" alt="Reported detection" onclick="frZoom(this.src, frCurrent && frCurrent.detection ? frCurrent.detection.boxes : null)">
                                         <div id="fr-d-image-missing" class="rg-report-thumb d-flex align-items-center justify-content-center text-secondary fr-hidden"><i class="fas fa-image"></i></div>
                                         <div id="fr-block-name" class="rg-flag-block rg-flag-chip rg-report-top-info" data-section="name">
                                             <div id="fr-type-badge" class="rg-type-badge">
@@ -592,8 +718,6 @@
                                             </div>
                                         </div>
                                     </div>
-
-                                    <div class="small text-secondary mb-3">Engine: <span id="fr-d-source" class="text-light">—</span></div>
 
                                     <div id="fr-d-info"></div>
                                 </div>
@@ -805,9 +929,15 @@
     </div>
 </div>
 
-{{-- Click-to-enlarge, same idea as the History page's image modal. --}}
-<div id="fr-lightbox" class="fr-lightbox fr-hidden" onclick="frCloseZoom()">
-    <img id="fr-lightbox-img" src="" alt="Enlarged photo">
+{{-- Click-to-enlarge, same idea as the History page's image modal — plus the
+     same canvas overlay History uses to draw YOLO11n bounding boxes on top
+     of the full-size photo. The report photo itself is always the plain
+     photo; the boxes come from detection.boxes (see frZoom() below). --}}
+<div id="fr-lightbox" class="fr-lightbox fr-hidden" onclick="if (event.target === this) frCloseZoom()">
+    <div id="fr-lightbox-wrap" style="position: relative; display: inline-block; max-width: 100%;">
+        <img id="fr-lightbox-img" src="" alt="Enlarged photo">
+        <canvas id="fr-lightbox-boxes" style="position: absolute; left: 0; top: 0; pointer-events: none;"></canvas>
+    </div>
 </div>
 @endsection
 
@@ -843,11 +973,15 @@ const frSectionMeta = {
 
 // Same engine names shown in the detection page's model switcher — "On-device
 // model" doesn't exist there, so this mirrors the actual three options
-// (MobileNetV2 / yollo11n / Groq AI) instead of a made-up generic label.
+// (MobileNetV2 / yolo11n / Groq AI) instead of a made-up generic label.
+// NOTE: this key used to be misspelled "yollo11n", which never matched the
+// real `source` value ('yolo11n') coming back from the backend, so a
+// yolo11n-sourced report silently fell back to showing the raw source
+// string instead of this label.
 const frEngineLabels = {
-    model:    'MobileNetV2 (On-Device)',
-    yollo11n: 'yollo11n',
-    groq:     'Groq AI'
+    model:   'MobileNetV2',
+    yolo11n: 'YOLO11n',
+    groq:    'Groq AI'
 };
 
 let frCurrent = null;
@@ -938,13 +1072,105 @@ function frSetImage(imgId, missingId, src) {
     }
 }
 
-window.frZoom = function(src) {
+// Same contain-rect math as History's getModalContainRect() — the photo is
+// letterboxed inside the lightbox (object-fit: contain), so a box's pixel
+// coordinates (measured against the ORIGINAL photo, src_w x src_h) have to
+// be scaled onto whatever rectangle the photo actually rendered into.
+function frGetContainRect(boxW, boxH, srcW, srcH) {
+    const scale = Math.min(boxW / srcW, boxH / srcH);
+    const renderW = srcW * scale, renderH = srcH * scale;
+    return { x: (boxW - renderW) / 2, y: (boxH - renderH) / 2, width: renderW, height: renderH };
+}
+
+let frPendingBoxes = null, frPendingSrcW = 0, frPendingSrcH = 0;
+
+// Same drawing code as History's drawModalBoxes() — a green rectangle plus
+// a filled label tag per box, scaled from the original photo's coordinate
+// space onto whatever size the lightbox actually rendered the image at.
+function frDrawLightboxBoxes() {
+    const canvas = document.getElementById('fr-lightbox-boxes');
+    const img = document.getElementById('fr-lightbox-img');
+    if (!canvas || !img) return;
+
+    const w = img.clientWidth, h = img.clientHeight;
+    if (!w || !h) return; // image not laid out yet — nothing to draw against
+
+    const ctx = canvas.getContext('2d');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const boxes = frPendingBoxes && frPendingBoxes.boxes ? frPendingBoxes.boxes : null;
+    const srcW = frPendingSrcW || (frPendingBoxes ? frPendingBoxes.src_w : 0);
+    const srcH = frPendingSrcH || (frPendingBoxes ? frPendingBoxes.src_h : 0);
+    if (!boxes || !boxes.length || !srcW || !srcH) return;
+
+    const rect = frGetContainRect(canvas.width, canvas.height, srcW, srcH);
+    const scaleX = rect.width / srcW;
+    const scaleY = rect.height / srcH;
+
+    boxes.forEach(d => {
+        if (!d || !d.box) return;
+        const x = rect.x + d.box.x * scaleX;
+        const y = rect.y + d.box.y * scaleY;
+        const bw = d.box.width * scaleX;
+        const bh = d.box.height * scaleY;
+
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, bw, bh);
+
+        const label = d.label || d.className || '';
+        if (!label) return;
+        ctx.font = '600 13px system-ui, sans-serif';
+        const textW = ctx.measureText(label).width + 10;
+        const labelH = 19;
+        ctx.fillStyle = '#10b981';
+        ctx.fillRect(x, Math.max(0, y - labelH), textW, labelH);
+        ctx.fillStyle = '#06281f';
+        ctx.fillText(label, x + 5, Math.max(13, y - 5));
+    });
+}
+
+// boxes: the report's detection.boxes object ({boxes:[...], src_w, src_h}) —
+// saved with every yolo11n report (live "Report the Problem" and "Create a
+// Report" alike) and drawn here, on top of the plain photo, only once the
+// photo is enlarged. null for reports without box data (older reports,
+// other engines) and for the supporting photo.
+window.frZoom = function(src, boxes) {
     if (!src) return;
-    document.getElementById('fr-lightbox-img').src = src;
+    const canvas = document.getElementById('fr-lightbox-boxes');
+    if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+
+    frPendingBoxes = boxes || null;
+    frPendingSrcW = boxes ? (boxes.src_w || 0) : 0;
+    frPendingSrcH = boxes ? (boxes.src_h || 0) : 0;
+
+    const img = document.getElementById('fr-lightbox-img');
+    img.onload = () => frDrawLightboxBoxes();
+    img.src = src;
     document.getElementById('fr-lightbox').classList.remove('fr-hidden');
+
+    // Same reasoning as History's shown.bs.modal fix: right after removing
+    // fr-hidden the lightbox may not have finished its layout/paint yet, so
+    // clientWidth/clientHeight can still read 0 for one frame. Drawing on
+    // the next animation frame (in addition to img.onload above) covers
+    // whichever of the two actually finishes last.
+    requestAnimationFrame(() => frDrawLightboxBoxes());
 };
+// Keep the overlay aligned if the window is resized while the photo is zoomed.
+window.addEventListener('resize', () => {
+    if (!document.getElementById('fr-lightbox').classList.contains('fr-hidden')) frDrawLightboxBoxes();
+});
+if (window.ResizeObserver) {
+    new ResizeObserver(() => frDrawLightboxBoxes()).observe(document.getElementById('fr-lightbox-img'));
+}
 window.frCloseZoom = function() {
     document.getElementById('fr-lightbox').classList.add('fr-hidden');
+    const canvas = document.getElementById('fr-lightbox-boxes');
+    if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
 };
 
 // ==================== REVIEW ====================
@@ -972,7 +1198,11 @@ window.frOpenReport = function(id) {
     dmgEl.textContent = Number.isFinite(Number(r.detection.severity_percent)) ? r.detection.severity_percent + '%' : '—';
     dmgEl.className = 'rg-report-stat-value ' + sevColor;
 
-    document.getElementById('fr-d-source').textContent = frEngineLabels[r.detection.source] || r.detection.source || '—';
+    // Model name next to the report ID (hidden when the engine is unknown).
+    const modelChip = document.getElementById('fr-d-model');
+    const modelLabel = frEngineLabels[r.detection.source] || null;
+    modelChip.textContent = modelLabel || '';
+    modelChip.classList.toggle('fr-hidden', !modelLabel);
 
     // 'nutrient' only ever appears in info for a disease result (the farmer
     // page hides that section entirely for pests before snapshotting it),

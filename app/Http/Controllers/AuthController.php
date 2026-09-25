@@ -34,6 +34,14 @@ class AuthController extends Controller
 
     public function login(Request $request)
     {
+        // The offline-login script on the login page submits this same
+        // route via fetch() with these two headers set, so it can read a
+        // clean JSON result instead of a redirect. A normal <form> POST
+        // (no JS, or JS disabled) never sends them, so nothing below
+        // changes for that path — it keeps returning redirects exactly as
+        // before.
+        $isAjax = $request->ajax() || $request->wantsJson();
+
         // Gracefully clear old active session if user submits form while logged in
         if (Auth::check()) {
             Auth::logout();
@@ -48,6 +56,12 @@ class AuthController extends Controller
                 'password' => 'required',
             ]);
         } catch (ValidationException $e) {
+            if ($isAjax) {
+                return response()->json([
+                    'success' => false,
+                    'message' => collect($e->errors())->flatten()->first() ?? 'Invalid input.',
+                ], 422);
+            }
             return back()
                 ->withErrors($e->errors())
                 ->withInput($request->except(['document_photo_base64']));
@@ -179,25 +193,54 @@ class AuthController extends Controller
         $user = User::where('email', $request->email)->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
+            if ($isAjax) {
+                return response()->json(['success' => false, 'message' => 'Mali ang email o password.'], 422);
+            }
             return back()->with('error', 'Mali ang email o password.');
         }
 
         if ($user->role === 'farmer' && $user->status !== 'approved') {
             if ($user->status === 'pending') {
+                if ($isAjax) {
+                    return response()->json(['success' => false, 'status' => 'pending', 'message' => 'Ang iyong account ay naka-pending pa para sa approval.'], 403);
+                }
                 return back()->with('pending', $user->email);
+            }
+            if ($isAjax) {
+                return response()->json(['success' => false, 'status' => 'declined', 'message' => 'Ang iyong account ay na-decline.'], 403);
             }
             return back()->with('declined', $user->email);
         }
 
-        (Auth::login($user));
+        (Auth::login($user, true));
         $request->session()->regenerate();
 
         // Developer is a hardcoded, seeded-only account (see the
         // 2026_08_23_000002_seed_developer_user migration) that reuses the
         // admin panel wholesale — same dashboard, same views.
-        if ($user->role === 'admin' || $user->role === 'developer') return redirect('/admin/dashboard');
-        if ($user->role === 'technician') return redirect('/technician/dashboard');
-        return redirect('/farmer/dashboard');
+        if ($user->role === 'admin' || $user->role === 'developer') {
+            $redirectUrl = '/admin/dashboard';
+        } elseif ($user->role === 'technician') {
+            $redirectUrl = '/technician/dashboard';
+        } else {
+            $redirectUrl = '/farmer/dashboard';
+        }
+
+        if ($isAjax) {
+            // The offline-login script caches full_name/role/redirect (never
+            // the raw password) alongside a locally-hashed password so this
+            // same device can "log in" again with no network. See the
+            // <script> block at the bottom of login.blade.php.
+            return response()->json([
+                'success'   => true,
+                'redirect'  => $redirectUrl,
+                'role'      => $user->role,
+                'full_name' => $user->full_name ?? $user->name,
+                'email'     => $user->email,
+            ]);
+        }
+
+        return redirect($redirectUrl);
     }
 
     // ==========================================

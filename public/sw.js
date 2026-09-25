@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cropsense-offline-v4'; 
+const CACHE_NAME = 'cropsense-offline-v5'; 
 
 // Only precache PUBLIC static assets here. 
 // Do not put auth-protected Laravel routes here.
@@ -7,10 +7,17 @@ const PRECACHE_ASSETS = [
     '/model/model.json',
     '/model/metadata.json',
     '/model/weights.bin',
+    '/model/best.onnx',
+
 
     // External CSS
     'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css',
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
+
+    // Font Awesome icon files (Schedule page icons need these offline)
+    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-solid-900.woff2',
+    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-regular-400.woff2',
+    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-brands-400.woff2',
     
     // External JS & AI Models
     'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js',
@@ -58,6 +65,13 @@ self.addEventListener('fetch', (event) => {
     // This prevents the error: "Failed to execute 'put' on 'Cache': Request method 'POST' is unsupported"
     if (event.request.method !== 'GET') {
         return; 
+    }
+
+    // 📅 Schedule data endpoints must always hit the network (never the cache-first
+    // branch below), otherwise the page would read a stale list / stale CSRF token.
+    // The offline copy of the schedule lives in IndexedDB inside the page itself.
+    if (new URL(event.request.url).pathname.startsWith('/farmer/schedule/')) {
+        return;
     }
 
     // Check if the request is for an HTML page (Navigation)
