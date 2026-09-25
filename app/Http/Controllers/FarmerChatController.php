@@ -19,12 +19,24 @@ class FarmerChatController extends Controller
 
             $systemPrompt = "You are an expert AI assistant for rice farming. Answer clearly and concisely in {$language}.";
 
-            // Calls Groq API using the same environment key that works in your index page
+            // Calls Groq API using the same environment key that works in your index page.
+            //
+            // NOTE: 'llama-3.3-70b-versatile' was decommissioned by Groq on
+            // 2026-08-16 (see https://console.groq.com/docs/deprecations) —
+            // every request using it now gets rejected with a 400
+            // model_decommissioned error, which is exactly the
+            // "Groq API rejected the request" failure this endpoint was
+            // throwing. Groq's own deprecation notice recommends
+            // 'openai/gpt-oss-120b' as the replacement, so that's what
+            // this plain-text assistant now uses (kept separate from the
+            // vision model 'qwen/qwen3.8-27b' used by the image-detection
+            // engine in FarmerHistoryController — this chat never sends
+            // an image, so it doesn't need a vision-capable model).
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . env('GROQ_API_KEY'),
                 'Content-Type' => 'application/json',
             ])->post('https://api.groq.com/openai/v1/chat/completions', [
-                'model' => 'llama-3.3-70b-versatile',
+                'model' => 'openai/gpt-oss-120b',
                 'messages' => [
                     ['role' => 'system', 'content' => $systemPrompt],
                     ['role' => 'user', 'content' => $userMessage]
