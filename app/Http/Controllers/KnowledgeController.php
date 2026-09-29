@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\GroqTreatmentRecord;
 use App\Models\TreatmentRecord;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -125,7 +126,6 @@ class KnowledgeController extends Controller
     public function management()
     {
         $savedData = TreatmentRecord::whereNull('user_id')->latest()->get();
-        $groqData = DB::table('groq_treatment_records')->orderBy('updated_at', 'desc')->get();
         // Not yet wired into management.blade.php — added so the data is
         // there and queryable as soon as the view is updated to show it.
         $yoloData = DB::table('yolo11n_treatments_records')->orderBy('updated_at', 'desc')->get();
@@ -133,7 +133,101 @@ class KnowledgeController extends Controller
         $diseaseNames = self::diseaseNames();
         $pestNames = self::pestNames();
 
-        return view('admin.knowledge.management', compact('savedData', 'diseaseNames', 'pestNames', 'groqData', 'yoloData'));
+        // Groq AI Discovered Data: one entry per class, each holding the
+        // CURRENT (newest) row for every dialect. Rows are versioned, so the
+        // first row seen per (class, dialect) when walking newest-first is
+        // the one that is live on the detection page.
+        $groqClasses = [];
+        foreach (GroqTreatmentRecord::orderByDesc('id')->get() as $row) {
+            $key  = strtolower(trim($row->disease));
+            $lang = strtolower(trim((string) ($row->language ?? ''))) ?: 'tagalog';
+
+            if (!isset($groqClasses[$key])) {
+                $type = $row->type ?: self::resolveType($key);
+                $name = $type === 'disease'
+                    ? ($diseaseNames[$key] ?? null)
+                    : ($pestNames[$key] ?? null);
+
+                $groqClasses[$key] = [
+                    'key'        => $key,
+                    'type'       => $type,
+                    'name'       => $name ?? ucfirst(str_replace('_', ' ', $key)),
+                    'updated_by' => $row->updated_by ?? 'Groq AI',
+                    'updated_at' => optional($row->updated_at)->format('M d, Y h:i A'),
+                    'dialects'   => [],
+                ];
+            }
+
+            if (!isset($groqClasses[$key]['dialects'][$lang])) {
+                $groqClasses[$key]['dialects'][$lang] = [
+                    'description'         => $row->description ?? '',
+                    'treatments'          => $row->treatments ?? '',
+                    'causes'              => $row->causes ?? '',
+                    'nutrient_deficiency' => $row->nutrient_deficiency ?? '',
+                    'grain_damage'        => $row->grain_damage ?? '',
+                    'natural_enemies'     => $row->natural_enemies ?? '',
+                    'prevention'          => $row->prevention ?? '',
+                    'updated_by'          => $row->updated_by ?? 'Groq AI',
+                ];
+            }
+        }
+        $groqClasses = array_values($groqClasses);
+
+        return view('admin.knowledge.management', compact('savedData', 'diseaseNames', 'pestNames', 'groqClasses', 'yoloData'));
+    }
+
+    // Saves an admin edit of Groq knowledge for ONE class in ONE dialect. It
+    // inserts a new version row (so modifier.blade.php keeps its history) and
+    // that newest row immediately becomes what the detection page reuses.
+    // Never touches treatment_records (the main knowledge base).
+    public function saveGroqEntry(Request $request)
+    {
+        $key  = strtolower(trim((string) $request->input('disease')));
+        $lang = strtolower(trim((string) $request->input('language')));
+
+        if (!in_array($lang, ['tagalog', 'english', 'cebuano', 'hiligaynon'], true)) {
+            return response()->json(['success' => false, 'message' => 'Unknown dialect.'], 422);
+        }
+        if ($key === '') {
+            return response()->json(['success' => false, 'message' => 'Missing class.'], 422);
+        }
+
+        $type = self::resolveType($key);
+        $updatedBy = Auth::user()->full_name ?? 'Admin';
+
+        GroqTreatmentRecord::create([
+            'type'                => $type,
+            'disease'             => $key,
+            'language'            => $lang,
+            'description'         => (string) $request->input('description', ''),
+            'treatments'          => (string) $request->input('treatments', ''),
+            'causes'              => (string) $request->input('causes', ''),
+            'nutrient_deficiency' => $type === 'disease' ? (string) $request->input('nutrient_deficiency', '') : '',
+            'grain_damage'        => (string) $request->input('grain_damage', ''),
+            'natural_enemies'     => $type === 'pest' ? (string) $request->input('natural_enemies', '') : '',
+            'prevention'          => (string) $request->input('prevention', ''),
+            'updated_by'          => $updatedBy,
+        ]);
+
+        return response()->json([
+            'success'    => true,
+            'updated_by' => $updatedBy,
+            'updated_at' => now()->format('M d, Y h:i A'),
+        ]);
+    }
+
+    // Deletes ALL Groq detection data for one class (every dialect, every
+    // saved version) from groq_treatment_records ONLY. The main knowledge base
+    // is untouched. The next Groq detection of that class regenerates it.
+    public function destroyGroqClass(Request $request)
+    {
+        $key = strtolower(trim((string) $request->input('disease')));
+
+        if ($key !== '') {
+            GroqTreatmentRecord::whereRaw('LOWER(TRIM(disease)) = ?', [$key])->delete();
+        }
+
+        return redirect()->route('admin.knowledge.management')->with('success', 'Groq detection data removed successfully.');
     }
 
     // UPDATED: Inserts a new row version to feed the timeline history inside modifier.blade.php

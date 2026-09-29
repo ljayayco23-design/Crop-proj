@@ -148,7 +148,12 @@
         'rice_false_smut' => 30, 'sheath_blight' => 40, 'tungro_virus' => 85, 
         'brown_planthopper' => 90, 'leaf_folders' => 20, 'leafhopper' => 30, 
         'rice_bug' => 80, 'rice_gall_midge' => 40, 'rice_leaf_roller' => 20, 
-        'rice_stem_borer' => 30, 'snail' => 75
+        'rice_stem_borer' => 30, 'snail' => 75,
+        // canonical 23-class keys (YOLO11n taxonomy)
+        'bacterial_leaf_streak' => 35, 'brown_spot' => 30, 'downy_mildew' => 35,
+        'applesnail_eggs' => 75, 'dead_heart' => 30, 'green_leafhopper' => 30,
+        'rice_gall_midg' => 40, 'rice_hispa' => 35, 'rice_thrips' => 15,
+        'rice_water_weevil' => 35, 'whorl_maggot' => 20
     ];
 
     // Model-classified scans never get a severity_label from the backend
@@ -162,7 +167,11 @@
         'rice_false_smut' => 'MODERATE', 'sheath_blight' => 'MODERATE', 'tungro_virus' => 'SEVERE',
         'brown_planthopper' => 'SEVERE', 'leaf_folders' => 'LOW', 'leafhopper' => 'MODERATE',
         'rice_bug' => 'SEVERE', 'rice_gall_midge' => 'MODERATE', 'rice_leaf_roller' => 'LOW',
-        'rice_stem_borer' => 'MODERATE', 'snail' => 'SEVERE'
+        'rice_stem_borer' => 'MODERATE', 'snail' => 'SEVERE',
+        'bacterial_leaf_streak' => 'MODERATE', 'brown_spot' => 'MODERATE', 'downy_mildew' => 'MODERATE',
+        'applesnail_eggs' => 'SEVERE', 'dead_heart' => 'MODERATE', 'green_leafhopper' => 'MODERATE',
+        'rice_gall_midg' => 'MODERATE', 'rice_hispa' => 'MODERATE', 'rice_thrips' => 'LOW',
+        'rice_water_weevil' => 'MODERATE', 'whorl_maggot' => 'LOW'
     ];
 
     $hasAnyDetections = collect($fieldSections ?? [])->contains(function ($sec) {
@@ -1032,8 +1041,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                 const container = document.getElementById('history-container');
                 
                 offlineRecords.forEach(record => {
-                    const isPest = record.groq_data?.is_pest || false;
-                    const kb = record.groq_data || {};
+                    const isPest = record.groq_data?.is_pest ?? record.is_pest ?? false;
+                    // Groq image scans carry groq_data; YOLO11n / MobileNetV2 scans carry
+                    // the Groq-written knowledge that was on screen (knowledge_data).
+                    const kb = record.groq_data || record.knowledge_data || {};
                     const formattedName = record.class_key.replace(/_/g, ' ').toUpperCase();
 
                     // --- JAVASCRIPT SEVERITY LOGIC FOR OFFLINE RECORDS ---
@@ -1041,7 +1052,11 @@ document.addEventListener("DOMContentLoaded", async () => {
                         'healthy_rice_plant': 0, 'bacterial_leaf_blight': 60, 'leaf_blast': 80, 'rice_false_smut': 30,
                         'sheath_blight': 40, 'tungro_virus': 85, 'brown_planthopper': 90, 'leaf_folders': 20,
                         'leafhopper': 30, 'rice_bug': 80, 'rice_gall_midge': 40, 'rice_leaf_roller': 20,
-                        'rice_stem_borer': 30, 'snail': 75
+                        'rice_stem_borer': 30, 'snail': 75,
+                        'bacterial_leaf_streak': 35, 'brown_spot': 30, 'downy_mildew': 35,
+                        'applesnail_eggs': 75, 'dead_heart': 30, 'green_leafhopper': 30,
+                        'rice_gall_midg': 40, 'rice_hispa': 35, 'rice_thrips': 15,
+                        'rice_water_weevil': 35, 'whorl_maggot': 20
                     };
                     
                     let severityVal = record.groq_data?.severity_percent ?? severityMapJS[record.class_key] ?? 'N/A';
@@ -1063,7 +1078,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         extraSections = `
                             <div class="knowledge-section">
                                 <strong class="text-danger d-block mb-2">Damage Symptoms</strong>
-                                <div class="small text-light">${formatText(kb.grain_damage)}</div>
+                                <div class="small text-light">${formatText((kb.pest_damage && kb.pest_damage !== '—') ? kb.pest_damage : kb.grain_damage)}</div>
                             </div>
                             <div class="knowledge-section">
                                 <strong class="text-info d-block mb-2">Natural Enemies</strong>

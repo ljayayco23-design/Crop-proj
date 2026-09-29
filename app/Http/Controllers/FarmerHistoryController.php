@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\GroqTreatmentRecord;
+use App\Support\RiceTaxonomy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -257,10 +259,18 @@ class FarmerHistoryController extends Controller
                 // snapshot and read from the shared admin knowledge base
                 // instead (assembled into $activeKnowledgeBase above).
                 $snapshot = null;
-                if ($source === 'groq' && $hasGroqSnapshotColumn && !empty($row->groq_snapshot)) {
+                // (Now also present on YOLO11n / MobileNetV2 scans: their snapshot
+                // is the Groq-written knowledge that was on screen when saved.)
+                if ($hasGroqSnapshotColumn && !empty($row->groq_snapshot)) {
                     $decoded = json_decode($row->groq_snapshot, true);
                     if (is_array($decoded)) {
                         $snapshot = $decoded;
+                        // Pests keep their damage text in pest_damage for image-Groq
+                        // snapshots; the history view reads grain_damage for both.
+                        $pd = trim((string) ($snapshot['pest_damage'] ?? ''));
+                        if (!empty($snapshot['is_pest']) && $pd !== '' && $pd !== '—') {
+                            $snapshot['grain_damage'] = $snapshot['pest_damage'];
+                        }
                     }
                 }
 
@@ -353,6 +363,57 @@ class FarmerHistoryController extends Controller
         ]);
     }
 
+
+    /**
+     * Groq-written knowledge (+ hard-coded localized severity) for a class in
+     * one dialect, shaped like the image-Groq snapshot so History renders it
+     * unchanged. Returns null when Groq has no entry for that class+dialect.
+     */
+    private function buildGroqKnowledgeSnapshot($classKey, $language): ?array
+    {
+        try {
+            $key = strtolower(trim((string) $classKey));
+            $lang = $this->normalizeGroqLanguage($language);
+            $valid = $this->getValidKeys();
+            $isPest = in_array($key, $valid['pest'], true);
+            if (!$isPest && !in_array($key, $valid['disease'], true)) {
+                return null;
+            }
+            if (!Schema::hasColumn('groq_treatment_records', 'language')) {
+                return null;
+            }
+
+            $row = GroqTreatmentRecord::where('disease', $key)->where('language', $lang)->orderByDesc('id')->first();
+            if (!$row || (trim((string) $row->description) === '' && trim((string) $row->treatments) === '')) {
+                return null;
+            }
+
+            $tax = RiceTaxonomy::payload();
+            $sev = $tax['severity'][$key] ?? null;
+            $label = $sev['label'] ?? null;
+
+            return [
+                'description'         => (string) $row->description,
+                'treatments'          => (string) $row->treatments,
+                'causes'              => (string) $row->causes,
+                'nutrient_deficiency' => $isPest ? '' : (string) $row->nutrient_deficiency,
+                'grain_damage'        => (string) $row->grain_damage,
+                'pest_damage'         => $isPest ? (string) $row->grain_damage : '',
+                'natural_enemies'     => $isPest ? (string) $row->natural_enemies : '',
+                'prevention'          => (string) $row->prevention,
+                'severity_label'      => $label ? ($tax['severity_labels'][$lang][$label] ?? $label) : null,
+                'severity_percent'    => $sev['percent'] ?? null,
+                'severity_message'    => $sev['messages'][$lang] ?? null,
+                'is_pest'             => $isPest,
+                'language'            => $lang,
+                'knowledge_source'    => 'groq',
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('buildGroqKnowledgeSnapshot failed: ' . $e->getMessage());
+            return null;
+        }
+    }
+
     public function saveDetection(Request $request)
     {
         $user_id = Auth::id();
@@ -426,6 +487,18 @@ class FarmerHistoryController extends Controller
                     'severity_message'    => $gd['severity_message'] ?? null,
                     'is_pest'             => (bool) ($gd['is_pest'] ?? false),
                 ]);
+            }
+        }
+
+        // 3. YOLO11n / MobileNetV2 scans: snapshot the Groq-written knowledge
+        // (class + dialect) so History shows the same description/treatment/
+        // causes/... the farmer saw. Looked up server-side from
+        // groq_treatment_records; if Groq never produced it, no snapshot is
+        // stored and History falls back to the admin knowledge base as before.
+        if ($requestedSource !== 'groq' && !isset($insertData['groq_snapshot']) && Schema::hasColumn('user_detections', 'groq_snapshot')) {
+            $snap = $this->buildGroqKnowledgeSnapshot($class_key, $request->input('language'));
+            if ($snap) {
+                $insertData['groq_snapshot'] = json_encode($snap);
             }
         }
 
@@ -536,6 +609,309 @@ class FarmerHistoryController extends Controller
         }
 
         return response($decoded, 200)->header('Content-Type', $imgInfo['mime'] ?? 'image/jpeg');
+    }
+
+
+    // ------------------------------------------------------------------
+    // GROQ KNOWLEDGE REUSE
+    // Groq still looks at the photo every time (that is how we learn the
+    // class + this photo's confidence/severity), but the descriptive text is
+    // NOT taken from Groq once we already hold an entry for that class in
+    // that dialect: the newest saved row in groq_treatment_records wins.
+    // The first time a class+dialect is seen, Groq's text is saved as the
+    // entry, which is what makes it appear in Knowledge Management.
+    // ------------------------------------------------------------------
+    private const GROQ_LANGUAGES = ['tagalog', 'english', 'cebuano', 'hiligaynon'];
+
+    private function normalizeGroqLanguage($language): string
+    {
+        $language = strtolower(trim((string) $language));
+        return in_array($language, self::GROQ_LANGUAGES, true) ? $language : 'tagalog';
+    }
+
+    private function cleanGroqText($value): string
+    {
+        if (is_array($value)) {
+            $value = implode(' ', array_map('strval', $value));
+        }
+        $value = trim((string) ($value ?? ''));
+        return $value === '—' ? '' : $value;
+    }
+
+    private function applySavedGroqKnowledge(array $parsed, $language): array
+    {
+        $key = strtolower(trim((string) ($parsed['class_key'] ?? '')));
+        $valid = $this->getValidKeys();
+
+        $isPest    = in_array($key, $valid['pest'], true);
+        $isDisease = in_array($key, $valid['disease'], true);
+
+        // "Unrelated Image" (empty key) or a key outside the 23 known classes:
+        // nothing to reuse or store — return Groq's answer untouched.
+        if (!$isPest && !$isDisease) {
+            return $parsed;
+        }
+
+        $parsed['class_key'] = $key;
+        $parsed['is_pest']   = $isPest;
+        $type = $isPest ? 'pest' : 'disease';
+        $lang = $this->normalizeGroqLanguage($language);
+
+        $names = $isPest ? KnowledgeController::pestNames() : KnowledgeController::diseaseNames();
+        $parsed['class_name'] = $names[$key] ?? ($parsed['class_name'] ?? $key);
+        $parsed['from_saved'] = false;
+
+        try {
+            if (!Schema::hasColumn('groq_treatment_records', 'language')) {
+                return $parsed; // migration not run yet — behave like before
+            }
+
+            $saved = GroqTreatmentRecord::where('disease', $key)
+                ->where('language', $lang)
+                ->orderByDesc('id')
+                ->first();
+
+            if ($saved) {
+                $dash = fn ($v) => (trim((string) $v) === '') ? '—' : $v;
+
+                $parsed['description']     = $dash($saved->description);
+                $parsed['treatments']      = $dash($saved->treatments);
+                $parsed['causes']          = $dash($saved->causes);
+                $parsed['prevention']      = $dash($saved->prevention);
+                $parsed['natural_enemies'] = $isPest ? $dash($saved->natural_enemies) : '—';
+
+                if ($isPest) {
+                    $parsed['pest_damage']         = $dash($saved->grain_damage);
+                    $parsed['grain_damage']        = '—';
+                    $parsed['nutrient_deficiency'] = '—';
+                } else {
+                    $parsed['grain_damage']        = $dash($saved->grain_damage);
+                    $parsed['nutrient_deficiency'] = $dash($saved->nutrient_deficiency);
+                    $parsed['pest_damage']         = '—';
+                }
+                $parsed['from_saved'] = true;
+                return $parsed;
+            }
+
+            // First time we see this class in this dialect -> save Groq's text.
+            $description = $this->cleanGroqText($parsed['description'] ?? '');
+            $treatments  = $this->cleanGroqText($parsed['treatments'] ?? '');
+            if ($description === '' && $treatments === '') {
+                return $parsed; // nothing useful to store
+            }
+
+            GroqTreatmentRecord::create([
+                'type'                => $type,
+                'disease'             => $key,
+                'language'            => $lang,
+                'description'         => $description,
+                'treatments'          => $treatments,
+                'causes'              => $this->cleanGroqText($parsed['causes'] ?? ''),
+                'nutrient_deficiency' => $isPest ? '' : $this->cleanGroqText($parsed['nutrient_deficiency'] ?? ''),
+                'grain_damage'        => $isPest
+                    ? $this->cleanGroqText($parsed['pest_damage'] ?? ($parsed['grain_damage'] ?? ''))
+                    : $this->cleanGroqText($parsed['grain_damage'] ?? ''),
+                'natural_enemies'     => $isPest ? $this->cleanGroqText($parsed['natural_enemies'] ?? '') : '',
+                'prevention'          => $this->cleanGroqText($parsed['prevention'] ?? ''),
+                'updated_by'          => 'Groq AI',
+            ]);
+        } catch (\Throwable $e) {
+            // Never let knowledge storage break a detection.
+            Log::warning('Groq knowledge reuse/save failed: ' . $e->getMessage());
+        }
+
+        return $parsed;
+    }
+
+
+    // ------------------------------------------------------------------
+    // GROQ-WRITTEN KNOWLEDGE FOR YOLO11n / MobileNetV2 RESULTS
+    // The on-device models only produce a class. The descriptive text
+    // (description, treatments, causes, ...) for that class comes from here:
+    //   1. reuse the newest saved groq_treatment_records row for this
+    //      class + dialect (no Groq call, no tokens), else
+    //   2. ask Groq (TEXT ONLY, class name is hard-coded so nothing is spent
+    //      translating it) and save the result as that class+dialect's entry.
+    // Any failure returns success=false so the page shows the original
+    // (treatment_records) fallback instead.
+    // Shared with the image-based Groq engine: same table, same rows.
+    // ------------------------------------------------------------------
+    private function groqKnowledgePayload(GroqTreatmentRecord $row, bool $isPest): array
+    {
+        return [
+            'description'         => (string) $row->description,
+            'treatments'          => (string) $row->treatments,
+            'causes'              => (string) $row->causes,
+            'prevention'          => (string) $row->prevention,
+            // For pests grain_damage holds the damage symptoms (same
+            // convention Knowledge Management uses).
+            'grain_damage'        => (string) $row->grain_damage,
+            'nutrient_deficiency' => $isPest ? '' : (string) $row->nutrient_deficiency,
+            'natural_enemies'     => $isPest ? (string) $row->natural_enemies : '',
+        ];
+    }
+
+    /**
+     * Public endpoint. Wraps the real work so that NOTHING (stray output, a
+     * PHP fatal/timeout, an uncaught exception) can ever come back as a
+     * non-JSON 500 — the page then always gets {success:false,...} and shows
+     * the original fallback text. The real reason is written to laravel.log.
+     */
+    public function groqKnowledge(Request $request)
+    {
+        @set_time_limit(120);
+        @ini_set('max_execution_time', '120');
+        ob_start();
+
+        register_shutdown_function(function () {
+            $err = error_get_last();
+            if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
+                Log::error('groqKnowledge fatal: ' . $err['message'] . ' @ ' . $err['file'] . ':' . $err['line']);
+                while (ob_get_level() > 0) { @ob_end_clean(); }
+                if (!headers_sent()) {
+                    http_response_code(200);
+                    header('Content-Type: application/json');
+                }
+                echo json_encode(['success' => false, 'message' => 'PHP fatal: ' . $err['message']]);
+            }
+        });
+
+        try {
+            $response = $this->groqKnowledgeInner($request);
+        } catch (\Throwable $e) {
+            Log::error('groqKnowledge exception: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            $response = response()->json(['success' => false, 'message' => 'Server Error: ' . $e->getMessage()]);
+        }
+
+        // Drop anything a stray echo/warning wrote before the JSON.
+        while (ob_get_level() > 0) { @ob_end_clean(); }
+        return $response;
+    }
+
+    private function groqKnowledgeInner(Request $request)
+    {
+
+        $key  = strtolower(trim((string) $request->input('class_key')));
+        $lang = $this->normalizeGroqLanguage($request->input('language'));
+
+        $valid     = $this->getValidKeys();
+        $isPest    = in_array($key, $valid['pest'], true);
+        $isDisease = in_array($key, $valid['disease'], true);
+        if (!$isPest && !$isDisease) {
+            return response()->json(['success' => false, 'message' => 'Unknown class.'], 422);
+        }
+        $type = $isPest ? 'pest' : 'disease';
+
+        try {
+            if (!Schema::hasColumn('groq_treatment_records', 'language')) {
+                return response()->json(['success' => false, 'message' => 'Run php artisan migrate first.']);
+            }
+
+            $saved = GroqTreatmentRecord::where('disease', $key)->where('language', $lang)->orderByDesc('id')->first();
+            if ($saved) {
+                return response()->json([
+                    'success' => true,
+                    'source'  => 'saved',
+                    'data'    => $this->groqKnowledgePayload($saved, $isPest),
+                ]);
+            }
+
+            $apiKey = env('GROQ_API_KEY');
+            if (!$apiKey) {
+                return response()->json(['success' => false, 'message' => 'Groq API Key missing in .env file']);
+            }
+
+            $englishName = RiceTaxonomy::name($key, 'english') ?? str_replace('_', ' ', $key);
+            $langLabel = [
+                'english'    => 'English',
+                'tagalog'    => 'Tagalog (Filipino)',
+                'cebuano'    => 'Cebuano (Bisaya)',
+                'hiligaynon' => 'Hiligaynon (Ilonggo)',
+            ][$lang];
+
+            $typeWord = $isPest ? 'rice pest' : ($key === 'healthy_rice_plant' ? 'healthy rice plant condition' : 'rice disease');
+            $specific = $isPest
+                ? '"damage_symptoms": "visible damage this pest leaves on the plant", "natural_enemies": "beneficial predators/parasitoids that control it"'
+                : '"nutrient_deficiency": "nutrients that are lacking or that worsen it", "grain_damage": "how it affects the grain/panicle and yield"';
+
+            $prompt = "You are an expert senior agronomist for Philippine rice farming (PhilRice/IRRI practices).
+Write practical, farmer-friendly knowledge about this {$typeWord}: {$englishName}.
+
+RULES:
+- Write ALL values strictly in {$langLabel}. JSON keys stay in English. Keep well-known technical terms (e.g. BPH, tungro, fungicide names) as they are.
+- Each value: 2 to 3 information-dense sentences, concise and accurate. Use only treatments and practices commonly recommended in the Philippines.
+- Do NOT use <think> tags or reasoning. Output ONLY raw JSON starting with '{'.
+
+JSON format:
+{
+  \"description\": \"what it is and how to recognise it\",
+  \"treatments\": \"recommended management / control\",
+  \"causes\": \"conditions that cause or invite it\",
+  {$specific},
+  \"prevention\": \"proactive prevention steps\"
+}";
+
+            $response = Http::withoutVerifying()
+                ->withHeaders(['Authorization' => 'Bearer ' . $apiKey, 'Content-Type' => 'application/json'])
+                ->timeout(45)
+                ->post('https://api.groq.com/openai/v1/chat/completions', [
+                    'model'            => 'qwen/qwen3.8-27b',
+                    'messages'         => [['role' => 'user', 'content' => $prompt]],
+                    'temperature'      => 0.0,
+                    'max_tokens'       => 900, // org OTPM cap is 1000
+                    'response_format'  => ['type' => 'json_object'],
+                    'reasoning_effort' => 'none',
+                ]);
+
+            if (!$response->successful()) {
+                $err = $response->json('error.message') ?? ('HTTP ' . $response->status());
+                return response()->json(['success' => false, 'message' => 'Groq API Error: ' . $err]);
+            }
+
+            $content = (string) ($response->json('choices.0.message.content') ?? '');
+            $content = preg_replace('/<think>.*?<\/think>/s', '', $content);
+            $content = str_replace(['```json', '```'], '', $content);
+            if (!preg_match('/\{.*\}/s', trim($content), $m)) {
+                return response()->json(['success' => false, 'message' => 'Groq returned no JSON.']);
+            }
+            $j = json_decode($m[0], true);
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($j)) {
+                return response()->json(['success' => false, 'message' => 'Groq returned invalid JSON.']);
+            }
+
+            $description = $this->cleanGroqText($j['description'] ?? '');
+            $treatments  = $this->cleanGroqText($j['treatments'] ?? '');
+            if ($description === '' || $treatments === '') {
+                return response()->json(['success' => false, 'message' => 'Groq returned incomplete data.']);
+            }
+
+            // Another request may have saved this class+dialect while we waited.
+            $existing = GroqTreatmentRecord::where('disease', $key)->where('language', $lang)->orderByDesc('id')->first();
+            if ($existing) {
+                return response()->json(['success' => true, 'source' => 'saved', 'data' => $this->groqKnowledgePayload($existing, $isPest)]);
+            }
+
+            $row = GroqTreatmentRecord::create([
+                'type'                => $type,
+                'disease'             => $key,
+                'language'            => $lang,
+                'description'         => $description,
+                'treatments'          => $treatments,
+                'causes'              => $this->cleanGroqText($j['causes'] ?? ''),
+                'nutrient_deficiency' => $isPest ? '' : $this->cleanGroqText($j['nutrient_deficiency'] ?? ''),
+                'grain_damage'        => $isPest
+                    ? $this->cleanGroqText($j['damage_symptoms'] ?? '')
+                    : $this->cleanGroqText($j['grain_damage'] ?? ''),
+                'natural_enemies'     => $isPest ? $this->cleanGroqText($j['natural_enemies'] ?? '') : '',
+                'prevention'          => $this->cleanGroqText($j['prevention'] ?? ''),
+                'updated_by'          => 'Groq AI',
+            ]);
+
+            return response()->json(['success' => true, 'source' => 'generated', 'data' => $this->groqKnowledgePayload($row, $isPest)]);
+        } catch (\Throwable $e) {
+            Log::warning('groqKnowledge failed: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Server Error: ' . $e->getMessage()]);
+        }
     }
 
     public function analyzeImageWithGroq(Request $request)
@@ -674,6 +1050,10 @@ $response = Http::withoutVerifying()
 
                         // If it parses cleanly, return the success payload
                         if (json_last_error() === JSON_ERROR_NONE && isset($parsedData['class_key'])) {
+                            // Reuse / store Groq knowledge per (class, dialect) so the
+                            // same class + dialect always shows the same info, and the
+                            // admin can edit it in Knowledge Management.
+                            $parsedData = $this->applySavedGroqKnowledge($parsedData, $language);
                             return response()->json(['success' => true, 'data' => $parsedData]);
                         }
                     }

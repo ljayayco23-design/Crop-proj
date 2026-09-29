@@ -127,6 +127,7 @@
                                                 <div>
                                                     <span class="fw-bold text-white d-block">{{ \Carbon\Carbon::parse($v['updated_at'])->format('M d, Y h:i A') }}</span>
                                                     <span class="badge bg-info bg-opacity-25 text-info mt-1"><i class="fas fa-microchip me-1"></i> {{ $v['updated_by'] ?? 'Groq Auto' }}</span>
+                                                    @if(!empty($v['language']))<span class="badge bg-secondary bg-opacity-50 text-white mt-1 ms-1">{{ ucfirst($v['language']) }}</span>@endif
                                                 </div>
                                             </div>
                                             

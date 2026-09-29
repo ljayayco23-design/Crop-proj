@@ -163,6 +163,8 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->name('admin.')->grou
 
     Route::prefix('knowledge')->name('knowledge.')->group(function () {
         Route::post('/delete-groq/{id}', [KnowledgeController::class, 'destroyGroq'])->name('deleteGroq');
+        Route::post('/groq/save', [KnowledgeController::class, 'saveGroqEntry'])->name('saveGroqEntry');
+        Route::post('/groq/delete-class', [KnowledgeController::class, 'destroyGroqClass'])->name('deleteGroqClass');
         Route::get('/editor/{id?}', [KnowledgeController::class, 'editor'])->name('editor');
         Route::post('/editor/store', [KnowledgeController::class, 'store'])->name('store');
         Route::get('/management', [KnowledgeController::class, 'management'])->name('management');
@@ -263,6 +265,8 @@ Route::prefix('farmer')->middleware(['auth'])->group(function () {
 
     // AI Analysis route for farmers
     Route::post('/history/groq', [App\Http\Controllers\FarmerHistoryController::class, 'analyzeImageWithGroq'])->name('farmer.history.groq');
+    // Groq-written knowledge text for YOLO11n / MobileNetV2 results (reused per class + dialect)
+    Route::post('/history/groq-knowledge', [App\Http\Controllers\FarmerHistoryController::class, 'groqKnowledge'])->name('farmer.history.groqKnowledge');
 
     Route::get('/dashboard', function () { return view('farmer.dashboard'); })->name('farmer.dashboard');
 

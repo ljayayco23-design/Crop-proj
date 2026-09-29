@@ -995,6 +995,9 @@
 const diseaseNames = @json($diseaseNames ?? []);
 const pestNames = @json($pestNames ?? []);
 const knowledgeBase = @json($knowledgeBase ?? []);
+// Hard-coded per-dialect class names, severity labels/messages (App\Support\RiceTaxonomy)
+// so Groq never spends tokens translating them.
+const taxI18n = @json(\App\Support\RiceTaxonomy::payload());
 
 const modelURL = "{{ asset('model/model.json') }}";
 const metadataURL = "{{ asset('model/metadata.json') }}";
@@ -1165,6 +1168,109 @@ const uiTranslations = {
     cebuano: { description: "Paghulagway / Mahitungod", treatment: "Pagtambal", causes: "Mga Hinungdan", prevention: "Pagpugong", nutrient: "Kulang sa Nutrisyon", grain: "Epekto sa Uhay", damage: "Sintomas sa Kadaot", naturalEnemies: "Mga Natural nga Kaaway" },
     hiligaynon: { description: "Paglaragway / Tuhoy Diri", treatment: "Pagbulong", causes: "Mga Rason", prevention: "Pagpangamlig", nutrient: "Kulang sa Nutrisyon", grain: "Epekto sa Uhay", damage: "Sintomas sang Halit", naturalEnemies: "Mga Natural nga Kontra" }
 };
+
+// ---------- Hard-coded dialect helpers (display only) ----------
+// The English canonical value is always kept in el.dataset.raw so anything
+// that is saved/reported (history, technician reports) stays English.
+function currentLang() { return document.getElementById('language-selector').value; }
+function tName(key, fallback) { return (taxI18n.names && taxI18n.names[key] && taxI18n.names[key][currentLang()]) || fallback; }
+function sevLabelText(label) { const m = taxI18n.severity_labels && taxI18n.severity_labels[currentLang()]; return (m && m[label]) || label; }
+function sevMessageText(key, label, fallbackMsg) {
+    const e = taxI18n.severity && taxI18n.severity[key];
+    const msg = e && e.messages && e.messages[currentLang()];
+    return (msg && (!label || e.label === label)) ? msg : fallbackMsg;
+}
+function rawText(id) { const el = document.getElementById(id); return el ? (el.dataset.raw ?? el.textContent) : ''; }
+function kbEsc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---------- Groq-written knowledge for YOLO11n / MobileNetV2 results ----------
+const GROQ_KB_URL = "{{ route('farmer.history.groqKnowledge') }}";
+const groqKbCache = new Map();      // "class|dialect" -> Groq/saved knowledge
+let knowledgeRequestToken = 0;      // lets a newer detection cancel an older one's late reply
+
+// kb = {description, treatments, causes, prevention, nutrient_deficiency, grain_damage, natural_enemies}
+// (for pests, grain_damage holds the damage symptoms). loadingText != null renders spinners instead.
+function renderKnowledgeSections(kb, isPest, t, loadingText = null) {
+    const safeSet = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+    const val = (v) => loadingText
+        ? `<span class="text-secondary"><i class="fa-solid fa-spinner fa-spin me-2"></i>${kbEsc(loadingText)}</span>`
+        : (kbEsc(v) || '—');
+    kb = kb || {};
+
+    safeSet('description', `<strong class="text-white"><i class="fa-solid fa-circle-info me-2"></i>${t.description}:</strong><p class="mt-2 mb-0">${val(kb.description)}</p>`);
+    safeSet('treatment', `<strong class="text-success"><i class="fa-solid fa-spray-can-sparkles me-2"></i>${t.treatment}:</strong><p class="mt-2 mb-0">${val(kb.treatments)}</p>`);
+    safeSet('causes', `<strong class="text-warning"><i class="fa-solid fa-question-circle me-2"></i>${t.causes}:</strong><p class="mt-2 mb-0">${val(kb.causes)}</p>`);
+    safeSet('prevention', `<strong class="text-info"><i class="fa-solid fa-shield-heart me-2"></i>${t.prevention}:</strong><p class="mt-2 mb-0">${val(kb.prevention)}</p>`);
+
+    if (isPest) {
+        document.getElementById('nutrient-section')?.classList.add('hidden');
+        document.getElementById('grain-section')?.classList.add('hidden');
+        document.getElementById('damage-section')?.classList.remove('hidden');
+        document.getElementById('natural-enemies-section')?.classList.remove('hidden');
+        safeSet('damage', `<strong class="text-danger"><i class="fa-solid fa-wheat-awn me-2"></i>${t.damage}:</strong><p class="mt-2 mb-0">${val(kb.grain_damage)}</p>`);
+        safeSet('natural-enemies', `<strong class="text-success"><i class="fa-solid fa-bug-slash me-2"></i>${t.naturalEnemies}:</strong><p class="mt-2 mb-0">${val(kb.natural_enemies)}</p>`);
+    } else {
+        document.getElementById('damage-section')?.classList.add('hidden');
+        document.getElementById('natural-enemies-section')?.classList.add('hidden');
+        document.getElementById('nutrient-section')?.classList.remove('hidden');
+        document.getElementById('grain-section')?.classList.remove('hidden');
+        safeSet('nutrient', `<strong class="text-warning"><i class="fa-solid fa-leaf me-2"></i>${t.nutrient}:</strong><p class="mt-2 mb-0">${val(kb.nutrient_deficiency)}</p>`);
+        safeSet('grain', `<strong class="text-danger"><i class="fa-solid fa-seedling me-2"></i>${t.grain}:</strong><p class="mt-2 mb-0">${val(kb.grain_damage)}</p>`);
+    }
+}
+
+// Reuses the saved Groq entry for this class+dialect, or has Groq write it (server
+// saves it, so it shows up in Management). ANY failure -> original fallback text.
+function loadGroqKnowledge(className, isPest, lang, t) {
+    const token = ++knowledgeRequestToken;
+    const cacheKey = className + '|' + lang;
+    const fallbackKb = knowledgeBase[className] || {};
+
+    if (groqKbCache.has(cacheKey)) {
+        renderKnowledgeSections(groqKbCache.get(cacheKey), isPest, t);
+        return;
+    }
+    renderKnowledgeSections(null, isPest, t, (taxI18n.ui && taxI18n.ui[lang] && taxI18n.ui[lang].loading) || 'Generating information with Groq AI…');
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 55000);
+    fetch(GROQ_KB_URL, {
+        method: 'POST',
+        credentials: 'same-origin',
+        signal: ctrl.signal,
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+        },
+        body: JSON.stringify({ class_key: className, language: lang })
+    })
+    .then(async r => {
+        const raw = await r.text();
+        try { return JSON.parse(raw); }
+        catch (e) {
+            console.error('[Groq knowledge] server returned non-JSON (HTTP ' + r.status + '):', raw.slice(0, 600));
+            return { success: false, message: 'HTTP ' + r.status + ' non-JSON response (see console / storage/logs/laravel.log)' };
+        }
+    })
+    .then(out => {
+        if (token !== knowledgeRequestToken) return; // a newer detection/language took over
+        if (out && out.success && out.data) {
+            groqKbCache.set(cacheKey, out.data);
+            renderKnowledgeSections(out.data, isPest, t);
+        } else {
+            console.warn('[Groq knowledge] using fallback:', out && out.message);
+            renderKnowledgeSections(fallbackKb, isPest, t);
+        }
+    })
+    .catch(err => {
+        if (token !== knowledgeRequestToken) return;
+        console.warn('[Groq knowledge] request failed, using fallback:', err);
+        renderKnowledgeSections(fallbackKb, isPest, t);
+    })
+    .finally(() => clearTimeout(timer));
+}
 
 async function compressImageFile(file) {
     return new Promise((resolve, reject) => {
@@ -2062,6 +2168,7 @@ window.classifyCurrentImage = async function() {
 };
 
 function displayGroqResults(data) {
+    knowledgeRequestToken++; // cancel any pending fallback-knowledge fetch
     currentGroqData = data;
     isShowingFallback = false;
     const lang = document.getElementById('language-selector').value;
@@ -2083,7 +2190,9 @@ function displayGroqResults(data) {
 
     const safeSet = (id, html) => { const el = document.getElementById(id); if(el) el.innerHTML = html; };
 
-    document.getElementById('top-label').textContent = data.class_name;
+    const topLabelEl = document.getElementById('top-label');
+    topLabelEl.textContent = tName(data.class_key, data.class_name);
+    topLabelEl.dataset.raw = data.class_name || '';
     document.getElementById('top-confidence').innerHTML = `${lastConfidence}%`;
     updateConfidenceRing(lastConfidence);
     updateTypeBadge(!!data.is_pest);
@@ -2097,11 +2206,12 @@ function displayGroqResults(data) {
 
     const severityLabelEl = document.getElementById('severity-label');
     if(severityLabelEl) {
-        severityLabelEl.textContent = data.severity_label;
+        severityLabelEl.textContent = sevLabelText(data.severity_label);
+        severityLabelEl.dataset.raw = data.severity_label || '';
         severityLabelEl.className = `h4 mb-1 ${color}`;
     }
     safeSet('severity-percent', data.severity_percent + "%");
-    safeSet('severity-message', data.severity_message);
+    safeSet('severity-message', sevMessageText(data.class_key, data.severity_label, data.severity_message));
 
     safeSet('description', `<strong class="text-white"><i class="fa-solid fa-circle-info me-2"></i>${t.description}:</strong><p class="mt-2 mb-0">${data.description || '—'}</p>`);
     safeSet('treatment', `<strong class="text-success"><i class="fa-solid fa-spray-can-sparkles me-2"></i>${t.treatment}:</strong><p class="mt-2 mb-0">${data.treatments || '—'}</p>`);
@@ -2252,18 +2362,21 @@ function displayResults(predictions, forcedTopClassName = null) {
 
     const severityLabelEl = document.getElementById('severity-label');
     if (severityLabelEl) {
-        severityLabelEl.textContent = estimate.label;
+        severityLabelEl.textContent = sevLabelText(estimate.label);
+        severityLabelEl.dataset.raw = estimate.label;
         severityLabelEl.className = `h4 mb-1 fw-bold ${color}`;
     }
     safeSet('severity-percent', estimate.percent + "%");
-    safeSet('severity-message', estimate.message);
+    safeSet('severity-message', sevMessageText(className, estimate.label, estimate.message));
     // -----------------------------------------
 
     const isPest = Object.keys(pestNames).includes(className);
     const nameMap = isPest ? pestNames : diseaseNames;
 
     // Display model confidence for NAME identification
-    document.getElementById('top-label').textContent = nameMap[className] || top.className;
+    const topLabelEl2 = document.getElementById('top-label');
+    topLabelEl2.textContent = tName(className, nameMap[className] || top.className);
+    topLabelEl2.dataset.raw = nameMap[className] || top.className;
     document.getElementById('top-confidence').innerHTML = `${lastConfidence}%`;
     updateConfidenceRing(lastConfidence);
     updateTypeBadge(isPest);
@@ -2272,32 +2385,13 @@ function displayResults(predictions, forcedTopClassName = null) {
     filtered.forEach(pred => {
         let pName = pred.className.trim().toLowerCase().replace(/\s+/g, '_');
         const isActive = pName === className;
-        html += `<div class="d-flex justify-content-between mb-2${isActive ? ' fw-bold text-white' : ''}" style="cursor:pointer;" onclick="window.selectDetection('${pName}')" title="Show this detection's info instead"><span>${nameMap[pName] || pred.className}</span><span class="text-secondary">${(pred.probability * 100).toFixed(1)}%</span></div>`;
+        html += `<div class="d-flex justify-content-between mb-2${isActive ? ' fw-bold text-white' : ''}" style="cursor:pointer;" onclick="window.selectDetection('${pName}')" title="Show this detection's info instead"><span>${tName(pName, nameMap[pName] || pred.className)}</span><span class="text-secondary">${(pred.probability * 100).toFixed(1)}%</span></div>`;
     });
     safeSet('predictions-list', html);
 
-    const kb = knowledgeBase[className] || {};
-    
-    safeSet('description', `<strong class="text-white"><i class="fa-solid fa-circle-info me-2"></i>${t.description}:</strong><p class="mt-2 mb-0">${kb.description || '—'}</p>`);
-    safeSet('treatment', `<strong class="text-success"><i class="fa-solid fa-spray-can-sparkles me-2"></i>${t.treatment}:</strong><p class="mt-2 mb-0">${kb.treatments || '—'}</p>`);
-    safeSet('causes', `<strong class="text-warning"><i class="fa-solid fa-question-circle me-2"></i>${t.causes}:</strong><p class="mt-2 mb-0">${kb.causes || '—'}</p>`);
-    safeSet('prevention', `<strong class="text-info"><i class="fa-solid fa-shield-heart me-2"></i>${t.prevention}:</strong><p class="mt-2 mb-0">${kb.prevention || '—'}</p>`);
-
-    if (isPest) {
-        document.getElementById('nutrient-section')?.classList.add('hidden');
-        document.getElementById('grain-section')?.classList.add('hidden');
-        document.getElementById('damage-section')?.classList.remove('hidden');
-        document.getElementById('natural-enemies-section')?.classList.remove('hidden');
-        safeSet('damage', `<strong class="text-danger"><i class="fa-solid fa-wheat-awn me-2"></i>${t.damage}:</strong><p class="mt-2 mb-0">${kb.grain_damage || '—'}</p>`);
-        safeSet('natural-enemies', `<strong class="text-success"><i class="fa-solid fa-bug-slash me-2"></i>${t.naturalEnemies}:</strong><p class="mt-2 mb-0">${kb.natural_enemies || '—'}</p>`);
-    } else {
-        document.getElementById('damage-section')?.classList.add('hidden');
-        document.getElementById('natural-enemies-section')?.classList.add('hidden');
-        document.getElementById('nutrient-section')?.classList.remove('hidden');
-        document.getElementById('grain-section')?.classList.remove('hidden');
-        safeSet('nutrient', `<strong class="text-warning"><i class="fa-solid fa-leaf me-2"></i>${t.nutrient}:</strong><p class="mt-2 mb-0">${kb.nutrient_deficiency || '—'}</p>`);
-        safeSet('grain', `<strong class="text-danger"><i class="fa-solid fa-seedling me-2"></i>${t.grain}:</strong><p class="mt-2 mb-0">${kb.grain_damage || '—'}</p>`);
-    }
+    // Descriptive text now comes from Groq (reused per class + dialect); the
+    // admin fallback (knowledgeBase) is shown only if Groq is unavailable.
+    loadGroqKnowledge(className, isPest, lang, t);
 
     // IMPORTANT: currentGroqData stays null for model-classified results
     // (see clearPreview()/top of this function). It used to be repopulated
@@ -2530,8 +2624,8 @@ function collectReportInfoSnapshot() {
     });
 
     // The three summary values, so the technician sees the same trio.
-    info.name        = document.getElementById('top-label').textContent || '';
-    info.severity    = document.getElementById('severity-label').textContent || '';
+    info.name        = rawText('top-label') || '';
+    info.severity    = rawText('severity-label') || '';
     info.damagelevel = document.getElementById('severity-percent').textContent || '';
 
     return info;
@@ -2575,9 +2669,9 @@ window.submitReport = async function() {
     try {
         const payload = {
             class_key:        lastClassKey,
-            class_name:       document.getElementById('top-label').textContent || lastClassKey,
+            class_name:       rawText('top-label') || lastClassKey,
             confidence:       lastConfidence,
-            severity_label:   document.getElementById('severity-label').textContent || null,
+            severity_label:   rawText('severity-label') || null,
             // "90%" -> 90
             severity_percent: parseInt((document.getElementById('severity-percent').textContent || '0').replace('%', ''), 10) || 0,
             source:           selectedEngine,
@@ -2670,6 +2764,15 @@ window.saveCurrentDetection = async function() {
         // engine used — never the model's fallback text mislabeled as Groq.
         groq_data: (selectedEngine === 'groq') ? currentGroqData : null,
         source: selectedEngine,
+        // Dialect on screen at save time + the Groq-written knowledge that was
+        // shown (YOLO11n / MobileNetV2). The server re-reads the knowledge from
+        // groq_treatment_records itself; knowledge_data is only kept so the
+        // offline copy in History can show it before it syncs.
+        language: document.getElementById('language-selector').value,
+        is_pest: Object.keys(pestNames).includes(lastClassKey),
+        knowledge_data: (selectedEngine !== 'groq')
+            ? (groqKbCache.get(lastClassKey + '|' + document.getElementById('language-selector').value) || null)
+            : null,
         // Raw YOLO11n box coordinates for THIS exact photo — lastPreviewDetections/
         // lastPreviewSrcW/H are exactly what was last analyzed into
         // window.compressedBase64 (set in the "Analyze" flow), so the
