@@ -121,13 +121,18 @@
                                 </h5>
                                 
                                 <div class="accordion" id="accordion-groq-{{ $jsonKey }}">
+                                    @php $prevLang = null; @endphp
                                     @foreach ($versions as $index => $v)
+                                        @if(($v['language'] ?? null) !== $prevLang)
+                                            <div class="small fw-bold text-info text-uppercase mb-2 mt-3">{{ ($v['language'] ?? 'tagalog') === 'cebuano' ? 'Cebuano (Bisaya)' : ucfirst($v['language'] ?? 'tagalog') }}</div>
+                                            @php $prevLang = $v['language'] ?? null; @endphp
+                                        @endif
                                         <div class="timeline-item groq-item">
                                             <div class="d-flex justify-content-between align-items-center mb-2">
                                                 <div>
                                                     <span class="fw-bold text-white d-block">{{ \Carbon\Carbon::parse($v['updated_at'])->format('M d, Y h:i A') }}</span>
                                                     <span class="badge bg-info bg-opacity-25 text-info mt-1"><i class="fas fa-microchip me-1"></i> {{ $v['updated_by'] ?? 'Groq Auto' }}</span>
-                                                    @if(!empty($v['language']))<span class="badge bg-secondary bg-opacity-50 text-white mt-1 ms-1">{{ ucfirst($v['language']) }}</span>@endif
+                                                    @if(!empty($v['is_current']))<span class="badge bg-success mt-1 ms-1"><i class="fas fa-check me-1"></i>Live</span>@endif
                                                 </div>
                                             </div>
                                             

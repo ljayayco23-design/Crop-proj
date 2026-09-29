@@ -383,7 +383,7 @@ class FarmerHistoryController extends Controller
                 return null;
             }
 
-            $row = GroqTreatmentRecord::where('disease', $key)->where('language', $lang)->orderByDesc('id')->first();
+            $row = $this->latestGroqRow($key, $lang);
             if (!$row || (trim((string) $row->description) === '' && trim((string) $row->treatments) === '')) {
                 return null;
             }
@@ -623,6 +623,24 @@ class FarmerHistoryController extends Controller
     // ------------------------------------------------------------------
     private const GROQ_LANGUAGES = ['tagalog', 'english', 'cebuano', 'hiligaynon'];
 
+
+    /**
+     * Newest saved Groq entry for a class + dialect that actually contains
+     * information. Blank rows (e.g. an accidental empty save) are skipped so
+     * they can never hide real data or make a detection show empty sections.
+     */
+    private function latestGroqRow(string $key, string $lang): ?GroqTreatmentRecord
+    {
+        return GroqTreatmentRecord::where('disease', $key)
+            ->where('language', $lang)
+            ->where(function ($q) {
+                $q->whereRaw("TRIM(COALESCE(description, '')) <> ''")
+                  ->orWhereRaw("TRIM(COALESCE(treatments, '')) <> ''");
+            })
+            ->orderByDesc('id')
+            ->first();
+    }
+
     private function normalizeGroqLanguage($language): string
     {
         $language = strtolower(trim((string) $language));
@@ -666,10 +684,7 @@ class FarmerHistoryController extends Controller
                 return $parsed; // migration not run yet — behave like before
             }
 
-            $saved = GroqTreatmentRecord::where('disease', $key)
-                ->where('language', $lang)
-                ->orderByDesc('id')
-                ->first();
+            $saved = $this->latestGroqRow($key, $lang);
 
             if ($saved) {
                 $dash = fn ($v) => (trim((string) $v) === '') ? '—' : $v;
@@ -807,7 +822,7 @@ class FarmerHistoryController extends Controller
                 return response()->json(['success' => false, 'message' => 'Run php artisan migrate first.']);
             }
 
-            $saved = GroqTreatmentRecord::where('disease', $key)->where('language', $lang)->orderByDesc('id')->first();
+            $saved = $this->latestGroqRow($key, $lang);
             if ($saved) {
                 return response()->json([
                     'success' => true,
@@ -886,7 +901,7 @@ JSON format:
             }
 
             // Another request may have saved this class+dialect while we waited.
-            $existing = GroqTreatmentRecord::where('disease', $key)->where('language', $lang)->orderByDesc('id')->first();
+            $existing = $this->latestGroqRow($key, $lang);
             if ($existing) {
                 return response()->json(['success' => true, 'source' => 'saved', 'data' => $this->groqKnowledgePayload($existing, $isPest)]);
             }

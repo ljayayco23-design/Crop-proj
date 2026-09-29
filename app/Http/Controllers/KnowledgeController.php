@@ -139,6 +139,11 @@ class KnowledgeController extends Controller
         // the one that is live on the detection page.
         $groqClasses = [];
         foreach (GroqTreatmentRecord::orderByDesc('id')->get() as $row) {
+            // Same rule the detection page uses: blank rows never count as the
+            // live entry, so they can't hide real information.
+            if (trim((string) $row->description) === '' && trim((string) $row->treatments) === '') {
+                continue;
+            }
             $key  = strtolower(trim($row->disease));
             $lang = strtolower(trim((string) ($row->language ?? ''))) ?: 'tagalog';
 
@@ -277,18 +282,33 @@ class KnowledgeController extends Controller
         }
 
         // Fetch and group Groq AI data versions for Column 2
+        // Ordered per class, then per dialect, newest version first. The first
+        // row seen for each (class, dialect) that has real content is the LIVE
+        // one (what the detection page currently reuses) and is flagged.
         $groqRecords = DB::table('groq_treatment_records')
             ->orderBy('type')
             ->orderBy('disease')
-            ->orderBy('updated_at', 'desc')
+            ->orderBy('language')
+            ->orderBy('id', 'desc')
             ->get();
 
         $groqGrouped = [];
+        $liveSeen = [];
         foreach ($groqRecords as $row) {
-            $dbKey = strtolower($row->disease);
+            $dbKey = strtolower(trim($row->disease));
             $type = $row->type ?? self::resolveType($dbKey);
+            $lang = strtolower(trim((string) ($row->language ?? ''))) ?: 'tagalog';
 
-            $groqGrouped[$type][$dbKey][] = (array) $row;
+            $arr = (array) $row;
+            $arr['language'] = $lang;
+            $hasContent = trim((string) $row->description) !== '' || trim((string) $row->treatments) !== '';
+            $arr['is_current'] = false;
+            if ($hasContent && !isset($liveSeen[$dbKey . '|' . $lang])) {
+                $liveSeen[$dbKey . '|' . $lang] = true;
+                $arr['is_current'] = true;
+            }
+
+            $groqGrouped[$type][$dbKey][] = $arr;
         }
 
         $diseaseNames = self::diseaseNames();

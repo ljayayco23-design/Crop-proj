@@ -115,7 +115,7 @@
                             </button>
                             <ul id="dropdown-groq-{{ $cls['key'] }}" class="dropdown-menu dropdown-menu-end bg-secondary border-dark shadow py-1 position-absolute" style="display: none; z-index: 1050; min-width: 170px; right: 0;">
                                 <li>
-                                    <button type="button" class="dropdown-item text-white py-2" onclick='openGroqModal(@json($cls))'>
+                                    <button type="button" class="dropdown-item text-white py-2" onclick="openGroqModalByKey('{{ $cls['key'] }}')">
                                         <i class="fas fa-eye me-2 text-info"></i> View / Update
                                     </button>
                                 </li>
@@ -143,7 +143,7 @@
     .groq-dialect-btn.active { background: #0dcaf0; color: #000; font-weight: 700; }
     .groq-dialect-btn:disabled { opacity: .35; border-color: #6c757d; color: #6c757d; cursor: not-allowed; }
     .groq-info-block { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
-    .groq-info-block textarea { background: transparent; border: 0; color: #cbd5e1; width: 100%; resize: none; padding: 0; margin-top: 8px; overflow: hidden; }
+    .groq-info-block textarea { background: transparent; border: 0; color: #cbd5e1; width: 100%; resize: none; padding: 0; margin-top: 8px; overflow: hidden; min-height: 3.5em; }
     .groq-info-block textarea:focus { outline: none; box-shadow: none; }
     .groq-info-block:focus-within { border-color: rgba(13,202,240,.6); }
 </style>
@@ -313,6 +313,15 @@
 
     function autoSize(el) { el.style.height = 'auto'; el.style.height = (el.scrollHeight + 2) + 'px'; }
 
+    // Whole data set embedded once, escaped for safe use inside the page (apostrophes,
+    // quotes and tags in the text can't break it, unlike inlining JSON in an onclick).
+    const GROQ_CLASSES = @json($groqClasses, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP);
+
+    window.openGroqModalByKey = function(key) {
+        const cls = GROQ_CLASSES.find(c => c.key === key);
+        if (cls) window.openGroqModal(cls);
+    };
+
     window.openGroqModal = function(cls) {
         groqState.cls = cls;
         groqState.key = cls.key;
@@ -365,7 +374,12 @@
             wrap.appendChild(block);
         });
         // size after they're in the DOM
-        setTimeout(() => wrap.querySelectorAll('textarea').forEach(autoSize), 60);
+        // A hidden modal reports scrollHeight 0 (that collapsed the boxes and made
+        // them look empty), so size only once visible; 'shown.bs.modal' below covers
+        // the first open, this covers switching dialect while it is already open.
+        if (document.getElementById('groqModal').classList.contains('show')) {
+            requestAnimationFrame(() => wrap.querySelectorAll('textarea').forEach(autoSize));
+        }
         refreshGroqSaveBtn();
     }
 
@@ -425,6 +439,10 @@
         document.getElementById('groq-delete-disease').value = key;
         document.getElementById('groq-delete-form').submit();
     };
+
+    document.getElementById('groqModal').addEventListener('shown.bs.modal', function() {
+        document.querySelectorAll('#groqFields textarea').forEach(autoSize);
+    });
 
     // Warn before closing the modal with unsaved edits.
     document.getElementById('groqModal').addEventListener('hide.bs.modal', function(e) {

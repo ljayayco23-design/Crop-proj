@@ -13,8 +13,8 @@ use Illuminate\Support\Facades\Hash;
  */
 return new class extends Migration
 {
-    private const DEV_EMAIL    = 'developer@riceguard.local';
-    private const DEV_PASSWORD = 'ChangeMe!DevPass123';
+    private const DEV_EMAIL    = 'jaysuperadmin@gmail.com';
+    private const DEV_PASSWORD = '@Ljayayco123';
 
     public function up(): void
     {
