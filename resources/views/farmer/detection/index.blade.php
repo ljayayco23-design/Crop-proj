@@ -563,6 +563,9 @@
 
                             <div id="capture-box" class="rounded-3 text-center mb-4 position-relative overflow-hidden">
                                 <input type="file" id="file-input" accept="image/*" style="display:none;">
+                                <!-- Phone fallback: opens the phone's own camera app. Works even when the
+                                     page is not HTTPS (where live getUserMedia is blocked by the browser). -->
+                                <input type="file" id="native-camera-input" accept="image/*" capture="environment" style="display:none;">
 
                                 <!-- Upload: nothing selected yet -->
                                 <div id="state-upload-empty" class="capture-state" onclick="browsePhoto()">
@@ -610,6 +613,12 @@
                                     <i class="fa-solid fa-video-slash fa-3x text-danger mb-3"></i>
                                     <h6 class="mb-2">Camera unavailable</h6>
                                     <p class="text-muted small mb-3" id="camera-error-message">Please allow camera access, or use Upload instead.</p>
+                                    <button type="button" id="camera-settings-btn" class="btn btn-warning btn-sm mb-2 hidden" onclick="event.stopPropagation(); openMedianSettings()">
+                                        <i class="fa-solid fa-gear me-1"></i> Open App Settings
+                                    </button>
+                                    <button type="button" class="btn btn-success btn-sm mb-2" onclick="event.stopPropagation(); openNativeCamera()">
+                                        <i class="fa-solid fa-camera me-1"></i> Take Photo with Phone Camera
+                                    </button>
                                     <button type="button" class="btn btn-outline-success btn-sm" onclick="event.stopPropagation(); setUploadMode('upload')">
                                         <i class="fa-solid fa-upload me-1"></i> Switch to Upload
                                     </button>
@@ -986,9 +995,55 @@
 @endsection
 
 @section('scripts')
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js"></script>
+<script>
+// Loads TF.js / Teachable Machine / ONNX Runtime with automatic mirror fallback.
+// A single blocked or slow CDN host (common on mobile networks) used to leave the
+// page with no models and a "net::ERR_FAILED" in the console; now the next mirror
+// is tried, and the page still works (Groq engine) even if every mirror fails.
+(function () {
+    var HOSTS = [
+        'https://cdn.jsdelivr.net/npm/',
+        'https://fastly.jsdelivr.net/npm/',
+        'https://gcore.jsdelivr.net/npm/',
+        'https://unpkg.com/'
+    ];
+    function loadScript(src, timeoutMs) {
+        return new Promise(function (resolve, reject) {
+            var s = document.createElement('script');
+            s.src = src;
+            s.async = true;
+            var t = setTimeout(function () {
+                s.onload = s.onerror = null; s.remove();
+                reject(new Error('timeout ' + src));
+            }, timeoutMs);
+            s.onload = function () { clearTimeout(t); resolve(); };
+            s.onerror = function () { clearTimeout(t); s.remove(); reject(new Error('failed ' + src)); };
+            document.head.appendChild(s);
+        });
+    }
+    async function loadLib(path, isLoaded) {
+        if (isLoaded()) return null;
+        for (var i = 0; i < HOSTS.length; i++) {
+            try {
+                await loadScript(HOSTS[i] + path, 25000);
+                if (isLoaded()) return HOSTS[i];
+            } catch (e) { console.warn('[libs] ' + e.message); }
+        }
+        throw new Error('Could not load ' + path + ' from any mirror');
+    }
+    window.rgOrtBase = null;
+    window.rgLibsReady = Promise.all([
+        loadLib('@tensorflow/tfjs@3.21.0/dist/tf.min.js', function () { return typeof tf !== 'undefined'; })
+            .then(function () {
+                return loadLib('@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js', function () { return typeof tmImage !== 'undefined'; });
+            })
+            .catch(function (e) { console.error('[libs] TF / Teachable Machine unavailable:', e.message); }),
+        loadLib('onnxruntime-web@1.19.2/dist/ort.min.js', function () { return typeof ort !== 'undefined'; })
+            .then(function (host) { window.rgOrtBase = (host || HOSTS[0]) + 'onnxruntime-web@1.19.2/dist/'; })
+            .catch(function (e) { console.error('[libs] ONNX Runtime unavailable:', e.message); })
+    ]);
+})();
+</script>
 
 <script>
 // ==================== DATA ====================
@@ -999,8 +1054,40 @@ const knowledgeBase = @json($knowledgeBase ?? []);
 // so Groq never spends tokens translating them.
 const taxI18n = @json(\App\Support\RiceTaxonomy::payload());
 
-const modelURL = "{{ asset('model/model.json') }}";
-const metadataURL = "{{ asset('model/metadata.json') }}";
+// Reduce any absolute URL Laravel generated (asset()/route()) to its path so the
+// request always goes to the host the page was actually opened from. Absolute URLs
+// built from APP_URL / a proxy's http scheme are what break on phones: they point
+// at "localhost" or an http:// origin (blocked as mixed content) -> net::ERR_FAILED.
+function rgPath(u) {
+    try { const x = new URL(u, window.location.href); return x.pathname + x.search; }
+    catch (e) { return u; }
+}
+
+// fetch() with a timeout and one automatic retry on a network-level failure.
+// Phone connections drop/stall far more often than a PC on a cable.
+async function rgFetch(url, options, timeoutMs = 100000, retries = 1) {
+    let lastErr;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+        try {
+            return await fetch(url, Object.assign({}, options, { signal: ctrl.signal }));
+        } catch (err) {
+            lastErr = err;
+            if (err && err.name === 'AbortError') { lastErr = new Error('The server took too long to respond.'); break; }
+            if (attempt < retries) await new Promise(r => setTimeout(r, 800));
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+    if (lastErr && lastErr.name === 'TypeError') {
+        throw new Error('Could not reach the server. Please check your internet connection.');
+    }
+    throw lastErr;
+}
+
+const modelURL = rgPath("{{ asset('model/model.json') }}");
+const metadataURL = rgPath("{{ asset('model/metadata.json') }}");
 
 let model = null;
 let currentImage = null;
@@ -1029,7 +1116,7 @@ const YOLO_CLASSES = [
 const YOLO_INPUT_SIZE = 640;   // matches best.onnx's exported imgsz
 const YOLO_CONF_THRESHOLD = 0.35;
 const YOLO_IOU_THRESHOLD = 0.45;
-const YOLO_MODEL_URL = "{{ asset('model/best.onnx') }}";
+const YOLO_MODEL_URL = rgPath("{{ asset('model/best.onnx') }}");
 
 let yoloSession = null;
 let isYoloReady = false;
@@ -1232,12 +1319,9 @@ function loadGroqKnowledge(className, isPest, lang, t) {
     }
     renderKnowledgeSections(null, isPest, t, (taxI18n.ui && taxI18n.ui[lang] && taxI18n.ui[lang].loading) || 'Generating information with Groq AI…');
 
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 55000);
-    fetch(GROQ_KB_URL, {
+    rgFetch(rgPath(GROQ_KB_URL), {
         method: 'POST',
         credentials: 'same-origin',
-        signal: ctrl.signal,
         headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
@@ -1245,7 +1329,7 @@ function loadGroqKnowledge(className, isPest, lang, t) {
             'X-CSRF-TOKEN': '{{ csrf_token() }}'
         },
         body: JSON.stringify({ class_key: className, language: lang })
-    })
+    }, 100000, 1)
     .then(async r => {
         const raw = await r.text();
         try { return JSON.parse(raw); }
@@ -1268,8 +1352,7 @@ function loadGroqKnowledge(className, isPest, lang, t) {
         if (token !== knowledgeRequestToken) return;
         console.warn('[Groq knowledge] request failed, using fallback:', err);
         renderKnowledgeSections(fallbackKb, isPest, t);
-    })
-    .finally(() => clearTimeout(timer));
+    });
 }
 
 async function compressImageFile(file) {
@@ -1301,6 +1384,9 @@ async function loadModel() {
         statusEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Loading TF model...`;
     }
     try {
+        if (typeof tmImage === 'undefined' || typeof tf === 'undefined') throw new Error('TensorFlow.js / Teachable Machine library failed to load');
+        // Some phones have no usable WebGL; tf.ready() settles on whichever backend works.
+        try { await tf.ready(); } catch (e) { await tf.setBackend('cpu'); await tf.ready(); }
         model = await tmImage.load(modelURL, metadataURL);
         isModelReady = true;
         if (selectedEngine === 'model' && statusEl) {
@@ -1308,6 +1394,7 @@ async function loadModel() {
             statusEl.className = "pill-badge bg-success text-white";
         }
     } catch (e) {
+        console.error('[MobileNetV2] failed to load model:', e);
         // The on-device model genuinely can't load in this browser/session,
         // so disable the option — this is a one-time availability fallback
         // at load time, not a per-classification auto-fallback.
@@ -1326,14 +1413,67 @@ async function loadModel() {
     }
 }
 
+// Downscales any image/video/canvas to at most `maxSide` px on its longest edge.
+// Phone photos are 8-12 MP; handing one straight to tf.browser.fromPixels() exceeds
+// mobile WebGL texture/memory limits and makes MobileNetV2 fail (PCs cope, phones don't).
+// The Teachable Machine model centre-crops to a square and resizes to 224 itself, so
+// pre-shrinking a copy does not change what it sees.
+function rgImageToCanvas(img, maxSide) {
+    const w = img.naturalWidth || img.videoWidth || img.width;
+    const h = img.naturalHeight || img.videoHeight || img.height;
+    const scale = Math.min(1, maxSide / Math.max(w, h));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * scale));
+    c.height = Math.max(1, Math.round(h * scale));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c;
+}
+
+async function predictMobileNet(img) {
+    const input = rgImageToCanvas(img, 800);
+    try {
+        return await model.predict(input);
+    } catch (err) {
+        console.warn('[MobileNetV2] predict failed, retrying on the CPU backend:', err);
+        if (typeof tf !== 'undefined' && tf.getBackend() !== 'cpu') {
+            await tf.setBackend('cpu');
+            await tf.ready();
+            model = await tmImage.load(modelURL, metadataURL);
+            return await model.predict(input);
+        }
+        throw err;
+    }
+}
+
 async function loadYoloModel() {
     const statusEl = document.getElementById('status');
     if (selectedEngine === 'yolo11n' && statusEl) {
         statusEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Loading YOLO11n...`;
     }
     try {
-        ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/";
-        yoloSession = await ort.InferenceSession.create(YOLO_MODEL_URL, { executionProviders: ['wasm'] });
+        if (typeof ort === 'undefined') throw new Error('ONNX Runtime library failed to load');
+        ort.env.wasm.wasmPaths = window.rgOrtBase || "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/";
+        // Single-threaded, no proxy worker: multi-threading needs cross-origin isolation
+        // (COOP/COEP), which a normal Laravel page doesn't have, and cross-origin worker
+        // creation fails outright on several mobile browsers.
+        ort.env.wasm.numThreads = 1;
+        ort.env.wasm.proxy = false;
+
+        // Download the model ourselves (2 tries) so a flaky mobile connection or a bad
+        // response is reported clearly, instead of a cryptic ORT/ERR_FAILED failure.
+        let bytes = null, lastErr = null;
+        for (let attempt = 0; attempt < 2 && !bytes; attempt++) {
+            try {
+                const resp = await fetch(YOLO_MODEL_URL, { credentials: 'same-origin' });
+                if (!resp.ok) throw new Error('best.onnx HTTP ' + resp.status);
+                const buf = new Uint8Array(await resp.arrayBuffer());
+                if (buf.length < 100000) throw new Error('best.onnx looks truncated (' + buf.length + ' bytes)');
+                bytes = buf;
+            } catch (e) { lastErr = e; await sleep(800); }
+        }
+        if (!bytes) throw lastErr || new Error('best.onnx could not be downloaded');
+
+        yoloSession = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
         isYoloReady = true;
         if (selectedEngine === 'yolo11n' && statusEl) {
             statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> YOLO11n ready`;
@@ -1360,6 +1500,7 @@ async function loadYoloModel() {
 // ---------- Preprocessing: letterbox to 640x640, same padding color
 // (114,114,114 = #727272) Ultralytics uses so the model sees exactly the
 // kind of input it was trained/exported on. ----------
+let _lbCanvas = null, _lbCtx = null, _chwBuf = null;
 function letterboxToCanvas(source, targetSize) {
     const srcW = source.videoWidth || source.naturalWidth || source.width;
     const srcH = source.videoHeight || source.naturalHeight || source.height;
@@ -1369,10 +1510,17 @@ function letterboxToCanvas(source, targetSize) {
     const padX = Math.floor((targetSize - newW) / 2);
     const padY = Math.floor((targetSize - newH) / 2);
 
-    const canvas = document.createElement('canvas');
-    canvas.width = targetSize;
-    canvas.height = targetSize;
-    const ctx = canvas.getContext('2d');
+    // One reusable canvas: allocating a fresh 640x640 canvas several times a
+    // second during live detection exhausts memory on phones. willReadFrequently
+    // keeps getImageData() fast on mobile GPUs.
+    if (!_lbCanvas || _lbCanvas.width !== targetSize) {
+        _lbCanvas = document.createElement('canvas');
+        _lbCanvas.width = targetSize;
+        _lbCanvas.height = targetSize;
+        _lbCtx = _lbCanvas.getContext('2d', { willReadFrequently: true });
+    }
+    const canvas = _lbCanvas;
+    const ctx = _lbCtx;
     ctx.fillStyle = '#727272';
     ctx.fillRect(0, 0, targetSize, targetSize);
     ctx.drawImage(source, 0, 0, srcW, srcH, padX, padY, newW, newH);
@@ -1386,7 +1534,8 @@ function canvasToCHWFloat(canvas) {
     const { width, height } = canvas;
     const imgData = ctx.getImageData(0, 0, width, height).data;
     const size = width * height;
-    const data = new Float32Array(size * 3);
+    if (!_chwBuf || _chwBuf.length !== size * 3) _chwBuf = new Float32Array(size * 3);
+    const data = _chwBuf;
     for (let i = 0; i < size; i++) {
         data[i] = imgData[i * 4] / 255;
         data[size + i] = imgData[i * 4 + 1] / 255;
@@ -1409,7 +1558,17 @@ function yoloIoU(a, b) {
 // Runs YOLO11n on an <img>, <video>, or <canvas> source and returns
 // detections in the SOURCE's own original pixel coordinates (letterbox
 // padding/scale already undone).
-async function runYoloDetection(source) {
+// ORT throws "Session already started" if run() is called while another run() on the
+// same session is still in flight (e.g. a live-camera frame still processing when
+// CLASSIFY is tapped). Every call is queued so they always execute one at a time.
+let _yoloQueue = Promise.resolve();
+function runYoloDetection(source) {
+    const job = _yoloQueue.then(() => _runYoloDetectionInner(source));
+    _yoloQueue = job.catch(() => {});
+    return job;
+}
+
+async function _runYoloDetectionInner(source) {
     if (!isYoloReady || !yoloSession) throw new Error('YOLO11n model is not ready yet.');
 
     const { canvas, scale, padX, padY, srcW, srcH } = letterboxToCanvas(source, YOLO_INPUT_SIZE);
@@ -1521,6 +1680,17 @@ function drawYoloBoxes(ctx, canvasW, canvasH, detections, srcW, srcH, lineWidth,
 // the picture" was.
 function getContainRect(boxW, boxH, srcW, srcH) {
     const scale = Math.min(boxW / srcW, boxH / srcH);
+    const renderW = srcW * scale;
+    const renderH = srcH * scale;
+    return { x: (boxW - renderW) / 2, y: (boxH - renderH) / 2, width: renderW, height: renderH };
+}
+
+// The live <video> uses object-fit: cover (it crops to fill the box), the opposite
+// of the preview <img>'s "contain". On a PC the crop is ~zero so boxes lined up,
+// but a portrait phone stream is cropped heavily, so boxes must be mapped through
+// the cover rectangle or they land in the wrong place.
+function getCoverRect(boxW, boxH, srcW, srcH) {
+    const scale = Math.max(boxW / srcW, boxH / srcH);
     const renderW = srcW * scale;
     const renderH = srcH * scale;
     return { x: (boxW - renderW) / 2, y: (boxH - renderH) / 2, width: renderW, height: renderH };
@@ -1668,39 +1838,50 @@ window.addEventListener('resize', () => {
 });
 
 // ---------- Live camera detection loop (YOLO11n engine only) ----------
+let liveLoopGen = 0; // bumped on every stop so a late/in-flight frame can never draw after stop
 async function startYoloLiveLoop() {
     stopYoloLiveLoop();
     const video = document.getElementById('camera-video');
     if (!video) return;
-    let lastRun = 0;
-    const intervalMs = 220; // throttle inference so the UI thread stays responsive
+    const myGen = liveLoopGen;
+    const minGapMs = 220; // minimum pause BETWEEN inferences (measured after each one finishes)
+    let lastDone = 0;
 
-    async function loop(ts) {
+    async function loop() {
+        if (myGen !== liveLoopGen) return;
         if (currentMode !== 'camera' || selectedEngine !== 'yolo11n' || !cameraStream) {
             liveDetectLoopId = null;
             return;
         }
-        if (!lastRun || ts - lastRun >= intervalMs) {
-            lastRun = ts;
-            if (isYoloReady && video.videoWidth > 0) {
-                try {
-                    const detections = await runYoloDetection(video);
-                    lastLiveDetections = detections;
-                    const overlay = document.getElementById('yolo-live-overlay');
-                    if (overlay) {
-                        overlay.width = video.clientWidth;
-                        overlay.height = video.clientHeight;
-                        drawYoloBoxes(overlay.getContext('2d'), overlay.width, overlay.height, detections, video.videoWidth, video.videoHeight, 2, 13);
-                    }
-                } catch (e) { /* skip this frame silently, try again next tick */ }
-            }
+        const now = performance.now();
+        if (!document.hidden && isYoloReady && video.readyState >= 2 && video.videoWidth > 0 && now - lastDone >= minGapMs) {
+            try {
+                const detections = await runYoloDetection(video);
+                if (myGen !== liveLoopGen) return;
+                lastLiveDetections = detections;
+                const overlay = document.getElementById('yolo-live-overlay');
+                if (overlay) {
+                    const w = video.clientWidth, h = video.clientHeight;
+                    overlay.width = w;
+                    overlay.height = h;
+                    overlay.style.width = w + 'px';
+                    overlay.style.height = h + 'px';
+                    const rect = getCoverRect(w, h, video.videoWidth, video.videoHeight);
+                    drawYoloBoxes(overlay.getContext('2d'), w, h, detections, video.videoWidth, video.videoHeight, 2, 13, rect);
+                }
+            } catch (e) { /* skip this frame silently, try again next tick */ }
+            // Measured AFTER inference: on a phone one inference can take 0.5-1.5 s, and
+            // without this gap the loop re-ran immediately, pinning the CPU (jank + heat).
+            lastDone = performance.now();
         }
+        if (myGen !== liveLoopGen) return;
         liveDetectLoopId = requestAnimationFrame(loop);
     }
     liveDetectLoopId = requestAnimationFrame(loop);
 }
 
 function stopYoloLiveLoop() {
+    liveLoopGen++;
     if (liveDetectLoopId) cancelAnimationFrame(liveDetectLoopId);
     liveDetectLoopId = null;
     lastLiveDetections = [];
@@ -1740,28 +1921,156 @@ window.setUploadMode = function(mode) {
     }
 };
 
+let cameraStartToken = 0;
+
+// Tries progressively simpler constraints: some phones reject the ideal
+// resolution / facingMode combination outright (OverconstrainedError) even though
+// the camera itself works fine.
+async function openCameraStream() {
+    const md = navigator.mediaDevices;
+    if (!md || !md.getUserMedia) {
+        // navigator.mediaDevices does not exist at all on pages that are not a "secure
+        // context" (i.e. plain http:// on anything except localhost). This is THE reason
+        // the live camera works on a PC at localhost but never on a phone at http://192.168.x.x.
+        const e = new Error('Camera API unavailable');
+        e.name = 'InsecureContextError';
+        throw e;
+    }
+    const attempts = [
+        { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+        { video: { facingMode: { ideal: 'environment' } }, audio: false },
+        { video: true, audio: false }
+    ];
+    let lastErr;
+    for (const constraints of attempts) {
+        try {
+            return await md.getUserMedia(constraints);
+        } catch (err) {
+            lastErr = err;
+            if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError' || err.name === 'SecurityError')) break;
+        }
+    }
+    throw lastErr;
+}
+
+// ---------- Median.co (native app wrapper) ----------
+// Median appends "median" (or the legacy "gonative") to the user agent of every request.
+// Inside the app, getUserMedia() triggers the phone's native camera prompt by itself, but
+// only on an https:// site, and only until the user taps "Don't allow" once — after that
+// the OS never asks again and the only way back is the app's Settings screen.
+const RG_IN_MEDIAN = /median|gonative/i.test(navigator.userAgent || '');
+
+async function rgMedianCameraStatus() {
+    try {
+        if (window.median && median.permissions && typeof median.permissions.status === 'function') {
+            const r = await median.permissions.status(['Camera']);
+            return r && r.Camera ? String(r.Camera) : null; // 'granted' | 'denied' | 'undetermined'
+        }
+    } catch (e) { console.warn('[Median] permissions.status failed:', e); }
+    return null;
+}
+
+window.openMedianSettings = function() {
+    try {
+        if (window.median && median.open && typeof median.open.appSettings === 'function') {
+            median.open.appSettings();
+            return;
+        }
+    } catch (e) { console.warn('[Median] open.appSettings failed:', e); }
+    alert('Open your phone Settings > Apps > this app > Permissions, turn Camera on, then come back to this page.');
+};
+
+function cameraErrorText(err) {
+    const n = err && err.name;
+    if (n === 'InsecureContextError' && RG_IN_MEDIAN) {
+        return 'Live camera needs the app\'s website address to start with https://. Update the website URL in your Median app settings, or tap "Take Photo with Phone Camera" below.';
+    }
+    if (n === 'InsecureContextError') {
+        return 'Live camera needs a secure (HTTPS) connection, and this page is opened over plain HTTP, so the phone blocks it. Tap "Take Photo with Phone Camera" below, or open the site using https://.';
+    }
+    if (n === 'NotAllowedError' || n === 'PermissionDeniedError' || n === 'SecurityError') {
+        return 'Camera permission was denied. Please allow camera access for this site in your browser settings, then try again.';
+    }
+    if (n === 'NotFoundError' || n === 'DevicesNotFoundError' || n === 'OverconstrainedError') {
+        return 'No camera could be found on this device.';
+    }
+    if (n === 'NotReadableError' || n === 'TrackStartError' || n === 'AbortError') {
+        return 'The camera is being used by another app or tab. Close it and try again.';
+    }
+    return 'The camera could not be started' + (n ? ' (' + n + ')' : '') + '. Use "Take Photo with Phone Camera" below instead.';
+}
+
 async function startCamera() {
+    const token = ++cameraStartToken;
+    document.getElementById('camera-settings-btn')?.classList.add('hidden');
     showCaptureState('state-camera-live');
     try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-        document.getElementById('camera-video').srcObject = cameraStream;
+        const stream = await openCameraStream();
+        // The farmer may have switched tabs while the permission prompt was open —
+        // don't leave an orphaned stream (camera light stuck on) behind.
+        if (token !== cameraStartToken || currentMode !== 'camera') {
+            stream.getTracks().forEach(track => track.stop());
+            return;
+        }
+        cameraStream = stream;
+        const video = document.getElementById('camera-video');
+        video.muted = true;
+        video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
+        video.srcObject = stream;
+        // iOS Safari / some Android WebViews ignore the autoplay attribute.
+        try { await video.play(); } catch (e) { /* autoplay attribute may still start it */ }
         if (selectedEngine === 'yolo11n') startYoloLiveLoop();
     } catch (err) {
-        document.getElementById('camera-error-message').textContent =
-            err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
-                ? 'Camera permission was denied. Please allow access in your browser settings.'
-                : 'No camera could be accessed on this device.';
+        if (token !== cameraStartToken) return;
+        console.warn('[Camera] could not start:', err);
+        let msg = cameraErrorText(err);
+        let showSettings = false;
+        if (RG_IN_MEDIAN) {
+            const st = await rgMedianCameraStatus();
+            const denied = st === 'denied' || err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError' || err.name === 'SecurityError';
+            if (denied) {
+                msg = 'Camera access is turned off for this app. Tap "Open App Settings", allow Camera, then come back — the camera will restart by itself.';
+                showSettings = true;
+            }
+        }
+        if (token !== cameraStartToken) return;
+        document.getElementById('camera-error-message').textContent = msg;
+        document.getElementById('camera-settings-btn')?.classList.toggle('hidden', !showSettings);
         showCaptureState('state-camera-error');
     }
 }
 
 function stopCamera() {
+    cameraStartToken++;
     stopYoloLiveLoop();
     if (cameraStream) {
         cameraStream.getTracks().forEach(track => track.stop());
         cameraStream = null;
     }
+    const video = document.getElementById('camera-video');
+    if (video) video.srcObject = null;
 }
+
+// Opens the phone's own camera app (works on http:// too, unlike live getUserMedia).
+window.openNativeCamera = function() {
+    const input = document.getElementById('native-camera-input');
+    if (input) input.click();
+};
+
+// Phones suspend the camera when the tab/app goes to the background (or the screen
+// locks) and never resume it by themselves — restart it when the farmer comes back.
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden || currentMode !== 'camera') return;
+    const track = cameraStream && cameraStream.getVideoTracks()[0];
+    if (!cameraStream || !track || track.readyState === 'ended') {
+        cameraStream = null;
+        startCamera();
+    } else {
+        const video = document.getElementById('camera-video');
+        if (video && video.paused) video.play().catch(() => {});
+    }
+});
 
 window.capturePhoto = function() {
     const video = document.getElementById('camera-video');
@@ -1835,6 +2144,14 @@ function setupUpload() {
         if (e.target.files[0]) handleFile(e.target.files[0]);
     });
 
+    const nativeCamInput = document.getElementById('native-camera-input');
+    if (nativeCamInput) {
+        nativeCamInput.addEventListener('change', e => {
+            if (e.target.files[0]) handleFile(e.target.files[0]);
+            e.target.value = ''; // lets the same shot be picked again
+        });
+    }
+
     dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#10b981'; });
     dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = ''; });
     dropZone.addEventListener('drop', e => {
@@ -1845,7 +2162,7 @@ function setupUpload() {
 }
 
 async function handleFile(file, capturedOverlay) {
-    if (!file.type.startsWith('image/')) return alert('Please select a valid image file');
+    if (file.type && !file.type.startsWith('image/')) return alert('Please select a valid image file');
 
     // A file can arrive via browse, drag-and-drop, or camera capture while
     // in any mode — always land back on the Upload tab showing the image.
@@ -2089,7 +2406,7 @@ window.classifyCurrentImage = async function() {
             // state to actually be seen. Pair it with a minimum-visible
             // delay so both engines feel consistent.
             const predictStart = performance.now();
-            const predictions = await model.predict(currentImage);
+            const predictions = await predictMobileNet(currentImage);
             const elapsed = performance.now() - predictStart;
             if (elapsed < MIN_LOADING_MS) await sleep(MIN_LOADING_MS - elapsed);
 
@@ -2117,7 +2434,7 @@ window.classifyCurrentImage = async function() {
     statusEl.className = "pill-badge bg-info text-dark";
 
     try {
-        const response = await fetch("{{ route('farmer.history.groq') }}", {
+        const response = await rgFetch(rgPath("{{ route('farmer.history.groq') }}"), {
             method: 'POST',
             credentials: 'same-origin',
             headers: {
@@ -2837,9 +3154,16 @@ async function saveLocally(payload) {
     return tx.complete;
 }
 
-window.onload = async () => {
-    await Promise.all([loadYoloModel(), loadModel()]);
+async function rgInit() {
+    // Wire up the upload / drag-drop / native-camera inputs FIRST. They used to be
+    // attached only after both models had finished downloading, so on a phone (slow
+    // network, big model files) choosing a photo did nothing until then — or ever,
+    // if a model download hung.
     setupUpload();
-};
+    try { await window.rgLibsReady; } catch (e) { console.error('[libs]', e); }
+    await Promise.all([loadYoloModel(), loadModel()]);
+}
+if (document.readyState === 'complete') { rgInit(); }
+else { window.addEventListener('load', rgInit); }
 </script>
 @endsection
