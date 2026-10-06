@@ -440,5 +440,9 @@ Route::get('/check-status', function(\Illuminate\Http\Request $request) {
                      ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
 });
 
+// Used by public/js/session_guard.js: returns 200 when the Laravel session is
+// real, and 401 (JSON) when it isn't, e.g. after an OFFLINE login.
+Route::get('/session-check', fn () => response()->json(['ok' => true]))->middleware('auth');
+
 
 Route::get('/api/cron/weather-alerts', [FieldMapController::class, 'triggerWeatherCron']);

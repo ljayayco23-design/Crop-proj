@@ -15,6 +15,11 @@
     @yield('content')
     @yield('scripts')
 
+    {{-- Detects an expired server session (e.g. after offline login) and sends
+         the person back to /login instead of showing a raw "Unauthenticated".
+         Skips itself on the login pages. --}}
+    <script src="{{ asset('js/session_guard.js') }}"></script>
+
     <script>
 let openDropdownId = null;
 

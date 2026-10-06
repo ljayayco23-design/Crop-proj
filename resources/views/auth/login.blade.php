@@ -1024,15 +1024,34 @@ document.addEventListener('DOMContentLoaded', function () {
         msgBox.classList.add(ok ? 'bg-emerald-700' : 'bg-red-700');
     }
 
+    // Puts the Login button back to normal. The separate double-click
+    // listener (further up) sets it to "Processing..." on every submit, so a
+    // failed attempt has to restore the text too, not just re-enable it.
+    function resetBtn() {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Mag-login';
+        submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+
+    // Flag read by public/js/session_guard.js: "this page was opened through
+    // OFFLINE login, so there is no real server session yet".
+    const OFFLINE_SESSION_FLAG = 'rg_offline_session';
+
     async function goOffline(email, password) {
         const row = await attemptOfflineLogin(email, password);
         if (row) {
+            try { localStorage.setItem(OFFLINE_SESSION_FLAG, '1'); } catch (e) {}
             showMsg('Naka-offline login gamit ang naka-cache na account. Nagbubukas...', true);
             setTimeout(() => { window.location.href = row.redirect; }, 350);
         } else {
             showMsg('Walang naka-cache na account na tugma dito sa device na ito. Kailangan mo munang mag-login nang isang beses habang online.', false);
-            submitBtn.disabled = false;
+            resetBtn();
         }
+    }
+
+    // Sent here by session_guard.js when the server session had expired.
+    if (new URLSearchParams(window.location.search).get('expired')) {
+        showMsg('Nag-expire ang iyong session. Paki-login ulit.', false);
     }
 
     loginForm.addEventListener('submit', async function (e) {
@@ -1072,10 +1091,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     role: data.role,
                     full_name: data.full_name,
                 });
+                // A real server login happened, so any "offline session" marker is stale.
+                try { localStorage.removeItem(OFFLINE_SESSION_FLAG); } catch (e) {}
                 window.location.href = data.redirect;
             } else {
                 showMsg(data.message || 'Mali ang email o password.', false);
-                submitBtn.disabled = false;
+                resetBtn();
             }
         } catch (err) {
             // fetch() itself failed — no real connectivity even though
