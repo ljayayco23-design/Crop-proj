@@ -422,6 +422,36 @@ class FarmerHistoryController extends Controller
         $field_key = $request->input('field_key') ?: 'main';
         $requestedSourceRaw = $request->input('source');
         $requestedSource = in_array($requestedSourceRaw, ['groq', 'yolo11n'], true) ? $requestedSourceRaw : 'model';
+        if ($class_key === '') {
+            return response()->json(['success' => false, 'message' => 'Missing class_key.'], 422);
+        }
+
+        // Scans saved OFFLINE (web IndexedDB / Flutter app) carry the moment
+        // they were really captured. Use it as created_at so History shows the
+        // true time, and use it to ignore a retry of a scan that already
+        // reached the server (e.g. the reply was lost, so the device queued it
+        // again). Without captured_at behaviour is exactly as before.
+        $createdAt = now();
+        $capturedRaw = $request->input('captured_at');
+        if ($capturedRaw) {
+            try {
+                $cap = \Carbon\Carbon::parse($capturedRaw)->setTimezone(config('app.timezone'));
+                if ($cap->lte(now()->addMinutes(5)) && $cap->gte(now()->subYear())) {
+                    $createdAt = $cap;
+                    $dup = DB::table('user_detections')
+                        ->where('user_id', $user_id)
+                        ->where('class_key', $class_key)
+                        ->where('field_key', $field_key)
+                        ->where('created_at', $cap->format('Y-m-d H:i:s'))
+                        ->first();
+                    if ($dup) {
+                        return response()->json(['success' => true, 'duplicate' => true, 'id' => $dup->id]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // bad timestamp -> just use "now"
+            }
+        }
 
         // 1. Save standard detection history — one row per scan, own photo.
         $insertData = [
@@ -430,8 +460,8 @@ class FarmerHistoryController extends Controller
             'class_key' => $class_key,
             'confidence' => $request->confidence ?? 0,
             'image_path' => $image_data, 
-            'created_at' => now(),
-            'updated_at' => now()
+            'created_at' => $createdAt,
+            'updated_at' => $createdAt
         ];
 
         // Record which engine produced THIS scan's classification, so the
@@ -502,9 +532,9 @@ class FarmerHistoryController extends Controller
             }
         }
 
-        DB::table('user_detections')->insert($insertData);
+        $newId = DB::table('user_detections')->insertGetId($insertData);
 
-        return response()->json(['success' => true]);
+        return response()->json(['success' => true, 'id' => $newId]);
     }
 
     public function action(Request $request)

@@ -165,7 +165,7 @@ class FarmerReportController extends Controller
      * and never touches the shared table. Newest scan first within each
      * name, same as History.
      */
-    private function myDetectionsForReport(int $userId): array
+    public function myDetectionsForReport(int $userId): array
     {
         $diseaseNames = $this->diseaseNames();
         $pestNames    = $this->pestNames();

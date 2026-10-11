@@ -30,22 +30,6 @@
     // "Reports" card: this farmer's own submitted reports, same as what
     // they'd see on their own Reports page (FarmerReportController@farmerIndex).
     $farmReportsCount = \App\Models\FarmerReport::where('user_id', $user_id)->count();
-
-    // Logged-in farmer's own Province / City / Barangay, joined for display
-    $userLocation = DB::table('barangays')
-        ->join('cities', 'barangays.city_id', '=', 'cities.id')
-        ->join('provinces', 'cities.province_id', '=', 'provinces.id')
-        ->where('barangays.id', $user->barangay_id)
-        ->select(
-            'provinces.id as province_id', 'provinces.name as province_name',
-            'cities.id as city_id', 'cities.name as city_name',
-            'barangays.id as barangay_id', 'barangays.name as barangay_name'
-        )
-        ->first();
-
-    $userAddressDisplay = $userLocation
-        ? "{$userLocation->barangay_name}, {$userLocation->city_name}, {$userLocation->province_name}"
-        : 'Not yet set';
 @endphp
 
 @section('content')
@@ -193,61 +177,37 @@
     </div>
 </div>
 
-<div class="row g-4 mb-4">
-    <div class="col-12">
-        <div class="section-card p-0 overflow-hidden">
-            <div class="bg-dark border-bottom border-secondary p-3 d-flex justify-content-between align-items-center">
-                <h6 class="mb-0 fw-bold text-white"><i class="fa-solid fa-location-dot text-success me-2"></i> Farm Address</h6>
-                <button type="button" id="address-edit-btn" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size: 0.75rem;" onclick="toggleAddressEdit(true)">
-                    <i class="fa-solid fa-pen me-1"></i> Edit
-                </button>
-            </div>
-            <div class="p-4">
-                <div id="address-display-view">
-                    <p class="text-white mb-0 fs-6" id="address-display-text">{{ $userAddressDisplay }}</p>
-                </div>
-                <div id="address-edit-view" class="d-none">
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <label class="form-label text-secondary small mb-1">Province</label>
-                            <select id="profile-province-select" class="form-select form-select-sm bg-dark text-white border-secondary">
-                                <option value="" disabled>Select province...</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label text-secondary small mb-1">City / Municipality</label>
-                            <select id="profile-city-select" class="form-select form-select-sm bg-dark text-white border-secondary" disabled>
-                                <option value="" disabled>Select province first...</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label text-secondary small mb-1">Barangay</label>
-                            <select id="profile-barangay-select" class="form-select form-select-sm bg-dark text-white border-secondary" disabled>
-                                <option value="" disabled>Select city first...</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="mt-3 d-flex gap-2">
-                        <button type="button" class="btn btn-sm btn-success" id="address-save-btn" onclick="saveAddress()">
-                            <i class="fa-solid fa-check me-1"></i> Save
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-light border-secondary" onclick="toggleAddressEdit(false)">Cancel</button>
-                    </div>
-                    <div id="address-edit-error" class="text-danger small mt-2 d-none"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
 <div class="row">
     <div class="col-12">
         <div class="section-card p-0 overflow-hidden">
             <div class="bg-dark border-bottom border-secondary p-3"><h6 class="mb-0 fw-bold text-white"><i class="fa-solid fa-bolt text-warning me-2"></i> Quick Actions</h6></div>
             <div class="p-4 row g-3">
-                <div class="col-md-4"><a href="{{ route('farmer.detection') }}" class="btn btn-success w-100 py-3 fw-bold shadow-sm"><i class="fa-solid fa-upload fa-lg d-block mb-2"></i> Upload Image</a></div>
-                <div class="col-md-4"><a href="{{ route('farmer.camera') }}" class="btn btn-outline-light border-secondary w-100 py-3 fw-bold shadow-sm"><i class="fa-solid fa-camera fa-lg d-block mb-2"></i> Live Camera</a></div>
-                <div class="col-md-4"><a href="{{ route('farmer.history') }}" class="btn btn-outline-light border-secondary w-100 py-3 fw-bold shadow-sm"><i class="fa-solid fa-history fa-lg d-block mb-2"></i> View History</a></div>
+                {{-- Every button of the sidebar (Dashboard itself excluded) + Live Camera. --}}
+                @php
+                    $quickActions = [
+                        ['farmer.detection',    'fa-upload',            'Upload Detection',     'btn-success'],
+                        ['farmer.camera',       'fa-camera',            'Live Camera',          'btn-outline-light border-secondary'],
+                        ['farmer.history',      'fa-history',           'History',              'btn-outline-light border-secondary'],
+                        ['farmer.announcement', 'fa-bullhorn',          'Announcements',        'btn-outline-light border-secondary'],
+                        ['farmer.live_com',     'fa-message',           'Messenger',            'btn-outline-light border-secondary'],
+                        ['farmer.field_map',    'fa-map-location-dot',  'Field Map & Weather',  'btn-outline-light border-secondary'],
+                        ['farmer.schedule',     'fa-calendar-days',     'Schedule',             'btn-outline-light border-secondary'],
+                        ['farmer.reports',      'fa-flag',              'Report Problem',       'btn-outline-light border-secondary'],
+                    ];
+                @endphp
+                @foreach($quickActions as [$qaRoute, $qaIcon, $qaLabel, $qaClass])
+                    <div class="col-6 col-md-4 col-lg-3">
+                        <a href="{{ route($qaRoute) }}" class="btn {{ $qaClass }} w-100 py-3 fw-bold shadow-sm">
+                            <i class="fa-solid {{ $qaIcon }} fa-lg d-block mb-2"></i> {{ $qaLabel }}
+                        </a>
+                    </div>
+                @endforeach
+                {{-- AI Assistant is not a page: it opens the floating chat (same as the sidebar button). --}}
+                <div class="col-6 col-md-4 col-lg-3">
+                    <button type="button" onclick="document.getElementById('sidebar-chat-btn')?.click()" class="btn btn-outline-light border-secondary w-100 py-3 fw-bold shadow-sm">
+                        <i class="fa-solid fa-comment-dots fa-lg d-block mb-2"></i> AI Assistant
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -404,159 +364,6 @@ fetch(`{{ route('farmer.field_map.weather') }}?lat=${farmLat}&lon=${farmLng}`)
 
 setTimeout(() => { dashMap.invalidateSize(); }, 400);
 </script>
-
-<script>
-// ==========================================
-// FARM ADDRESS — inline Province/City/Barangay editor
-// (Same cascading pattern used on the registration form)
-// ==========================================
-const ADDR_BASE_URL = "{{ url('/') }}";
-const currentAddress = {
-    province_id: @json($userLocation->province_id ?? null),
-    city_id: @json($userLocation->city_id ?? null),
-    barangay_id: @json($userLocation->barangay_id ?? null)
-};
-
-const addrProvinceSelect  = document.getElementById('profile-province-select');
-const addrCitySelect      = document.getElementById('profile-city-select');
-const addrBarangaySelect  = document.getElementById('profile-barangay-select');
-
-function toggleAddressEdit(show) {
-    document.getElementById('address-display-view').classList.toggle('d-none', show);
-    document.getElementById('address-edit-view').classList.toggle('d-none', !show);
-    document.getElementById('address-edit-btn').classList.toggle('d-none', show);
-    document.getElementById('address-edit-error').classList.add('d-none');
-    if (show) loadAddrProvinces();
-}
-
-function loadAddrProvinces() {
-    addrProvinceSelect.innerHTML = '<option value="" disabled>Loading...</option>';
-    fetch(`${ADDR_BASE_URL}/locations/provinces`)
-        .then(res => res.json())
-        .then(provinces => {
-            addrProvinceSelect.innerHTML = '<option value="" disabled>Select province...</option>';
-            provinces.forEach(p => {
-                const opt = document.createElement('option');
-                opt.value = p.id;
-                opt.textContent = p.name;
-                if (currentAddress.province_id && String(p.id) === String(currentAddress.province_id)) {
-                    opt.selected = true;
-                }
-                addrProvinceSelect.appendChild(opt);
-            });
-            if (currentAddress.province_id) {
-                loadAddrCities(currentAddress.province_id, currentAddress.city_id);
-            }
-        });
-}
-
-function loadAddrCities(provinceId, preselectCityId) {
-    addrCitySelect.disabled = true;
-    addrCitySelect.innerHTML = '<option value="" disabled>Loading...</option>';
-    addrBarangaySelect.disabled = true;
-    addrBarangaySelect.innerHTML = '<option value="" disabled>Select city first...</option>';
-
-    fetch(`${ADDR_BASE_URL}/locations/cities/${provinceId}`)
-        .then(res => res.json())
-        .then(cities => {
-            addrCitySelect.innerHTML = '<option value="" disabled>Select city/municipality...</option>';
-            cities.forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c.id;
-                opt.textContent = c.name;
-                if (preselectCityId && String(c.id) === String(preselectCityId)) {
-                    opt.selected = true;
-                }
-                addrCitySelect.appendChild(opt);
-            });
-            addrCitySelect.disabled = false;
-            if (preselectCityId) {
-                loadAddrBarangays(preselectCityId, currentAddress.barangay_id);
-            }
-        });
-}
-
-function loadAddrBarangays(cityId, preselectBarangayId) {
-    addrBarangaySelect.disabled = true;
-    addrBarangaySelect.innerHTML = '<option value="" disabled>Loading...</option>';
-
-    fetch(`${ADDR_BASE_URL}/locations/barangays/${cityId}`)
-        .then(res => res.json())
-        .then(barangays => {
-            addrBarangaySelect.innerHTML = '<option value="" disabled>Select barangay...</option>';
-            barangays.forEach(b => {
-                const opt = document.createElement('option');
-                opt.value = b.id;
-                opt.textContent = b.name;
-                if (preselectBarangayId && String(b.id) === String(preselectBarangayId)) {
-                    opt.selected = true;
-                }
-                addrBarangaySelect.appendChild(opt);
-            });
-            addrBarangaySelect.disabled = false;
-        });
-}
-
-addrProvinceSelect.addEventListener('change', function () {
-    loadAddrCities(this.value, null);
-});
-
-addrCitySelect.addEventListener('change', function () {
-    loadAddrBarangays(this.value, null);
-});
-
-function saveAddress() {
-    const errorBox = document.getElementById('address-edit-error');
-    errorBox.classList.add('d-none');
-
-    const province_id  = addrProvinceSelect.value;
-    const city_id       = addrCitySelect.value;
-    const barangay_id   = addrBarangaySelect.value;
-
-    if (!province_id || !city_id || !barangay_id) {
-        errorBox.textContent = 'Please complete Province, City, and Barangay.';
-        errorBox.classList.remove('d-none');
-        return;
-    }
-
-    const saveBtn = document.getElementById('address-save-btn');
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Saving...';
-
-    fetch(`{{ route('farmer.profile.address') }}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-        },
-        body: JSON.stringify({ province_id, city_id, barangay_id })
-    })
-    .then(res => res.json().then(data => ({ status: res.status, body: data })))
-    .then(({ status, body }) => {
-        if (status === 200 && body.success) {
-            document.getElementById('address-display-text').textContent = body.address;
-            currentAddress.province_id = province_id;
-            currentAddress.city_id = city_id;
-            currentAddress.barangay_id = barangay_id;
-            toggleAddressEdit(false);
-        } else {
-            errorBox.textContent = body.message || 'Failed to save address. Please try again.';
-            errorBox.classList.remove('d-none');
-        }
-    })
-    .catch(() => {
-        errorBox.textContent = 'Something went wrong. Please check your connection and try again.';
-        errorBox.classList.remove('d-none');
-    })
-    .finally(() => {
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = '<i class="fa-solid fa-check me-1"></i> Save';
-    });
-}
-</script>
-
-
 
 <script>
 // 1. Initialize System Readiness Checker based on current connection

@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    use Notifiable;
+    use HasApiTokens, Notifiable;
 
     protected $fillable = [
         'full_name',
@@ -70,7 +71,7 @@ class User extends Authenticatable
         });
     }
 
-        public function province()
+    public function province()
     {
         return $this->belongsTo(Province::class);
     }

@@ -7,10 +7,96 @@ use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException; 
+use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rules\Password;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
+    // ------------------------------------------------------------------
+    // Login lockout: 5 wrong passwords in a row -> locked for 15 seconds.
+    // Counted per (email + IP). Needs a cache driver that is shared between
+    // requests (database / redis). If the cache is down, login still works
+    // (fails open) and the problem is written to the log.
+    // ------------------------------------------------------------------
+    private const MAX_ATTEMPTS   = 5;
+    private const LOCK_SECONDS   = 15;
+    private const ATTEMPT_WINDOW = 900; // forget old failures after 15 min
+
+    private const ID_TYPES = ['barangay_clearance', 'voters_id', 'national_id', 'farmer_id', 'other'];
+
+    // Throw-away mailbox providers are not accepted for a farmer account.
+    private const DISPOSABLE_DOMAINS = [
+        'mailinator.com', 'guerrillamail.com', '10minutemail.com', 'tempmail.com',
+        'temp-mail.org', 'yopmail.com', 'trashmail.com', 'sharklasers.com',
+        'getnada.com', 'dispostable.com', 'maildrop.cc', 'fakeinbox.com',
+    ];
+
+    private function lockKey(Request $request): string
+    {
+        return sha1(Str::lower(trim((string) $request->input('email'))) . '|' . $request->ip());
+    }
+
+    /** Seconds left on the lock, 0 when not locked. */
+    private function lockRemaining(string $key): int
+    {
+        try {
+            $until = (int) Cache::get("login_lock:$key", 0);
+            return max(0, $until - time());
+        } catch (\Throwable $e) {
+            Log::warning('Login lock check failed: ' . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /** Records one failed login. Returns [lockedNow, attemptsLeft]. */
+    private function registerFailure(string $key): array
+    {
+        try {
+            $n = (int) Cache::get("login_fail:$key", 0) + 1;
+            if ($n >= self::MAX_ATTEMPTS) {
+                Cache::put("login_lock:$key", time() + self::LOCK_SECONDS, self::LOCK_SECONDS);
+                Cache::forget("login_fail:$key");
+                return [true, 0];
+            }
+            Cache::put("login_fail:$key", $n, self::ATTEMPT_WINDOW);
+            return [false, self::MAX_ATTEMPTS - $n];
+        } catch (\Throwable $e) {
+            Log::warning('Login failure counter failed: ' . $e->getMessage());
+            return [false, self::MAX_ATTEMPTS];
+        }
+    }
+
+    private function clearFailures(string $key): void
+    {
+        try {
+            Cache::forget("login_fail:$key");
+            Cache::forget("login_lock:$key");
+        } catch (\Throwable $e) {
+            Log::warning('Login counter clear failed: ' . $e->getMessage());
+        }
+    }
+
+    private function lockedResponse(Request $request, bool $isAjax, int $seconds)
+    {
+        $message = "Masyadong maraming maling subok. Maghintay ng {$seconds} segundo bago subukan ulit.";
+        if ($isAjax) {
+            return response()->json([
+                'success'     => false,
+                'locked'      => true,
+                'retry_after' => $seconds,
+                'message'     => $message,
+            ], 429)->header('Retry-After', $seconds);
+        }
+        return back()
+            ->with('error', $message)
+            ->with('lockout_seconds', $seconds)
+            ->withInput($request->only('email'));
+    }
+
     public function showLoginForm()
     {
     // If the user is already logged in, redirect them to their role dashboard
@@ -52,8 +138,8 @@ class AuthController extends Controller
         // Catch validation exception and strip base64 to prevent payload errors
         try {
             $request->validate([
-                'email' => 'required|email',
-                'password' => 'required',
+                'email' => 'required|email|max:100',
+                'password' => 'required|string|max:255',
             ]);
         } catch (ValidationException $e) {
             if ($isAjax) {
@@ -64,40 +150,117 @@ class AuthController extends Controller
             }
             return back()
                 ->withErrors($e->errors())
-                ->withInput($request->except(['document_photo_base64']));
+                ->withInput($request->except(['password', 'password_confirmation', 'document_photo_base64', 'selfie_photo_base64']));
         }
 
         // Handle Signup
         if ($request->has('action') && $request->action === 'signup') {
             
+            $flashExcept = ['password', 'password_confirmation', 'document_photo_base64', 'selfie_photo_base64', 'id_check'];
+
+            // Tidy the text fields before they are validated and stored.
+            $request->merge([
+                'full_name' => preg_replace('/\s+/', ' ', trim((string) $request->full_name)),
+                'email'     => Str::lower(trim((string) $request->email)),
+                'mobile'    => preg_replace('/\D+/', '', (string) $request->mobile),
+                'farm_name' => preg_replace('/\s+/', ' ', trim((string) $request->farm_name)),
+            ]);
+
             try {
                 $request->validate([
-                    'full_name' => 'required|string|max:255',
-                    'email' => 'required|email',
-                    'password' => 'required|min:6',
+                    'full_name' => ['required', 'string', 'min:5', 'max:100', "regex:/^(?=.*\\s)\\p{L}[\\p{L}\\s.'\\-]*$/u"],
+                    'dob' => [
+                        'required', 'date_format:Y-m-d',
+                        'before_or_equal:' . now()->subYears(18)->toDateString(),
+                        'after_or_equal:' . now()->subYears(100)->toDateString(),
+                    ],
+                    'mobile' => ['required', 'regex:/^09\d{9}$/'],
+                    'email' => [
+                        'required', 'string', 'max:100', 'email:rfc',
+                        // must look like name@domain.tld (TLD = letters only, 2+ chars)
+                        'regex:/^[A-Za-z0-9._%+\-]+@[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}$/',
+                        function ($attribute, $value, $fail) {
+                            $domain = Str::after((string) $value, '@');
+                            if (in_array($domain, self::DISPOSABLE_DOMAINS, true)) {
+                                $fail('Hindi tinatanggap ang temporary email. Gumamit ng totoong email.');
+                            }
+                        },
+                    ],
+                    'password' => [
+                        'required', 'string', 'max:64', 'confirmed', 'regex:/^\S+$/',
+                        Password::min(8)->mixedCase()->numbers()->symbols(),
+                    ],
                     'province_id' => 'required|exists:provinces,id',
                     'city_id' => 'required|exists:cities,id',
                     'barangay_id' => 'required|exists:barangays,id',
-                    'farm_name' => 'required|string',
-                    'latitude' => 'required|numeric',
-                    'longitude' => 'required|numeric',
+                    'farmer_category' => ['required', 'in:owner,tenant,laborer'],
+                    'farm_name' => ['required', 'string', 'min:2', 'max:100', "regex:/^[\\p{L}\\p{N}\\s.,'#&\\-]+$/u"],
+                    'farm_size' => ['required', 'numeric', 'min:0.01', 'max:1000'],
+                    'water_source' => ['required', 'in:irrigated,rainfed'],
+                    'growth_stage' => ['nullable', 'in:Seedling,Vegetative,Reproductive,Ripening'],
+                    'rice_variety' => ['nullable', 'string', 'max:50', "regex:/^[\\p{L}\\p{N}\\s.\\-]+$/u"],
+                    // Philippines bounding box
+                    'latitude' => ['required', 'numeric', 'between:4.5,21.5'],
+                    'longitude' => ['required', 'numeric', 'between:116,127.5'],
+                    'device_latitude' => ['nullable', 'numeric', 'between:-90,90'],
+                    'device_longitude' => ['nullable', 'numeric', 'between:-180,180'],
+                    'id_type' => ['required', 'in:' . implode(',', self::ID_TYPES)],
+                    'document_photo_base64' => ['required', 'string', 'starts_with:data:image/jpeg;base64,', 'max:3000000'],
+                    'id_check' => ['nullable', 'string', 'max:5000'],
+                ], [
+                    'full_name.regex' => 'Ilagay ang buong pangalan (first name at last name), letra lang.',
+                    'dob.before_or_equal' => 'Kailangang 18 taong gulang pataas.',
+                    'dob.after_or_equal' => 'Hindi valid ang petsa ng kapanganakan.',
+                    'mobile.regex' => 'Ang mobile number ay dapat 11 digits at nagsisimula sa 09 (hal. 09123456789).',
+                    'email.regex' => 'Hindi valid ang email. Dapat may tamang domain, hal. juan@gmail.com.',
+                    'password.regex' => 'Bawal ang espasyo sa password.',
+                    'password.confirmed' => 'Hindi magkapareho ang password at confirm password.',
+                    'farm_size.min' => 'Ang laki ng sakahan ay dapat hindi bababa sa 0.01 ha.',
+                    'farm_size.max' => 'Ang laki ng sakahan ay hindi dapat lumampas sa 1000 ha.',
+                    'latitude.between' => 'Ang lokasyon ng sakahan ay dapat nasa loob ng Pilipinas.',
+                    'longitude.between' => 'Ang lokasyon ng sakahan ay dapat nasa loob ng Pilipinas.',
+                    'document_photo_base64.required' => 'Mag-upload ng larawan ng valid ID.',
+                    'document_photo_base64.starts_with' => 'Hindi tinatanggap ang format ng larawan ng ID.',
                 ]);
             } catch (ValidationException $e) {
                 return back()
                     ->withErrors($e->errors())
-                    ->withInput($request->except(['document_photo_base64']));
+                    ->withInput($request->except($flashExcept))
+                    ->with('open_signup', true);
             }
+
+            // The ID photo must really be a JPEG image of a usable size.
+            $photoBinary = base64_decode(substr($request->document_photo_base64, strlen('data:image/jpeg;base64,')), true);
+            $photoInfo = $photoBinary ? @getimagesizefromstring($photoBinary) : false;
+            if (!$photoInfo || $photoInfo[2] !== IMAGETYPE_JPEG || min($photoInfo[0], $photoInfo[1]) < 400) {
+                return back()
+                    ->withErrors(['document_photo_base64' => 'Hindi valid o masyadong maliit ang larawan ng ID. Mag-upload ng mas malinaw na larawan.'])
+                    ->withInput($request->except($flashExcept))
+                    ->with('open_signup', true);
+            }
+
+            // Hints from the browser-side ID check (face / text / quality).
+            // They come from the user's browser, so they are only a note for
+            // the admin, never a reason to approve anybody automatically.
+            $idCheck = json_decode((string) $request->id_check, true);
+            $idCheck = is_array($idCheck) ? $idCheck : [];
+            $idCheck = array_intersect_key($idCheck, array_flip([
+                'status', 'faces', 'face_ratio', 'type_keyword_match', 'name_match', 'sharpness', 'brightness',
+            ]));
+            $idCheck['reported_by'] = 'browser';
+            $idCheck['server_image'] = ['width' => $photoInfo[0], 'height' => $photoInfo[1], 'kb' => (int) round(strlen($photoBinary) / 1024)];
 
             $existing = User::where('email', $request->email)->first();
             if ($existing) {
                 return back()
                     ->with('error', 'Ang email na ito ay nagamit na.')
-                    ->withInput($request->except(['document_photo_base64']));
+                    ->with('open_signup', true)
+                    ->withInput($request->except($flashExcept));
             }
 
             // Handle DB errors gracefully without crashing Vercel
             try {
-                User::create([
+                $newUser = User::create([
                     'full_name' => $request->full_name,
                     'email' => $request->email,
                     'password' => Hash::make($request->password),
@@ -119,6 +282,11 @@ class AuthController extends Controller
                     'device_latitude' => $request->device_latitude, 
                     'device_longitude' => $request->device_longitude,
                 ]);
+
+                // Optional column (see the add_id_check_to_users_table migration).
+                if (Schema::hasColumn('users', 'id_check')) {
+                    $newUser->forceFill(['id_check' => json_encode($idCheck)])->save();
+                }
 
                 // ==========================================
                 // EMAIL NOTIFICATION FOR NEW REGISTRATION
@@ -176,9 +344,11 @@ class AuthController extends Controller
                 // ==========================================
                 
             } catch (\Exception $e) {
+                Log::error('Signup failed: ' . $e->getMessage());
                 return back()
-                    ->with('error', 'Database Error: ' . $e->getMessage())
-                    ->withInput($request->except(['document_photo_base64']));
+                    ->with('error', 'May problema sa pag-register. Pakisubukan ulit mamaya.')
+                    ->with('open_signup', true)
+                    ->withInput($request->except($flashExcept));
             }
 
             // Clear registration-specific session footprint to prevent auto-redirect loop
@@ -190,14 +360,32 @@ class AuthController extends Controller
         }
 
         // Normal Login
+        $lockKey = $this->lockKey($request);
+
+        // Still locked from 5 wrong attempts? Don't even look at the password.
+        $remaining = $this->lockRemaining($lockKey);
+        if ($remaining > 0) {
+            return $this->lockedResponse($request, $isAjax, $remaining);
+        }
+
         $user = User::where('email', $request->email)->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
-            if ($isAjax) {
-                return response()->json(['success' => false, 'message' => 'Mali ang email o password.'], 422);
+            [$lockedNow, $attemptsLeft] = $this->registerFailure($lockKey);
+            if ($lockedNow) {
+                return $this->lockedResponse($request, $isAjax, self::LOCK_SECONDS);
             }
-            return back()->with('error', 'Mali ang email o password.');
+            $message = $attemptsLeft <= 2
+                ? "Mali ang email o password. {$attemptsLeft} subok na lang bago ma-lock."
+                : 'Mali ang email o password.';
+            if ($isAjax) {
+                return response()->json(['success' => false, 'message' => $message, 'attempts_left' => $attemptsLeft], 422);
+            }
+            return back()->with('error', $message)->withInput($request->only('email'));
         }
+
+        // Correct password: the failed-attempt counter starts over.
+        $this->clearFailures($lockKey);
 
         if ($user->role === 'farmer' && $user->status !== 'approved') {
             if ($user->status === 'pending') {

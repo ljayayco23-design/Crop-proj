@@ -1165,75 +1165,93 @@ document.addEventListener("DOMContentLoaded", async () => {
                 });
             }
         };
+        // Already online when the page opens: push any waiting scans now.
+        if (navigator.onLine !== false) setTimeout(() => window.syncOfflineHistory(), 1500);
     } catch(e) {
         console.log("No offline database found or error opening DB.");
     }
 });
 
-// --- NEW: Auto-Sync Listener for History Page ---
-window.addEventListener('online', async () => {
-    if (!dbInstance) return;
-    
-    console.log("Connection restored. Syncing records from history page...");
-    
+// --- Auto-sync of offline scans (History page) ---
+// Runs (1) when the page opens while online, (2) whenever the browser comes
+// back online, and (3) every 30 s while unsynced scans remain, so offline
+// scans reach the server without the user having to do anything.
+window.syncOfflineHistory = function () {
+    if (!dbInstance || window.__syncingOffline || navigator.onLine === false) return;
+
     const tx = dbInstance.transaction('offline_history', 'readonly');
-    const store = tx.objectStore('offline_history');
-    const request = store.getAll();
+    const request = tx.objectStore('offline_history').getAll();
 
     request.onsuccess = async () => {
-        const allRecords = request.result;
         const currentUserId = {{ Auth::id() }};
-        const userRecords = allRecords.filter(record => record.user_id === currentUserId);
+        const userRecords = request.result.filter(record => record.user_id === currentUserId);
+        if (userRecords.length === 0) return;
 
-        if (userRecords.length > 0) {
-            // 1. Visually change badges to "Syncing..."
-            userRecords.forEach(record => {
-                const badgeContainer = document.querySelector(`#offline-record-${record.id} .sync-badge`);
-                if(badgeContainer) {
-                    badgeContainer.className = 'badge bg-info text-dark px-3 py-2 fw-bold shadow-sm sync-badge';
-                    badgeContainer.innerHTML = '<i class="fas fa-sync fa-spin me-1"></i> Syncing...';
-                }
-            });
+        window.__syncingOffline = true;
+        let synced = 0;
 
-            // 2. Process uploads
-            for (const record of userRecords) {
-                const { id, user_id, ...serverPayload } = record; 
-                
-                try {
-                    const response = await fetch("{{ route('farmer.history.save') }}", {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json',
-                            'X-CSRF-TOKEN': "{{ csrf_token() }}"
-                        },
-                        body: JSON.stringify({...serverPayload, user_id: currentUserId})
-                    });
-
-                    if (response.ok) {
-                        // Remove record from IndexedDB
-                        const delTx = dbInstance.transaction('offline_history', 'readwrite');
-                        delTx.objectStore('offline_history').delete(id);
-
-                        // 3. Swap badge color and text to "Synced"
-                        const badgeContainer = document.querySelector(`#offline-record-${record.id} .sync-badge`);
-                        if (badgeContainer) {
-                            badgeContainer.className = 'badge bg-success text-white px-3 py-2 fw-bold shadow-sm sync-badge';
-                            badgeContainer.innerHTML = '<i class="fas fa-check-circle me-1"></i> Synced';
-                        }
-                    }
-                } catch(e) {
-                    console.error("Failed to sync record", e);
-                }
+        userRecords.forEach(record => {
+            const badge = document.querySelector(`#offline-record-${record.id} .sync-badge`);
+            if (badge) {
+                badge.className = 'badge bg-info text-dark px-3 py-2 fw-bold shadow-sm sync-badge';
+                badge.innerHTML = '<i class="fas fa-sync fa-spin me-1"></i> Syncing...';
             }
-            
-            // 4. Brief delay to let the user see the green "Synced" state before reload
-            setTimeout(() => {
-                window.location.reload();
-            }, 1000);
+        });
+
+        for (const record of userRecords) {
+            const { id, user_id, ...serverPayload } = record;
+            // Old records saved before this fix have no capture time: give them one
+            // (the server ignores a repeat of the same scan with the same time).
+            if (!serverPayload.captured_at) serverPayload.captured_at = new Date().toISOString();
+
+            let ok = false;
+            try {
+                const response = await fetch("{{ route('farmer.history.save') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': "{{ csrf_token() }}"
+                    },
+                    body: JSON.stringify({...serverPayload, user_id: currentUserId})
+                });
+                ok = response.ok;
+            } catch (e) {
+                console.error("Failed to sync record", e);
+            }
+
+            const badge = document.querySelector(`#offline-record-${record.id} .sync-badge`);
+            if (ok) {
+                synced++;
+                await new Promise(resolve => {
+                    const delTx = dbInstance.transaction('offline_history', 'readwrite');
+                    delTx.objectStore('offline_history').delete(id);
+                    delTx.oncomplete = resolve;
+                    delTx.onerror = resolve;
+                });
+                if (badge) {
+                    badge.className = 'badge bg-success text-white px-3 py-2 fw-bold shadow-sm sync-badge';
+                    badge.innerHTML = '<i class="fas fa-check-circle me-1"></i> Synced';
+                }
+            } else if (badge) {
+                // stays in the queue, retried automatically
+                badge.className = 'badge bg-warning text-dark px-3 py-2 fw-bold shadow-sm sync-badge';
+                badge.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i> Not sync yet';
+            }
+        }
+
+        window.__syncingOffline = false;
+
+        // Reload only if something really reached the server, so the synced
+        // scans appear in the normal (server) history list.
+        if (synced > 0) {
+            setTimeout(() => { window.location.reload(); }, 1000);
         }
     };
-});
+};
+
+window.addEventListener('online', () => window.syncOfflineHistory());
+setInterval(() => window.syncOfflineHistory(), 30000);
 
     // Delete a specific offline record from IndexedDB
     function deleteOfflineRecord(id, buttonElement) {

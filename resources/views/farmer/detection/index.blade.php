@@ -3067,6 +3067,9 @@ window.saveCurrentDetection = async function() {
     // its own independent Groq snapshot or reads the shared model KB.
     const payload = {
         user_id: {{ Auth::id() }},
+        // When the scan was really taken (kept if it has to wait offline; also lets
+        // the server ignore a repeat of the same scan).
+        captured_at: new Date().toISOString(),
         field_key: document.getElementById('field-selector') ? document.getElementById('field-selector').value : 'main',
         class_key: lastClassKey,
         confidence: lastConfidence,
@@ -3149,10 +3152,49 @@ const dbPromise = new Promise((resolve, reject) => {
 
 async function saveLocally(payload) {
     const db = await dbPromise;
-    const tx = db.transaction('offline_history', 'readwrite');
-    tx.objectStore('offline_history').add(payload);
-    return tx.complete;
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('offline_history', 'readwrite');
+        tx.objectStore('offline_history').add(payload);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+    });
 }
+
+// Push scans that were saved offline as soon as we are online again — on this
+// page too, not only on the History page.
+let rgSyncingOffline = false;
+async function syncOfflineScans() {
+    if (rgSyncingOffline || navigator.onLine === false) return;
+    rgSyncingOffline = true;
+    try {
+        const db = await dbPromise;
+        const all = await new Promise((resolve, reject) => {
+            const req = db.transaction('offline_history', 'readonly').objectStore('offline_history').getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+        const mine = all.filter(r => r.user_id === {{ Auth::id() }});
+        for (const record of mine) {
+            const { id, ...payload } = record;
+            if (!payload.captured_at) payload.captured_at = new Date().toISOString();
+            if (!(await sendToServer(payload))) break; // still offline / server problem: retry later
+            await new Promise(resolve => {
+                const tx = db.transaction('offline_history', 'readwrite');
+                tx.objectStore('offline_history').delete(id);
+                tx.oncomplete = resolve;
+                tx.onerror = resolve;
+            });
+        }
+    } catch (e) {
+        console.warn('[offline sync]', e);
+    } finally {
+        rgSyncingOffline = false;
+    }
+}
+window.addEventListener('online', syncOfflineScans);
+setInterval(syncOfflineScans, 30000);
+setTimeout(syncOfflineScans, 3000);
 
 async function rgInit() {
     // Wire up the upload / drag-drop / native-camera inputs FIRST. They used to be

@@ -78,7 +78,7 @@ Route::get('/', function () {
 // ==================== AUTHENTICATION ROUTES ====================
 
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
-Route::post('/login', [AuthController::class, 'login'])->name('login.post')->middleware('throttle:6,1');
+Route::post('/login', [AuthController::class, 'login'])->name('login.post')->middleware('throttle:30,1');
 
 // ✅ Keep this one and ensure the name is 'password.email'
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('password.email');
@@ -108,7 +108,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     })->name('index');
 
     Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
-    Route::post('/login', [AuthController::class, 'login'])->name('login.post')->middleware('throttle:6,1');
+    Route::post('/login', [AuthController::class, 'login'])->name('login.post')->middleware('throttle:30,1');
 });
 
 // ==================== PROTECTED ADMIN ROUTES ====================
