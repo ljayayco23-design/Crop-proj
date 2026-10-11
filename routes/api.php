@@ -23,6 +23,10 @@ Route::prefix('v1')->group(function () {
     // Polled by the "waiting for approval" screen
     Route::get('/check-status', [AuthController::class, 'checkStatus'])->middleware('throttle:60,1');
 
+    // Forgot password: e-mails a temporary password (same idea as the web
+    // /forgot-password, but JSON + no CSRF/session so the phone can call it).
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
+
     // Province / City / Barangay dropdowns for the register form.
     // Same controller the web login page uses, exposed under /api so CORS
     // (Flutter web on :5000 -> Laravel on :8000) applies to it.

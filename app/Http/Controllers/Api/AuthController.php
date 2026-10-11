@@ -375,6 +375,127 @@ class AuthController extends Controller
         return response()->json(['success' => true, 'ok' => $ok, 'message' => $msg, 'meta' => $meta]);
     }
 
+    // --------------------------------------------------------- forgot password
+
+    /**
+     * Same result as the web forgotPassword(): a 12-character temporary
+     * password is e-mailed to the farmer. Differences, on purpose:
+     *  - JSON in / JSON out (the web one needs a CSRF form + redirect);
+     *  - the e-mail is sent FIRST and the password is changed only if it was
+     *    sent, so a Brevo failure never leaves the farmer locked out;
+     *  - one request per e-mail per minute (nobody can spam-reset an account);
+     *  - old API tokens are revoked once the password has changed.
+     * POST { email }
+     */
+    public function forgotPassword(Request $request)
+    {
+        $request->merge(['email' => Str::lower(trim((string) $request->input('email')))]);
+
+        $data = $request->validate([
+            'email' => 'required|email|max:100',
+        ]);
+
+        $user = User::where('email', $data['email'])->first();
+
+        // This app is the farmer side only.
+        if (!$user || strtolower(trim((string) $user->role)) !== 'farmer') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Walang account na nakarehistro sa email na ito.',
+            ], 404);
+        }
+
+        // One reset e-mail per address per minute.
+        try {
+            if (!Cache::add('pw_reset:' . sha1($data['email']), 1, 60)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'May naipadala nang password sa email na ito. Maghintay ng 1 minuto bago humiling ulit.',
+                ], 429);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('API forgot-password cooldown failed: ' . $e->getMessage());
+        }
+
+        $apiKey = env('BREVO_API_KEY');
+        if (empty($apiKey)) {
+            Log::error('API forgot-password: BREVO_API_KEY is not set.');
+            return response()->json([
+                'success' => false,
+                'message' => 'Hindi pa naka-set up ang email ng system. Makipag-ugnayan sa Admin.',
+            ], 500);
+        }
+
+        // Temporary password (12 characters), same character set as the web version.
+        $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnopqrstuvwxyz23456789!@#$%^&*()_+-';
+        $newPassword = '';
+        for ($i = 0; $i < 12; $i++) {
+            $newPassword .= $chars[random_int(0, strlen($chars) - 1)];
+        }
+
+        $adminEmail = 'jfconco604@gmail.com';
+
+        $html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>'
+            . '<body style="background-color:#f1f5f9;padding:20px;margin:0;font-family:system-ui,-apple-system,sans-serif;">'
+            . '<div style="max-width:600px;margin:0 auto;padding:30px;background-color:#0f172a;color:#ffffff;border-radius:20px;">'
+            . '<h1 style="color:#10b981;margin-bottom:20px;margin-top:0;">RiceGuard AI</h1>'
+            . '<h2 style="color:#ffffff;margin-top:0;">Your New Temporary Password</h2>'
+            . '<p style="color:#e2e8f0;">Hi ' . e($user->full_name) . ',</p>'
+            . '<p style="color:#e2e8f0;">A password reset was requested for your RiceGuard AI account.</p>'
+            . '<div style="margin:30px 0;font-size:24px;background-color:#1e293b;padding:20px;border-radius:12px;text-align:center;letter-spacing:2px;">'
+            . '<strong style="color:#10b981;">' . e($newPassword) . '</strong></div>'
+            . '<p style="color:#e2e8f0;"><strong>Please login with this password and change it immediately</strong> for your security.</p>'
+            . '<p style="color:#e2e8f0;">If you did not request this reset, please ignore this email.</p>'
+            . '<hr style="border:none;border-top:1px solid #334155;margin:30px 0;">'
+            . '<p style="color:#94a3b8;font-size:14px;margin-bottom:0;">Thank you,<br>RiceGuard AI Team</p>'
+            . '</div></body></html>';
+
+        $sent = false;
+        try {
+            $res = Http::withHeaders([
+                'accept'  => 'application/json',
+                'api-key' => $apiKey,
+            ])->timeout(15)->post('https://api.brevo.com/v3/smtp/email', [
+                'sender'      => ['name' => 'RiceGuard AI Support', 'email' => $adminEmail],
+                'to'          => [['email' => $user->email]],
+                'subject'     => 'RiceGuard AI - Your New Temporary Password',
+                'htmlContent' => $html,
+            ]);
+            $sent = $res->successful();
+            if (!$sent) {
+                Log::error('API forgot-password Brevo error ' . $res->status() . ': ' . $res->body());
+            }
+        } catch (\Throwable $e) {
+            Log::error('API forgot-password mail failed: ' . $e->getMessage());
+        }
+
+        if (!$sent) {
+            // Nothing was changed, so let the farmer try again right away.
+            try { Cache::forget('pw_reset:' . sha1($data['email'])); } catch (\Throwable $e) {}
+            return response()->json([
+                'success' => false,
+                'message' => 'Nabigong ipadala ang email. Mangyaring subukan muli mamaya.',
+            ], 500);
+        }
+
+        try {
+            $user->password = Hash::make($newPassword);
+            $user->save();
+            $user->tokens()->delete(); // sign the farmer out of every device
+        } catch (\Throwable $e) {
+            Log::error('API forgot-password save failed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'May problema sa pag-reset ng password. Pakisubukan ulit mamaya.',
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Naipadala na ang bagong temporaryong password sa iyong email. Paki-check ang iyong inbox (at spam folder).',
+        ]);
+    }
+
     /** Used by the "waiting for approval" screen (same idea as web /check-status). */
     public function checkStatus(Request $request)
     {
