@@ -20,6 +20,11 @@ use App\Http\Controllers\LocationController;
 use App\Http\Controllers\FarmerReportController;
 use App\Http\Controllers\ScheduleController;
 use App\Http\Middleware\EnsureUserRole;
+use App\Http\Controllers\Admin\AdminFieldAnalyticsController;
+
+
+
+Route::get('/field-analytics', [AdminFieldAnalyticsController::class, 'index'])->name('field_analytics');
 
 Route::get('/locations/provinces', [LocationController::class, 'provinces']);
 Route::get('/locations/cities/{province}', [LocationController::class, 'cities']);
@@ -71,6 +76,8 @@ Route::middleware(['auth', EnsureUserRole::allow('technician')])->prefix('techni
     Route::post('/reports/{report}/escalate', [FarmerReportController::class, 'escalate'])->name('technician.reports.escalate');
     // Live admin status of this technician's escalated reports (polled by the technician page).
     Route::get('/reports/escalations', [FarmerReportController::class, 'escalationStatuses'])->name('technician.reports.escalations');
+    // "Create Support" on a suggestion the admin assigned to this technician.
+    Route::post('/suggestions/{feedback}/support', [FarmerReportController::class, 'supportSuggestion'])->name('technician.suggestions.support');
 });
 // ============================================
 // SHARED PROFILE ROUTES (For ALL roles)
@@ -149,6 +156,15 @@ Route::prefix('admin')->middleware(['auth', EnsureUserRole::allow('admin', 'deve
     // View / In Progress / Resolved from the three-dot menu post to the status route.
     Route::get('/system-report', [AdminSystemReportController::class, 'index'])->name('system_report');
     Route::post('/system-report/{report}/status', [AdminSystemReportController::class, 'updateStatus'])->name('system_report.status');
+    // Resolve (status + notes), Assign Tech (priority + notes), Delete, and the assignable-technician list.
+    Route::get('/system-report/technicians', [\App\Http\Controllers\Admin\AdminSystemReportActionController::class, 'technicians'])->name('system_report.technicians');
+    Route::post('/system-report/{report}/resolve', [\App\Http\Controllers\Admin\AdminSystemReportActionController::class, 'resolve'])->name('system_report.resolve');
+    Route::post('/system-report/{report}/assign', [\App\Http\Controllers\Admin\AdminSystemReportActionController::class, 'assign'])->name('system_report.assign');
+    Route::delete('/system-report/{report}', [\App\Http\Controllers\Admin\AdminSystemReportActionController::class, 'destroy'])->name('system_report.destroy');
+    // Farmer suggestions: assign a technician (+ priority + private notes).
+    Route::post('/suggestions/{feedback}/assign', [\App\Http\Controllers\Admin\AdminSuggestionController::class, 'assign'])->name('suggestions.assign');
+    // Farmer suggestions: admin resolves it himself (status + notes).
+    Route::post('/suggestions/{feedback}/resolve', [\App\Http\Controllers\Admin\AdminSuggestionController::class, 'resolve'])->name('suggestions.resolve');
 
     // These three keep their original names/URLs (so existing sidebar links keep working)
     // but now all render the merged User Accounts page (admin.users.user_log),
@@ -193,7 +209,14 @@ Route::prefix('admin')->middleware(['auth', EnsureUserRole::allow('admin', 'deve
     Route::post('/assignments/store', [AdminAssignmentController::class, 'store'])->name('assignment.store');
     Route::post('/assignments/{id}/update', [AdminAssignmentController::class, 'update'])->name('assignment.update');
     Route::get('/assignments/{id}/delete', [AdminAssignmentController::class, 'destroy'])->name('assignment.delete');
-});
+    Route::get('/assignments/{id}/delete', [AdminAssignmentController::class, 'destroy'])->name('assignment.delete');
+
+    // Field Analytics: farmers + detections per barangay
+    Route::get('/field-analytics', [AdminFieldAnalyticsController::class, 'index'])->name('field_analytics');
+
+
+
+    });
 
 // ==================== PROTECTED TECHNICIAN ROUTES ====================
 // NOTE: this group previously only required ['auth'], which meant ANY

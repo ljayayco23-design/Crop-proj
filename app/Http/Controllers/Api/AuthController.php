@@ -578,4 +578,4 @@ class AuthController extends Controller
             'lang'            => $user->lang,
         ];
     }
-}
+}   

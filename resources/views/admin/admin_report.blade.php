@@ -245,6 +245,75 @@
     .wd-legend-count { color: #fff; font-weight: 700; background: rgba(255,255,255,.07); padding: 2px 10px; border-radius: 999px; font-size: .76rem; min-width: 28px; text-align: center; }
     .wd-legend-pct { color: #64748b; font-size: .74rem; width: 38px; text-align: right; flex: 0 0 auto; }
 
+    /* ---------- Three filter cards (same look as the farmer Feedback & Support cards) ---------- */
+    .sr-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+    @media (max-width: 1199.98px) { .sr-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    .sr-card-tab {
+        display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+        background: #121826; border: 1px solid #263349; border-radius: 12px;
+        padding: 14px; color: #e2e8f0; cursor: pointer;
+        transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease, background-color .15s ease;
+    }
+    .sr-card-tab:hover { border-color: #3b4c66; transform: translateY(-1px); }
+    .sr-card-tab:focus-visible { outline: 2px solid #10b981; outline-offset: 2px; }
+    .sr-card-tab.active {
+        border-color: #10b981; background: rgba(16,185,129,.07);
+        box-shadow: 0 0 0 1px #10b981 inset, 0 8px 24px rgba(16,185,129,.12);
+    }
+    .sr-card-icon {
+        width: 42px; height: 42px; border-radius: 12px; flex: 0 0 auto;
+        display: flex; align-items: center; justify-content: center; font-size: 1.1rem; color: #fff;
+    }
+    .sr-icon-ai { background: #ef4444; }
+    .sr-icon-kb { background: #3b82f6; }
+    .sr-icon-sys { background: #8b5cf6; }
+    .sr-icon-sug { background: #f59e0b; }
+    .sr-icon-fb { background: #06b6d4; }
+    .sr-card-body { flex: 1 1 auto; min-width: 0; }
+    .sr-card-title { font-weight: 800; color: #fff; font-size: .95rem; line-height: 1.25; display: block; }
+    .sr-card-desc { font-size: .76rem; color: #94a3b8; line-height: 1.35; margin-top: 2px; display: block; }
+    .sr-card-count {
+        flex: 0 0 auto; font-size: .72rem; font-weight: 800; padding: 3px 10px; border-radius: 999px;
+        background: rgba(148,163,184,.15); color: #cbd5e1;
+    }
+    .sr-card-tab.active .sr-card-count { background: rgba(16,185,129,.2); color: #34d399; }
+
+    /* ---------- Resolve / Assigned Tech panels (inside the View modal) ---------- */
+    .sr-tech-list { display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; }
+    .sr-tech-item {
+        display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 9px; cursor: pointer;
+        border: 1px solid #334155; background: #0f1522; color: #e2e8f0; font-size: .85rem;
+    }
+    .sr-tech-item:hover { border-color: #475569; }
+    .sr-tech-item.selected { border-color: #38bdf8; background: rgba(56,189,248,.1); }
+    .sr-tech-item input { accent-color: #38bdf8; }
+    .sr-tech-sub { font-size: .72rem; color: #94a3b8; }
+    .sr-prio { display: inline-flex; padding: 3px 10px; border-radius: 999px; font-size: .74rem; font-weight: 700; }
+    .sr-prio-low { background: rgba(148,163,184,.18); color: #cbd5e1; }
+    .sr-prio-medium { background: rgba(250,204,21,.18); color: #facc15; }
+    .sr-prio-high { background: rgba(251,146,60,.18); color: #fb923c; }
+    .sr-prio-urgent { background: rgba(239,68,68,.2); color: #f87171; }
+
+    /* ---------- Farmer suggestions / general feedback tables ---------- */
+    .sg-table thead th {
+        font-size: .74rem; text-transform: uppercase; letter-spacing: .04em;
+        color: #94a3b8; border-bottom: 1px solid #263349; white-space: nowrap;
+    }
+    .sg-table tbody td { border-bottom: 1px solid #1d2636; color: #e2e8f0; font-size: .86rem; vertical-align: middle; }
+    .sg-table tbody tr:hover { background: rgba(255,255,255,.03); }
+    .sg-msg { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sg-status-declined { background: rgba(239,68,68,.18); color: #f87171; }
+    .sg-cat { background: rgba(59,130,246,.18); color: #60a5fa; }
+    .sg-count { font-size: .72rem; font-weight: 800; padding: 3px 10px; border-radius: 999px; background: rgba(148,163,184,.15); color: #cbd5e1; }
+    .sg-message-box { background: #0f1522; border: 1px solid #263349; border-radius: 10px; padding: 12px; white-space: pre-wrap; word-break: break-word; font-size: .88rem; color: #e2e8f0; }
+    .sg-shot { max-width: 100%; max-height: 220px; border-radius: 10px; border: 1px solid #334155; cursor: zoom-in; }
+
+    @media (max-width: 767.98px) {
+        .sr-cards { grid-template-columns: 1fr; gap: 10px; margin-bottom: 14px; }
+        .sr-card-tab { padding: 12px; gap: 12px; }
+        .sr-card-icon { width: 42px; height: 42px; font-size: 1.1rem; }
+    }
+
     /* =====================================================================
        MOBILE (<768px): stack the header/toolbar full-width and collapse the
        reports table into compact grid-cards — the same data-label -> CSS
@@ -351,6 +420,53 @@
         <div class="alert alert-danger">{{ session('error') }}</div>
     @endif
 
+    {{-- Three cards = quick Type filter (click again to clear). Counts come from the escalated reports. --}}
+    <div class="sr-cards" id="sr-cards">
+        <button type="button" class="sr-card-tab" data-type="AI Model" onclick="srPickCard('AI Model')">
+            <span class="sr-card-icon sr-icon-ai"><i class="fa-solid fa-robot"></i></span>
+            <span class="sr-card-body">
+                <span class="sr-card-title">AI Model</span>
+                <span class="sr-card-desc">Wrong detection, severity or damage level.</span>
+            </span>
+            <span class="sr-card-count" id="sr-count-ai_model">0</span>
+        </button>
+        <button type="button" class="sr-card-tab" data-type="Knowledge Base" onclick="srPickCard('Knowledge Base')">
+            <span class="sr-card-icon sr-icon-kb"><i class="fa-solid fa-book-open"></i></span>
+            <span class="sr-card-body">
+                <span class="sr-card-title">Knowledge Base</span>
+                <span class="sr-card-desc">Wrong treatment, causes, symptoms or prevention.</span>
+            </span>
+            <span class="sr-card-count" id="sr-count-knowledge_base">0</span>
+        </button>
+        <button type="button" class="sr-card-tab" data-type="System" onclick="srPickCard('System')">
+            <span class="sr-card-icon sr-icon-sys"><i class="fa-solid fa-gears"></i></span>
+            <span class="sr-card-body">
+                <span class="sr-card-title">System</span>
+                <span class="sr-card-desc">Other system problems.</span>
+            </span>
+            <span class="sr-card-count" id="sr-count-system">0</span>
+        </button>
+        <button type="button" class="sr-card-tab" data-panel="suggestions" onclick="sgPickCard('suggestions')">
+            <span class="sr-card-icon sr-icon-sug"><i class="fa-solid fa-lightbulb"></i></span>
+            <span class="sr-card-body">
+                <span class="sr-card-title">Suggest Improvement</span>
+                <span class="sr-card-desc">Ideas sent by farmers.</span>
+            </span>
+            <span class="sr-card-count" id="sg-card-count-suggestions">0</span>
+        </button>
+        <button type="button" class="sr-card-tab" data-panel="feedback" onclick="sgPickCard('feedback')">
+            <span class="sr-card-icon sr-icon-fb"><i class="fa-solid fa-comments"></i></span>
+            <span class="sr-card-body">
+                <span class="sr-card-title">General Feedback</span>
+                <span class="sr-card-desc">Ratings and comments from farmers.</span>
+            </span>
+            <span class="sr-card-count" id="sg-card-count-feedback">0</span>
+        </button>
+    </div>
+
+    {{-- ============ Panel 1: escalated reports (AI Model / Knowledge Base / System cards) ============ --}}
+    <div id="sr-panel-reports">
+
     {{-- "Wrong Detection" summary: every disease/pest the AI got wrong,
          tallied by how many technicians escalated a report about it. --}}
     <div class="fr-card p-3 p-md-4 mb-3">
@@ -452,6 +568,96 @@
             </div>
         @endif
     </div>
+
+    </div>{{-- /#sr-panel-reports --}}
+
+    {{-- ============ Panel 2: Farmer suggestions (Suggest Improvement card) ============ --}}
+    <div id="sr-panel-suggestions" class="fr-card p-3 p-md-4 fr-hidden">
+        <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+            <div class="d-flex align-items-center gap-2">
+                <h6 class="mb-0 fw-bold text-white"><i class="fa-solid fa-lightbulb text-warning me-2"></i>Farmer Suggestions</h6>
+                <span class="sg-count" id="sg-sug-count">0</span>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <select id="sg-sug-status" class="form-select form-select-sm fr-input" style="width: 165px;" onchange="sgRender()">
+                    <option value="">All Status</option>
+                    <option value="new">New</option>
+                    <option value="assigned">Assigned</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="declined">Not Feasible</option>
+                </select>
+                <input type="text" id="sg-sug-search" class="form-control form-control-sm fr-input"
+                       style="width: 210px;" placeholder="Search code, farmer..." oninput="sgRender()">
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-borderless mb-0 sg-table">
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Farmer</th><th>Category</th><th>Suggestion</th>
+                        <th>Date</th><th>Status</th><th>Assigned to</th><th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="sg-sug-body"></tbody>
+            </table>
+            <div id="sg-sug-empty" class="text-center text-secondary py-4 fr-hidden">No farmer suggestions yet.
+            @if(!empty($sgDiag))
+                <div class="small mt-1">
+                    @if(!$sgDiag['table'])
+                        The farmer_feedback table does not exist. Run php artisan migrate.
+                    @else
+                        {{ $sgDiag['total'] }} entries exist in total, {{ $sgDiag['in_area'] }} from farmers in your area
+                        (your province ID: {{ $sgDiag['province_id'] ?? 'empty' }}, city ID: {{ $sgDiag['city_id'] ?? 'empty' }}).
+                    @endif
+                </div>
+            @endif
+            </div>
+        </div>
+    </div>
+
+    {{-- ============ Panel 3: General feedback (General Feedback card) ============ --}}
+    <div id="sr-panel-feedback" class="fr-card p-3 p-md-4 fr-hidden">
+        <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+            <div class="d-flex align-items-center gap-2">
+                <h6 class="mb-0 fw-bold text-white"><i class="fa-solid fa-comments text-info me-2"></i>General Feedback</h6>
+                <span class="sg-count" id="sg-fb-count">0</span>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <select id="sg-fb-feature" class="form-select form-select-sm fr-input" style="width: 165px;" onchange="sgRender()">
+                    <option value="">All Features</option>
+                    @foreach($feedbackFeatures ?? [] as $key => $label)
+                        <option value="{{ $key }}">{{ $label }}</option>
+                    @endforeach
+                </select>
+                <input type="text" id="sg-fb-search" class="form-control form-control-sm fr-input"
+                       style="width: 210px;" placeholder="Search code, farmer..." oninput="sgRender()">
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-borderless mb-0 sg-table">
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Farmer</th><th>Feature</th><th>Rating</th>
+                        <th>Comment</th><th>Date</th><th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="sg-fb-body"></tbody>
+            </table>
+            <div id="sg-fb-empty" class="text-center text-secondary py-4 fr-hidden">No general feedback yet.
+            @if(!empty($sgDiag))
+                <div class="small mt-1">
+                    @if(!$sgDiag['table'])
+                        The farmer_feedback table does not exist. Run php artisan migrate.
+                    @else
+                        {{ $sgDiag['total'] }} entries exist in total, {{ $sgDiag['in_area'] }} from farmers in your area
+                        (your province ID: {{ $sgDiag['province_id'] ?? 'empty' }}, city ID: {{ $sgDiag['city_id'] ?? 'empty' }}).
+                    @endif
+                </div>
+            @endif
+            </div>
+        </div>
+    </div>
 </div>
 
 {{-- Shared three-dot menu (positioned under whichever row's button was clicked). --}}
@@ -459,11 +665,8 @@
     <button type="button" class="sr-menu-item" onclick="srAction('view')">
         <i class="fa-solid fa-eye text-info"></i> View
     </button>
-    <button type="button" class="sr-menu-item" onclick="srAction('in_progress')">
-        <i class="fa-solid fa-hourglass-half text-warning"></i> In Progress
-    </button>
-    <button type="button" class="sr-menu-item" onclick="srAction('resolved')">
-        <i class="fa-solid fa-circle-check text-success"></i> Resolved
+    <button type="button" class="sr-menu-item" onclick="srAction('delete')">
+        <i class="fa-solid fa-trash text-danger"></i> Delete
     </button>
 </div>
 
@@ -545,7 +748,53 @@
                 {{-- RIGHT: the technician's resolution --}}
                 <div class="col-lg-6">
 
-                                    <div class="small text-light mb-1">What the farmer reported</div>
+                    {{-- Admin actions: each button reveals its own panel (and its submit button). --}}
+                    <div class="d-flex gap-2 mb-2">
+                        <button type="button" id="sr-btn-resolve" class="btn btn-sm btn-outline-success flex-fill" onclick="srShowPanel('resolve')">
+                            <i class="fa-solid fa-circle-check me-1"></i> Resolve
+                        </button>
+                        <button type="button" id="sr-btn-assign" class="btn btn-sm btn-outline-info flex-fill" onclick="srShowPanel('assign')">
+                            <i class="fa-solid fa-user-gear me-1"></i> Assigned Tech
+                        </button>
+                    </div>
+
+                    <div id="sr-panel-resolve" class="fr-panel mb-3 fr-hidden">
+                        <label class="form-label small fw-bold text-white" for="sr-resolve-status">Status</label>
+                        <select id="sr-resolve-status" class="form-select form-select-sm fr-input mb-3"></select>
+
+                        <label class="form-label small fw-bold text-white" for="sr-resolve-notes">Notes <span class="text-danger">*</span></label>
+                        <textarea id="sr-resolve-notes" rows="3" maxlength="2000" class="form-control fr-input mb-3"
+                                  placeholder="Write what was done or decided..."></textarea>
+
+                        <button type="button" id="sr-resolve-submit" class="btn btn-success btn-sm fw-bold w-100" onclick="srSubmitResolve()">
+                            <i class="fa-solid fa-paper-plane me-1"></i> Submit
+                        </button>
+                    </div>
+
+                    <div id="sr-panel-assign" class="fr-panel mb-3 fr-hidden">
+                        <div class="small fw-bold text-white mb-2">Technicians in your province &amp; city</div>
+                        <div id="sr-tech-list" class="sr-tech-list mb-3"></div>
+
+                        <label class="form-label small fw-bold text-white" for="sr-assign-priority">Priority</label>
+                        <select id="sr-assign-priority" class="form-select form-select-sm fr-input mb-3">
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
+                            <option value="urgent">Urgent</option>
+                        </select>
+
+                        <label class="form-label small fw-bold text-white" for="sr-assign-notes">Notes</label>
+                        <textarea id="sr-assign-notes" rows="3" maxlength="2000" class="form-control fr-input mb-3"
+                                  placeholder="Instructions for the technician..."></textarea>
+
+                        <button type="button" id="sr-assign-submit" class="btn btn-info btn-sm fw-bold w-100" onclick="srSubmitAssign()">
+                            <i class="fa-solid fa-user-check me-1"></i> Assign
+                        </button>
+                    </div>
+
+                    <div id="sr-current-admin" class="small mb-3 fr-hidden"></div>
+
+                    <div class="small text-light mb-1">What the farmer reported</div>
                     <div id="sr-d-problems" class="fr-report-tags mb-2">—</div>
                     <div id="sr-d-message" class="fr-report-message mb-3">—</div>
 
@@ -618,6 +867,122 @@
                 Escalated <span id="sr-m-escalated">—</span>
             </span>
             <button type="button" class="btn btn-sm btn-secondary" onclick="srCloseModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+{{-- ============ Suggestion / feedback modal ============ --}}
+<div id="sg-modal" class="rg-report-backdrop fr-hidden" onclick="if (event.target === this) sgCloseModal()">
+    <div class="rg-report-dialog" style="max-width: 920px;">
+        <div class="rg-report-head">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <h6 class="mb-0 fw-bold text-white" id="sg-m-title">Suggestion</h6>
+                <span id="sg-m-code" class="text-secondary small">#—</span>
+                <span id="sg-m-status" class="sr-badge sr-status-pending">New</span>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="sgCloseModal()" title="Close">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="rg-report-body">
+            <div class="row g-4">
+                {{-- LEFT: what the farmer sent --}}
+                <div class="col-lg-6">
+                    <div class="fr-col-head">Farmer's entry</div>
+                    <div class="small text-secondary mb-3">
+                        by <span id="sg-m-farmer" class="text-light">—</span> · <span id="sg-m-submitted">—</span>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="small text-light mb-1" id="sg-m-label-key">Category</div>
+                        <span id="sg-m-label" class="sr-badge sg-cat">—</span>
+                    </div>
+
+                    <div id="sg-m-rating-wrap" class="mb-3 fr-hidden">
+                        <div class="small text-light mb-1">Rating</div>
+                        <div id="sg-m-rating">—</div>
+                    </div>
+
+                    <div class="small text-light mb-1">Message</div>
+                    <div id="sg-m-message" class="sg-message-box mb-3">—</div>
+
+                    <div id="sg-m-shot-wrap" class="mb-3 fr-hidden">
+                        <div class="small text-light mb-1">Screenshot</div>
+                        <img id="sg-m-shot" class="sg-shot" alt="Screenshot" onclick="srZoom(this.src)">
+                    </div>
+
+                    <div class="small text-secondary">
+                        <i class="fa-solid fa-envelope me-1"></i>Team may contact the farmer: <span id="sg-m-contact" class="text-light">—</span>
+                    </div>
+                </div>
+
+                {{-- RIGHT: admin actions + outcome --}}
+                <div class="col-lg-6">
+                    <div id="sg-actions" class="fr-hidden">
+                        <div class="fr-col-head">Admin actions</div>
+                        <div class="d-flex gap-2 mb-2">
+                            <button type="button" class="btn btn-sm btn-outline-info flex-fill" onclick="sgShowPanel('assign')">
+                                <i class="fa-solid fa-user-gear me-1"></i> Assign Tech
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-success flex-fill" onclick="sgShowPanel('resolve')">
+                                <i class="fa-solid fa-circle-check me-1"></i> Resolve
+                            </button>
+                        </div>
+
+                        <div id="sg-panel-assign" class="fr-panel mb-3 fr-hidden">
+                            <div class="small fw-bold text-white mb-2">Technicians in your province &amp; city</div>
+                            <div id="sg-tech-list" class="sr-tech-list mb-3"></div>
+
+                            <label class="form-label small fw-bold text-white" for="sg-assign-priority">Priority</label>
+                            <select id="sg-assign-priority" class="form-select form-select-sm fr-input mb-3">
+                                <option value="low">Low</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="high">High</option>
+                                <option value="urgent">Urgent</option>
+                            </select>
+
+                            <label class="form-label small fw-bold text-white" for="sg-assign-notes">Notes (private, for the technician)</label>
+                            <textarea id="sg-assign-notes" rows="3" maxlength="2000" class="form-control fr-input mb-3"
+                                      placeholder="Instructions for the technician..."></textarea>
+
+                            <button type="button" id="sg-assign-submit" class="btn btn-info btn-sm fw-bold w-100" onclick="sgSubmitAssign()">
+                                <i class="fa-solid fa-user-check me-1"></i> Assign
+                            </button>
+                        </div>
+
+                        <div id="sg-panel-resolve" class="fr-panel mb-3 fr-hidden">
+                            <label class="form-label small fw-bold text-white" for="sg-resolve-status">Status</label>
+                            <select id="sg-resolve-status" class="form-select form-select-sm fr-input mb-3"></select>
+
+                            <label class="form-label small fw-bold text-white" for="sg-resolve-notes">Notes <span class="text-danger">*</span></label>
+                            <textarea id="sg-resolve-notes" rows="3" maxlength="2000" class="form-control fr-input mb-3"
+                                      placeholder="What was done or decided (the farmer will see this)..."></textarea>
+
+                            <button type="button" id="sg-resolve-submit" class="btn btn-success btn-sm fw-bold w-100" onclick="sgSubmitResolve()">
+                                <i class="fa-solid fa-paper-plane me-1"></i> Submit
+                            </button>
+                        </div>
+
+                        <div id="sg-current" class="small mb-3 fr-hidden"></div>
+                    </div>
+
+                    <div id="sg-support-wrap" class="fr-hidden">
+                        <div class="fr-col-head" id="sg-support-head">Support</div>
+                        <div class="fr-resolve-box">
+                            <div class="mb-2"><span id="sg-support-badge" class="sr-badge sr-status-resolved">Resolved</span></div>
+                            <p id="sg-support-notes" class="small text-light mb-2">—</p>
+                            <div class="small text-secondary" id="sg-support-meta">—</div>
+                        </div>
+                    </div>
+
+                    <div id="sg-empty-right" class="small text-secondary fr-hidden">General feedback is view-only.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="rg-report-foot">
+            <button type="button" class="btn btn-sm btn-secondary" onclick="sgCloseModal()">Close</button>
         </div>
     </div>
 </div>
@@ -713,6 +1078,7 @@ function srRenderWrongDetection() {
         </div>`).join('');
 }
 srRenderWrongDetection();
+document.addEventListener('DOMContentLoaded', () => srSyncCards());
 
 // ==================== LIST: filters ====================
 window.srApplyFilters = function () {
@@ -730,7 +1096,217 @@ window.srApplyFilters = function () {
     });
     const empty = document.getElementById('sr-empty');
     if (empty) empty.classList.toggle('fr-hidden', shown > 0);
+    srSyncCards();
 };
+
+// ==================== THREE CARDS (Type filter) ====================
+let sgPanel = 'reports';   // which section is showing below the cards: reports | suggestions | feedback
+function srSyncCards() {
+    const type = document.getElementById('sr-filter-type')?.value || '';
+    document.querySelectorAll('.sr-card-tab').forEach(c => {
+        const on = c.dataset.panel
+            ? sgPanel === c.dataset.panel
+            : (sgPanel === 'reports' && c.dataset.type === type);
+        c.classList.toggle('active', on);
+    });
+    ['ai_model', 'knowledge_base', 'system'].forEach(key => {
+        const el = document.getElementById('sr-count-' + key);
+        if (el) el.textContent = srReports.filter(r => r.type_key === key).length;
+    });
+}
+window.srShowSection = function (name) {
+    sgPanel = name;
+    ['reports', 'suggestions', 'feedback'].forEach(k =>
+        document.getElementById('sr-panel-' + k)?.classList.toggle('fr-hidden', k !== name));
+    srSyncCards();
+};
+
+window.sgPickCard = function (name) {
+    srShowSection(sgPanel === name ? 'reports' : name);   // click the active card again to go back
+};
+window.srPickCard = function (type) {
+    srShowSection('reports');
+    const select = document.getElementById('sr-filter-type');
+    select.value = (select.value === type) ? '' : type;   // click the active card again to clear
+    srApplyFilters();
+};
+
+// ==================== RESOLVE / ASSIGN / DELETE ====================
+const srResolveUrl = "{{ route('admin.system_report.resolve', ['report' => '__ID__']) }}";
+const srAssignUrl  = "{{ route('admin.system_report.assign', ['report' => '__ID__']) }}";
+const srDeleteUrl  = "{{ route('admin.system_report.destroy', ['report' => '__ID__']) }}";
+const srTechsUrl   = "{{ route('admin.system_report.technicians') }}";
+
+let srTechs = null;          // cached technician list
+let srPickedTech = null;     // technician id chosen in the Assigned Tech panel
+
+async function srRequest(url, method, body) {
+    const res = await fetch(url, {
+        method,
+        credentials: 'same-origin',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': SR_CSRF,
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: body ? JSON.stringify(body) : undefined
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+        const firstErr = data.errors ? Object.values(data.errors)[0][0] : null;
+        throw new Error(firstErr || data.message || 'Something went wrong. Please try again.');
+    }
+    return data;
+}
+
+// Each button reveals ITS panel (with its submit button); clicking it again hides it.
+window.srShowPanel = function (which) {
+    const r = srFind(srModalId);
+    const resolveP = document.getElementById('sr-panel-resolve');
+    const assignP  = document.getElementById('sr-panel-assign');
+    const open = (which === 'resolve' ? resolveP : assignP);
+    const wasHidden = open.classList.contains('fr-hidden');
+
+    resolveP.classList.add('fr-hidden');
+    assignP.classList.add('fr-hidden');
+    if (!wasHidden) return;
+    open.classList.remove('fr-hidden');
+
+    if (which === 'resolve' && r) {
+        const sel = document.getElementById('sr-resolve-status');
+        sel.innerHTML = Object.entries(srStatuses)
+            .map(([key, m]) => `<option value="${key}">${srEscape(m.label)}</option>`).join('');
+        sel.value = r.admin_status;
+        document.getElementById('sr-resolve-notes').value = r.admin_notes || '';
+    }
+    if (which === 'assign' && r) {
+        document.getElementById('sr-assign-priority').value = r.assigned_priority || 'medium';
+        document.getElementById('sr-assign-notes').value = r.assigned_notes || '';
+        srPickedTech = r.assigned_tech_id || null;
+        srLoadTechs();
+    }
+};
+
+async function srLoadTechs() {
+    const box = document.getElementById('sr-tech-list');
+    if (srTechs === null) {
+        box.innerHTML = '<div class="small text-secondary">Loading technicians...</div>';
+        try {
+            srTechs = await srRequest(srTechsUrl, 'GET');
+        } catch (e) {
+            box.innerHTML = `<div class="small text-danger">${srEscape(e.message)}</div>`;
+            return;
+        }
+    }
+    srRenderTechs();
+}
+
+function srRenderTechs() {
+    const box = document.getElementById('sr-tech-list');
+    if (!srTechs.length) {
+        box.innerHTML = '<div class="small text-secondary">No approved technician in your province and city yet.</div>';
+        return;
+    }
+    box.innerHTML = srTechs.map(t => `
+        <label class="sr-tech-item ${Number(srPickedTech) === Number(t.id) ? 'selected' : ''}">
+            <input type="radio" name="sr-tech" value="${t.id}" ${Number(srPickedTech) === Number(t.id) ? 'checked' : ''}>
+            <span><span class="fw-bold">${srEscape(t.name)}</span>
+            ${t.barangay ? `<span class="sr-tech-sub d-block">${srEscape(t.barangay)}</span>` : ''}</span>
+        </label>`).join('');
+    box.querySelectorAll('input[name="sr-tech"]').forEach(inp => inp.addEventListener('change', () => {
+        srPickedTech = Number(inp.value);
+        srRenderTechs();
+    }));
+}
+
+// Small summary under the buttons once something has been saved on this report.
+function srRenderCurrentAdmin(r) {
+    const el = document.getElementById('sr-current-admin');
+    let html = '';
+    if (r.assigned_tech_name) {
+        html += `<div class="mb-1"><i class="fa-solid fa-user-check text-info me-1"></i>Assigned to <strong class="text-white">${srEscape(r.assigned_tech_name)}</strong>
+                 <span class="sr-prio sr-prio-${srEscape(r.assigned_priority || 'medium')} ms-1">${srEscape((r.assigned_priority || 'medium').toUpperCase())}</span></div>`;
+    }
+    if (r.admin_notes) {
+        html += `<div class="text-secondary"><i class="fa-solid fa-note-sticky me-1"></i>Admin notes: ${srEscape(r.admin_notes)}</div>`;
+    }
+    el.innerHTML = html;
+    el.classList.toggle('fr-hidden', !html);
+}
+
+window.srSubmitResolve = async function () {
+    const r = srFind(srModalId);
+    if (!r) return;
+    const notes = document.getElementById('sr-resolve-notes').value.trim();
+    if (!notes) { alert('Please write a note before submitting.'); return; }
+
+    const btn = document.getElementById('sr-resolve-submit');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Saving...';
+    try {
+        const data = await srRequest(srResolveUrl.replace('__ID__', r.id), 'POST', {
+            status: document.getElementById('sr-resolve-status').value,
+            notes
+        });
+        r.admin_status = data.status;
+        r.admin_notes = data.notes;
+        srPaintStatus(r);
+        srRenderCurrentAdmin(r);
+        document.getElementById('sr-panel-resolve').classList.add('fr-hidden');
+    } catch (e) {
+        alert(e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+};
+
+window.srSubmitAssign = async function () {
+    const r = srFind(srModalId);
+    if (!r) return;
+    if (!srPickedTech) { alert('Please choose a technician first.'); return; }
+
+    const btn = document.getElementById('sr-assign-submit');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Assigning...';
+    try {
+        const data = await srRequest(srAssignUrl.replace('__ID__', r.id), 'POST', {
+            technician_id: srPickedTech,
+            priority: document.getElementById('sr-assign-priority').value,
+            notes: document.getElementById('sr-assign-notes').value.trim()
+        });
+        r.assigned_tech_id = srPickedTech;
+        r.assigned_tech_name = data.tech_name;
+        r.assigned_priority = data.priority;
+        r.assigned_notes = data.notes;
+        r.admin_status = data.status;
+        srPaintStatus(r);
+        srRenderCurrentAdmin(r);
+        document.getElementById('sr-panel-assign').classList.add('fr-hidden');
+    } catch (e) {
+        alert(e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+};
+
+async function srDeleteReport(r) {
+    if (!confirm('Delete report ' + r.sr_code + ' from the System Reports list?')) return;
+    try {
+        await srRequest(srDeleteUrl.replace('__ID__', r.id), 'DELETE');
+        document.querySelector(`#sr-table-body tr[data-id="${r.id}"]`)?.remove();
+        const i = srReports.findIndex(x => Number(x.id) === Number(r.id));
+        if (i > -1) srReports.splice(i, 1);
+        if (srModalId !== null && Number(srModalId) === Number(r.id)) srCloseModal();
+        srApplyFilters();
+    } catch (e) {
+        alert(e.message);
+    }
+}
 
 // ==================== STATUS ====================
 // Repaints the row badge (and the modal badge, if this report is open).
@@ -810,6 +1386,11 @@ window.srAction = async function (action) {
     const r = srFind(srMenuId);
     srCloseMenu();
     if (!r) return;
+
+    if (action === 'delete') {
+        await srDeleteReport(r);
+        return;
+    }
 
     if (action === 'view') {
         srOpenModal(r);
@@ -1065,6 +1646,11 @@ function srOpenModal(r) {
     srRenderInfo(r);
     srRenderReview(r);
 
+    // Resolve / Assigned Tech panels start closed every time a report is opened.
+    document.getElementById('sr-panel-resolve').classList.add('fr-hidden');
+    document.getElementById('sr-panel-assign').classList.add('fr-hidden');
+    srRenderCurrentAdmin(r);
+
     const modal = document.getElementById('sr-modal');
     modal.classList.remove('fr-hidden');
     modal.scrollTop = 0;
@@ -1076,6 +1662,307 @@ window.srCloseModal = function () {
     document.body.style.overflow = '';
     srModalId = null;
 };
+
+// =====================================================================
+// FARMER SUGGESTIONS + GENERAL FEEDBACK
+// (reuses srRequest / srTechs / srTechsUrl / srEscape / srZoom from above)
+// =====================================================================
+const sgSuggestions     = @json($suggestions ?? []);
+const sgFeedbacks       = @json($feedbacks ?? []);
+const sgSupportStatuses = @json($supportStatuses ?? []);
+const sgAssignUrl  = "{{ route('admin.suggestions.assign',  ['feedback' => '__ID__']) }}";
+const sgResolveUrl = "{{ route('admin.suggestions.resolve', ['feedback' => '__ID__']) }}";
+
+let sgOpenRef = null;       // { type: 'suggestion'|'general', id }
+let sgPickedTech = null;
+
+const sgStatusMeta = {
+    new:         { label: 'New',          cls: 'sr-status-pending' },
+    assigned:    { label: 'Assigned',     cls: 'sr-status-open' },
+    in_progress: { label: 'In Progress',  cls: 'sr-status-in_progress' },
+    resolved:    { label: 'Resolved',     cls: 'sr-status-resolved' },
+    declined:    { label: 'Not Feasible', cls: 'sg-status-declined' }
+};
+
+// Support status wins (a technician or the admin worked on it); otherwise
+// "assigned" if a technician was picked; otherwise brand new.
+function sgStatusKey(e) {
+    if (e.support_status) return e.support_status;
+    return e.assigned_tech_id ? 'assigned' : 'new';
+}
+function sgBadge(key) {
+    const m = sgStatusMeta[key] || sgStatusMeta.new;
+    return `<span class="sr-badge ${m.cls}">${srEscape(m.label)}</span>`;
+}
+function sgTrunc(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+function sgStars(n) {
+    n = Number(n) || 0;
+    let h = '';
+    for (let i = 1; i <= 5; i++) h += `<i class="fa-${i <= n ? 'solid text-warning' : 'regular text-secondary'} fa-star"></i> `;
+    return h;
+}
+function sgFindEntry(ref) {
+    if (!ref) return null;
+    const list = ref.type === 'suggestion' ? sgSuggestions : sgFeedbacks;
+    return list.find(x => Number(x.id) === Number(ref.id)) || null;
+}
+
+window.sgRender = function () {
+    // ----- suggestions -----
+    const st   = document.getElementById('sg-sug-status').value;
+    const term = document.getElementById('sg-sug-search').value.trim().toLowerCase();
+    const sRows = sgSuggestions.filter(e =>
+        (!st || sgStatusKey(e) === st) &&
+        (!term || [e.code, e.farmer_name, e.category_label, e.message, e.assigned_tech_name].join(' ').toLowerCase().includes(term)));
+
+    document.getElementById('sg-sug-count').textContent = sgSuggestions.length;
+    document.getElementById('sg-card-count-suggestions').textContent = sgSuggestions.length;
+    document.getElementById('sg-sug-empty').classList.toggle('fr-hidden', sRows.length > 0);
+    document.getElementById('sg-sug-body').innerHTML = sRows.map(e => `
+        <tr>
+            <td class="fw-bold">#${srEscape(e.code || e.id)}</td>
+            <td>${srEscape(e.farmer_name)}</td>
+            <td><span class="sr-badge sg-cat">${srEscape(e.category_label || '—')}</span></td>
+            <td class="sg-msg" title="${srEscape(e.message)}">${srEscape(sgTrunc(e.message, 70))}</td>
+            <td class="text-secondary">${srEscape(e.date)}</td>
+            <td>${sgBadge(sgStatusKey(e))}</td>
+            <td>${e.assigned_tech_name ? srEscape(e.assigned_tech_name) : '<span class="text-secondary">—</span>'}</td>
+            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-light" onclick="sgOpenModal('suggestion', ${e.id})"><i class="fa-solid fa-eye me-1"></i>View</button></td>
+        </tr>`).join('');
+
+    // ----- general feedback -----
+    const ft    = document.getElementById('sg-fb-feature').value;
+    const fterm = document.getElementById('sg-fb-search').value.trim().toLowerCase();
+    const fRows = sgFeedbacks.filter(e =>
+        (!ft || e.feature === ft) &&
+        (!fterm || [e.code, e.farmer_name, e.feature_label, e.message].join(' ').toLowerCase().includes(fterm)));
+
+    document.getElementById('sg-fb-count').textContent = sgFeedbacks.length;
+    document.getElementById('sg-card-count-feedback').textContent = sgFeedbacks.length;
+    document.getElementById('sg-fb-empty').classList.toggle('fr-hidden', fRows.length > 0);
+    document.getElementById('sg-fb-body').innerHTML = fRows.map(e => `
+        <tr>
+            <td class="fw-bold">#${srEscape(e.code || e.id)}</td>
+            <td>${srEscape(e.farmer_name)}</td>
+            <td><span class="sr-badge sg-cat">${srEscape(e.feature_label || '—')}</span></td>
+            <td style="white-space:nowrap">${sgStars(e.rating)} <span class="text-secondary small ms-1">${srEscape(e.rating_label || '')}</span></td>
+            <td class="sg-msg" title="${srEscape(e.message)}">${srEscape(sgTrunc(e.message, 70))}</td>
+            <td class="text-secondary">${srEscape(e.date)}</td>
+            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-light" onclick="sgOpenModal('general', ${e.id})"><i class="fa-solid fa-eye me-1"></i>View</button></td>
+        </tr>`).join('');
+};
+sgRender();
+
+// ---------- modal ----------
+window.sgOpenModal = function (type, id) {
+    const e = sgFindEntry({ type, id });
+    if (!e) return;
+    sgOpenRef = { type, id: e.id };
+    const isSg = type === 'suggestion';
+
+    document.getElementById('sg-m-title').textContent = isSg ? 'Suggestion' : 'General Feedback';
+    document.getElementById('sg-m-code').textContent  = '#' + (e.code || e.id);
+    document.getElementById('sg-m-farmer').textContent    = e.farmer_name || 'Unknown farmer';
+    document.getElementById('sg-m-submitted').textContent = e.submitted_at || e.date || '';
+    document.getElementById('sg-m-label-key').textContent = isSg ? 'Category' : 'Feature';
+    document.getElementById('sg-m-label').textContent     = (isSg ? e.category_label : e.feature_label) || '—';
+    document.getElementById('sg-m-message').textContent   = e.message || '—';
+    document.getElementById('sg-m-contact').textContent   = e.allow_contact ? 'Yes' : 'No';
+
+    const ratingWrap = document.getElementById('sg-m-rating-wrap');
+    ratingWrap.classList.toggle('fr-hidden', isSg);
+    if (!isSg) document.getElementById('sg-m-rating').innerHTML = sgStars(e.rating) + `<span class="text-secondary small ms-1">${srEscape(e.rating_label || '')}</span>`;
+
+    const shotWrap = document.getElementById('sg-m-shot-wrap');
+    shotWrap.classList.toggle('fr-hidden', !(isSg && e.screenshot));
+    if (isSg && e.screenshot) document.getElementById('sg-m-shot').src = e.screenshot;
+
+    document.getElementById('sg-actions').classList.toggle('fr-hidden', !isSg);
+    document.getElementById('sg-empty-right').classList.toggle('fr-hidden', isSg);
+    document.getElementById('sg-panel-assign').classList.add('fr-hidden');
+    document.getElementById('sg-panel-resolve').classList.add('fr-hidden');
+
+    sgPaintModal(e);
+
+    const modal = document.getElementById('sg-modal');
+    modal.classList.remove('fr-hidden');
+    modal.scrollTop = 0;
+    document.body.style.overflow = 'hidden';
+};
+
+window.sgCloseModal = function () {
+    document.getElementById('sg-modal').classList.add('fr-hidden');
+    document.body.style.overflow = '';
+    sgOpenRef = null;
+};
+
+// Status badge, "assigned to" summary and the support (outcome) box.
+function sgPaintModal(e) {
+    const isSg = e.type === 'suggestion';
+
+    const sb = document.getElementById('sg-m-status');
+    if (isSg) {
+        const m = sgStatusMeta[sgStatusKey(e)] || sgStatusMeta.new;
+        sb.className = 'sr-badge ' + m.cls;
+        sb.textContent = m.label;
+    }
+    sb.classList.toggle('fr-hidden', !isSg);
+
+    const cur = document.getElementById('sg-current');
+    let html = '';
+    if (e.assigned_tech_name) {
+        const p = e.assigned_priority || 'medium';
+        html += `<div class="mb-1"><i class="fa-solid fa-user-check text-info me-1"></i>Assigned to <strong class="text-white">${srEscape(e.assigned_tech_name)}</strong>
+                 <span class="sr-prio sr-prio-${srEscape(p)} ms-1">${srEscape(p.toUpperCase())}</span>
+                 ${e.assigned_date ? `<span class="text-secondary ms-1">· ${srEscape(e.assigned_date)}</span>` : ''}</div>`;
+    }
+    if (e.assigned_notes) {
+        html += `<div class="text-secondary"><i class="fa-solid fa-note-sticky me-1"></i>Notes to technician: ${srEscape(e.assigned_notes)}</div>`;
+    }
+    cur.innerHTML = html;
+    cur.classList.toggle('fr-hidden', !html);
+
+    const wrap = document.getElementById('sg-support-wrap');
+    const has = isSg && !!e.support_status;
+    wrap.classList.toggle('fr-hidden', !has);
+    if (has) {
+        const key = e.support_status;
+        const m = sgStatusMeta[key] || sgStatusMeta.resolved;
+        const by = e.support_by || 'Technician';
+        document.getElementById('sg-support-head').textContent = by + "'s support";
+        const badge = document.getElementById('sg-support-badge');
+        badge.className = 'sr-badge ' + m.cls;
+        badge.textContent = (sgSupportStatuses[key] && sgSupportStatuses[key].label) || m.label;
+        document.getElementById('sg-support-notes').textContent = e.support_notes || '—';
+        document.getElementById('sg-support-meta').textContent  = [by, e.support_updated_at].filter(Boolean).join(' · ');
+    }
+}
+
+window.sgShowPanel = function (which) {
+    const e = sgFindEntry(sgOpenRef);
+    if (!e) return;
+    const assignP  = document.getElementById('sg-panel-assign');
+    const resolveP = document.getElementById('sg-panel-resolve');
+    const target   = which === 'assign' ? assignP : resolveP;
+    const wasHidden = target.classList.contains('fr-hidden');
+
+    assignP.classList.add('fr-hidden');
+    resolveP.classList.add('fr-hidden');
+    if (!wasHidden) return;
+    target.classList.remove('fr-hidden');
+
+    if (which === 'assign') {
+        document.getElementById('sg-assign-priority').value = e.assigned_priority || 'medium';
+        document.getElementById('sg-assign-notes').value    = e.assigned_notes || '';
+        sgPickedTech = e.assigned_tech_id || null;
+        sgLoadTechs();
+    } else {
+        const sel = document.getElementById('sg-resolve-status');
+        sel.innerHTML = Object.entries(sgSupportStatuses)
+            .map(([key, m]) => `<option value="${key}">${srEscape(m.label)}</option>`).join('');
+        sel.value = e.support_status || 'resolved';
+        document.getElementById('sg-resolve-notes').value = e.support_notes || '';
+    }
+};
+
+// ---------- assign ----------
+async function sgLoadTechs() {
+    const box = document.getElementById('sg-tech-list');
+    if (srTechs === null) {
+        box.innerHTML = '<div class="small text-secondary">Loading technicians...</div>';
+        try {
+            srTechs = await srRequest(srTechsUrl, 'GET');
+        } catch (err) {
+            box.innerHTML = `<div class="small text-danger">${srEscape(err.message)}</div>`;
+            return;
+        }
+    }
+    sgRenderTechs();
+}
+
+function sgRenderTechs() {
+    const box = document.getElementById('sg-tech-list');
+    if (!srTechs || !srTechs.length) {
+        box.innerHTML = '<div class="small text-secondary">No approved technician in your province and city yet.</div>';
+        return;
+    }
+    box.innerHTML = srTechs.map(t => `
+        <label class="sr-tech-item ${Number(sgPickedTech) === Number(t.id) ? 'selected' : ''}">
+            <input type="radio" name="sg-tech" value="${t.id}" ${Number(sgPickedTech) === Number(t.id) ? 'checked' : ''}>
+            <span><span class="fw-bold">${srEscape(t.name)}</span>
+            ${t.barangay ? `<span class="sr-tech-sub d-block">${srEscape(t.barangay)}</span>` : ''}</span>
+        </label>`).join('');
+    box.querySelectorAll('input[name="sg-tech"]').forEach(inp => inp.addEventListener('change', () => {
+        sgPickedTech = Number(inp.value);
+        sgRenderTechs();
+    }));
+}
+
+// Replace the cached row with the fresh one the server sent back, then repaint.
+function sgApplyServerRow(row) {
+    const e = sgFindEntry(sgOpenRef);
+    if (!e || !row) return;
+    Object.assign(e, row);
+    sgRender();
+    sgPaintModal(e);
+}
+
+window.sgSubmitAssign = async function () {
+    const e = sgFindEntry(sgOpenRef);
+    if (!e) return;
+    if (!sgPickedTech) { alert('Please choose a technician first.'); return; }
+
+    const btn = document.getElementById('sg-assign-submit');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Assigning...';
+    try {
+        const data = await srRequest(sgAssignUrl.replace('__ID__', e.id), 'POST', {
+            technician_id: sgPickedTech,
+            priority: document.getElementById('sg-assign-priority').value,
+            notes: document.getElementById('sg-assign-notes').value.trim()
+        });
+        sgApplyServerRow(data.suggestion);
+        document.getElementById('sg-panel-assign').classList.add('fr-hidden');
+    } catch (err) {
+        alert(err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+};
+
+// ---------- resolve (admin does it himself) ----------
+window.sgSubmitResolve = async function () {
+    const e = sgFindEntry(sgOpenRef);
+    if (!e) return;
+    const notes = document.getElementById('sg-resolve-notes').value.trim();
+    if (!notes) { alert('Please write a note before submitting.'); return; }
+
+    const btn = document.getElementById('sg-resolve-submit');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Saving...';
+    try {
+        const data = await srRequest(sgResolveUrl.replace('__ID__', e.id), 'POST', {
+            status: document.getElementById('sg-resolve-status').value,
+            notes
+        });
+        sgApplyServerRow(data.suggestion);
+        document.getElementById('sg-panel-resolve').classList.add('fr-hidden');
+    } catch (err) {
+        alert(err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+};
+
+document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (!document.getElementById('sr-lightbox').classList.contains('fr-hidden')) return;   // lightbox closes first (handler below)
+    if (!document.getElementById('sg-modal').classList.contains('fr-hidden')) sgCloseModal();
+});
 
 document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;

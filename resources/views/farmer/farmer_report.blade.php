@@ -2233,7 +2233,8 @@ window.fsSubmit = async function(type) {
 
         const result = await response.json().catch(() => ({}));
         if (!response.ok || !result.success) {
-            throw new Error(result.message || 'It could not be saved. Please try again.');
+            const firstErr = result.errors ? Object.values(result.errors)[0][0] : null;
+            throw new Error(firstErr || result.message || 'It could not be saved. Please try again.');
         }
 
         if (isSg) closeSuggestionModal(); else closeFeedbackModal();

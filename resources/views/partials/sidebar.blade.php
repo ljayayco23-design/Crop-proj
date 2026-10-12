@@ -98,6 +98,13 @@
                 </a>
             </li>
 
+            {{-- NEW: Field Analytics --}}
+            <li class="nav-item mb-1">
+                <a href="{{ route('admin.field_analytics') }}" class="nav-link text-white {{ request()->routeIs('admin.field_analytics') ? 'active bg-primary' : '' }}">
+                    <i class="fas fa-chart-column me-2 width-20"></i> Field Analytics
+                </a>
+            </li>
+
             <li class="nav-item mb-1">
                 <a href="{{ route('admin.system_report') }}" class="nav-link text-white {{ request()->routeIs('admin.system_report*') ? 'active bg-primary' : '' }}">
                     <i class="fas fa-triangle-exclamation me-2 width-20"></i> System Report

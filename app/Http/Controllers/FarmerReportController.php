@@ -144,6 +144,13 @@ class FarmerReportController extends Controller
         1 => 'Poor',
     ];
 
+    /** Status a technician sets from "Create Support" on a suggestion. */
+    public const SUPPORT_STATUSES = [
+        'in_progress' => ['label' => 'In Progress'],
+        'resolved'    => ['label' => 'Resolved'],
+        'declined'    => ['label' => 'Not Feasible'],
+    ];
+
     public const FEEDBACK_STATUSES = [
         'submitted' => ['label' => 'Submitted', 'class' => 'bg-info text-dark'],
         'reviewed'  => ['label' => 'Reviewed',  'class' => 'bg-success text-white'],
@@ -180,10 +187,11 @@ class FarmerReportController extends Controller
         $feedbacks   = [];
         if (Schema::hasTable('farmer_feedback')) {
             $entries = FarmerFeedback::where('user_id', $actor->id)->latest()->get();
+            $names = $this->techNamesFor($entries);
             $suggestions = $entries->where('type', FarmerFeedback::TYPE_SUGGESTION)
-                ->map(fn ($f) => $this->presentFeedback($f))->values()->all();
+                ->map(fn ($f) => $this->presentFeedback($f, 'farmer', $actor->id, $names))->values()->all();
             $feedbacks = $entries->where('type', FarmerFeedback::TYPE_GENERAL)
-                ->map(fn ($f) => $this->presentFeedback($f))->values()->all();
+                ->map(fn ($f) => $this->presentFeedback($f, 'farmer', $actor->id, $names))->values()->all();
         }
 
         return view('farmer.farmer_report', [
@@ -367,7 +375,28 @@ class FarmerReportController extends Controller
             ->values()
             ->all();
 
+        // Farmer suggestions + general feedback for the technician's three
+        // top cards. Suggestions are VIEW-only here; the ones the admin
+        // assigned to THIS technician also carry the admin's priority/notes
+        // and unlock "Create Support".
+        $suggestions = [];
+        $feedbacks   = [];
+        if (Schema::hasTable('farmer_feedback')) {
+            $entries = $this->technicianFeedbackQuery($actor)->latest()->get();
+            $names   = $this->techNamesFor($entries);
+            $suggestions = $entries->where('type', FarmerFeedback::TYPE_SUGGESTION)
+                ->map(fn ($f) => $this->presentFeedback($f, 'technician', $actor->id, $names))->values()->all();
+            $feedbacks = $entries->where('type', FarmerFeedback::TYPE_GENERAL)
+                ->map(fn ($f) => $this->presentFeedback($f, 'technician', $actor->id, $names))->values()->all();
+        }
+
         return view('technician.technician_report', [
+            'suggestions'          => $suggestions,
+            'feedbacks'            => $feedbacks,
+            'supportStatuses'      => self::SUPPORT_STATUSES,
+            'suggestionCategories' => self::SUGGESTION_CATEGORIES,
+            'feedbackFeatures'     => self::FEEDBACK_FEATURES,
+            'ratingLabels'         => self::RATING_LABELS,
             'reports'        => $reports,
             'escalatedReports' => $escalatedReports,
             'adminStatuses'  => self::ADMIN_STATUSES,
@@ -402,6 +431,40 @@ class FarmerReportController extends Controller
         return FarmerReport::with('farmer')->whereHas('farmer', function ($q) use ($barangayIds) {
             $q->whereIn('barangay_id', $barangayIds);
         });
+    }
+
+    /**
+     * Suggestions / feedback a technician may see: from farmers in one of
+     * their ACTIVE barangays (same strict rule as technicianQuery), PLUS any
+     * suggestion the admin assigned to this technician directly.
+     */
+    private function technicianFeedbackQuery($actor)
+    {
+        $barangayIds = Assignment::active()
+            ->where('user_id', $actor->id)
+            ->where('user_type', 'technician')
+            ->pluck('barangay_id');
+
+        $farmerIds = \App\Models\User::where('role', 'farmer')
+            ->whereIn('barangay_id', $barangayIds)
+            ->select('id');
+
+        return FarmerFeedback::where(function ($q) use ($farmerIds, $actor) {
+            $q->whereIn('user_id', $farmerIds);
+            if (Schema::hasColumn('farmer_feedback', 'assigned_technician_id')) {
+                $q->orWhere('assigned_technician_id', $actor->id);
+            }
+        });
+    }
+
+    /** { technician id => full name } for every technician assigned on these rows. */
+    public function techNamesFor($entries): array
+    {
+        $ids = collect($entries)->pluck('assigned_technician_id')->filter()->unique()->values();
+        if ($ids->isEmpty()) {
+            return [];
+        }
+        return \App\Models\User::whereIn('id', $ids)->pluck('full_name', 'id')->all();
     }
 
     // =====================================================================
@@ -565,22 +628,35 @@ class FarmerReportController extends Controller
             $screenshot = $data['screenshot'];
         }
 
-        $entry = FarmerFeedback::create([
-            'user_id'       => $actor->id,
-            'type'          => $data['type'],
-            'category'      => $isSuggestion ? $data['category'] : null,
-            'rating'        => $isSuggestion ? null : $data['rating'],
-            'feature'       => $isSuggestion ? null : $data['feature'],
-            'message'       => $data['message'],
-            'screenshot'    => $screenshot,
-            'allow_contact' => $request->boolean('allow_contact', true),
-            'status'        => 'submitted',
-        ]);
+        try {
+            // forceFill + save(): does NOT depend on the model's $fillable, so a
+            // column missing there can no longer make the save silently drop data.
+            $entry = new FarmerFeedback();
+            $entry->forceFill([
+                'user_id'       => $actor->id,
+                'type'          => $data['type'],
+                'category'      => $isSuggestion ? $data['category'] : null,
+                'rating'        => $isSuggestion ? null : $data['rating'],
+                'feature'       => $isSuggestion ? null : $data['feature'],
+                'message'       => $data['message'],
+                'screenshot'    => $screenshot,
+                'allow_contact' => $request->boolean('allow_contact', true),
+                'status'        => 'submitted',
+            ])->save();
 
-        // Code from the row id (no race between two simultaneous submits).
-        $entry->update([
-            'code' => ($isSuggestion ? 'SG-' : 'FB-') . str_pad((string) $entry->id, 3, '0', STR_PAD_LEFT),
-        ]);
+            // Code from the row id (no race between two simultaneous submits).
+            $entry->forceFill([
+                'code' => ($isSuggestion ? 'SG-' : 'FB-') . str_pad((string) $entry->id, 3, '0', STR_PAD_LEFT),
+            ])->save();
+        } catch (\Throwable $e) {
+            \Log::error('storeFeedback failed: ' . $e->getMessage(), ['user_id' => $actor->id, 'type' => $data['type']]);
+            return response()->json([
+                'success' => false,
+                'message' => config('app.debug')
+                    ? 'Could not save: ' . $e->getMessage()
+                    : 'Your feedback could not be saved. Please try again.',
+            ], 500);
+        }
 
         return response()->json(['success' => true, 'code' => $entry->code]);
     }
@@ -624,6 +700,53 @@ class FarmerReportController extends Controller
             : 'Review saved. Report ' . $report->report_code . ' is now resolved.';
 
         return redirect()->route('technician.reports')->with('success', $message);
+    }
+
+    // =====================================================================
+    // TECHNICIAN: "Create Support" on a suggestion the admin assigned to them
+    // =====================================================================
+
+    /**
+     * Saves the technician's status + notes on a suggestion. Only the
+     * technician the admin ASSIGNED it to can do this (anyone else gets a
+     * 404, so ids can't be probed). The admin sees status + notes together at
+     * the bottom of their view; the farmer sees them on the right of the
+     * suggestion. The admin's own priority/notes for the technician are never
+     * touched here and are never sent to the farmer.
+     */
+    public function supportSuggestion(Request $request, $id)
+    {
+        $actor = auth()->user();
+        if ($actor->role !== 'technician') {
+            abort(403, 'Only a technician account can submit support on a suggestion.');
+        }
+
+        $entry = FarmerFeedback::where('type', FarmerFeedback::TYPE_SUGGESTION)
+            ->where('assigned_technician_id', $actor->id)
+            ->findOrFail($id);
+
+        $data = $request->validate([
+            'status' => 'required|in:' . implode(',', array_keys(self::SUPPORT_STATUSES)),
+            'notes'  => 'required|string|max:2000',
+        ]);
+
+        $entry->forceFill([
+            'support_status'     => $data['status'],
+            'support_notes'      => $data['notes'],
+            'support_updated_at' => now(),
+            'status'             => 'reviewed',
+        ])->save();
+
+        if (Schema::hasColumn('farmer_feedback', 'support_by')) {
+            $entry->forceFill(['support_by' => 'Technician'])->save();
+        }
+
+        $names = $this->techNamesFor([$entry]);
+
+        return response()->json([
+            'success'    => true,
+            'suggestion' => $this->presentFeedback($entry, 'technician', $actor->id, $names),
+        ]);
     }
 
     // =====================================================================
@@ -867,12 +990,35 @@ class FarmerReportController extends Controller
         ];
     }
 
-    /** Flattens a suggestion / general-feedback row into the shape the farmer page reads. */
-    public function presentFeedback(FarmerFeedback $f): array
+    /**
+     * Flattens a suggestion / general-feedback row into the shape the pages read.
+     *
+     * $audience decides what is exposed:
+     *   farmer     - assigned technician's NAME + the technician's support
+     *                (status/notes). Never the admin's priority or notes.
+     *   technician - the admin's priority + notes ONLY when the suggestion is
+     *                assigned to the viewing technician ($viewerId); everyone
+     *                else just sees who it is assigned to.
+     *   admin      - everything.
+     */
+    public function presentFeedback(FarmerFeedback $f, string $audience = 'farmer', $viewerId = null, ?array $techNames = null): array
     {
         $status = array_key_exists((string) $f->status, self::FEEDBACK_STATUSES) ? $f->status : 'submitted';
 
-        return [
+        $techId   = $f->assigned_technician_id ?? null;
+        $techName = null;
+        if ($techId) {
+            $techName = $techNames[$techId] ?? (\App\Models\User::find($techId)->full_name ?? null);
+        }
+        $mine = $techId && $viewerId && (int) $techId === (int) $viewerId;
+
+        $supportKey = array_key_exists((string) ($f->support_status ?? ''), self::SUPPORT_STATUSES) ? $f->support_status : null;
+        $showSupportNotes = $audience !== 'technician' || $mine;
+
+        $assignedAt = !empty($f->assigned_at) ? \Carbon\Carbon::parse($f->assigned_at)->timezone('Asia/Manila') : null;
+        $supportAt  = !empty($f->support_updated_at) ? \Carbon\Carbon::parse($f->support_updated_at)->timezone('Asia/Manila') : null;
+
+        $out = [
             'id'             => $f->id,
             'code'           => $f->code,
             'type'           => $f->type,
@@ -888,7 +1034,32 @@ class FarmerReportController extends Controller
             'status'         => $status,
             'date'           => $f->created_at?->timezone('Asia/Manila')->format('M d, Y'),
             'submitted_at'   => $f->created_at?->timezone('Asia/Manila')->format('M d, Y h:i A'),
+            'farmer_name'    => $audience === 'farmer' ? null : (\App\Models\User::find($f->user_id)->full_name ?? 'Unknown farmer'),
+
+            // Admin action (the farmer sees it as "Assigned to ...").
+            'assigned_tech_id'   => $audience === 'farmer' ? null : $techId,
+            'assigned_tech_name' => $techName,
+            'assigned_date'      => $assignedAt?->format('M d, Y'),
+            'assigned_to_me'     => (bool) $mine,
+
+            // Technician action (status + notes together).
+            'support_status'       => $supportKey,
+            'support_status_label' => $supportKey ? self::SUPPORT_STATUSES[$supportKey]['label'] : null,
+            'support_notes'        => $showSupportNotes ? ($f->support_notes ?? null) : null,
+            'support_updated_at'   => $supportAt?->format('M d, Y h:i A'),
+            'support_by'           => $supportKey ? ($f->support_by ?? 'Technician') : null,
+
+            // The admin's private priority + notes: blank unless allowed below.
+            'assigned_priority' => null,
+            'assigned_notes'    => null,
         ];
+
+        if ($audience === 'admin' || ($audience === 'technician' && $mine)) {
+            $out['assigned_priority'] = $f->assigned_priority ?? null;
+            $out['assigned_notes']    = $f->assigned_notes ?? null;
+        }
+
+        return $out;
     }
 
     /**
@@ -912,6 +1083,14 @@ class FarmerReportController extends Controller
             'description'    => $this->escalationDescription($p),
             'escalated_date' => $escalatedAt->format('M d, Y'),
             'escalated_at'   => $escalatedAt->format('M d, Y h:i A'),
+            // Admin's own work on the report (resolve notes + assigned technician).
+            'admin_notes'        => $r->admin_notes ?? null,
+            'assigned_tech_id'   => $r->assigned_technician_id ?? null,
+            'assigned_tech_name' => !empty($r->assigned_technician_id)
+                ? (\App\Models\User::find($r->assigned_technician_id)->full_name ?? null)
+                : null,
+            'assigned_priority'  => $r->assigned_priority ?? null,
+            'assigned_notes'     => $r->assigned_notes ?? null,
         ];
     }
 

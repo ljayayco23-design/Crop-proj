@@ -15,6 +15,12 @@
 @section('title', 'RICEGUARD AI • Farmer Reports')
 
 @section('content')
+@php
+    $suggestions     = $suggestions ?? [];
+    $feedbacks       = $feedbacks ?? [];
+    $supportStatuses = $supportStatuses ?? \App\Http\Controllers\FarmerReportController::SUPPORT_STATUSES;
+    $feedbackStatuses = $feedbackStatuses ?? \App\Http\Controllers\FarmerReportController::FEEDBACK_STATUSES;
+@endphp
 <style>
     .fr-hidden { display: none !important; }
 
@@ -499,6 +505,77 @@
         .fr-resolve-split { gap: 10px; }
         .fr-resolve-split > div { flex: 1 1 100%; }
     }
+    /* ===================== FEEDBACK & SUPPORT: three top cards ===================== */
+    .fs-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .fs-card-tab {
+        display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+        background: #121826; border: 1px solid #263349; border-radius: 12px;
+        padding: 16px; color: #e2e8f0; cursor: pointer;
+        transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease, background-color .15s ease;
+    }
+    .fs-card-tab:hover { border-color: #3b4c66; transform: translateY(-1px); }
+    .fs-card-tab:focus-visible { outline: 2px solid #10b981; outline-offset: 2px; }
+    .fs-card-tab.active {
+        border-color: #10b981; background: rgba(16,185,129,.07);
+        box-shadow: 0 0 0 1px #10b981 inset, 0 8px 24px rgba(16,185,129,.12);
+    }
+    .fs-card-icon {
+        width: 48px; height: 48px; border-radius: 12px; flex: 0 0 auto;
+        display: flex; align-items: center; justify-content: center; font-size: 1.25rem; color: #fff;
+    }
+    .fs-icon-report   { background: #22c55e; }
+    .fs-icon-suggest  { background: #3b82f6; }
+    .fs-icon-feedback { background: #8b5cf6; }
+    .fs-card-body { flex: 1 1 auto; min-width: 0; }
+    .fs-card-title { font-weight: 800; color: #fff; font-size: .95rem; line-height: 1.25; display: block; }
+    .fs-card-desc  { font-size: .76rem; color: #94a3b8; line-height: 1.35; margin-top: 2px; display: block; }
+    .fs-card-count {
+        flex: 0 0 auto; font-size: .72rem; font-weight: 800; padding: 3px 10px; border-radius: 999px;
+        background: rgba(148,163,184,.15); color: #cbd5e1;
+    }
+    .fs-card-tab.active .fs-card-count { background: rgba(16,185,129,.2); color: #34d399; }
+
+    /* Suggestion / General Feedback tables + their View modal */
+    .fs-msg-cell { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cbd5e1; }
+    .fs-stars-inline { color: #22c55e; font-size: .78rem; letter-spacing: 1px; white-space: nowrap; }
+    .fs-stars-inline .off { color: #334155; }
+    .fs-view-row { border-bottom: 1px solid rgba(255,255,255,.08); padding: 10px 2px; }
+    .fs-view-row:last-child { border-bottom: none; }
+    .fs-view-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; margin-bottom: 3px; }
+    .fs-view-value { color: #e2e8f0; font-size: .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .fs-dialog { max-width: 560px; }
+    .fs-assigned-chip {
+        display: inline-flex; align-items: center; gap: 5px; font-size: .7rem; font-weight: 700;
+        padding: 2px 9px; border-radius: 999px; background: rgba(56,189,248,.14); color: #38bdf8; white-space: nowrap;
+    }
+    .fs-prio { display: inline-flex; padding: 3px 10px; border-radius: 999px; font-size: .74rem; font-weight: 700; }
+    .fs-prio-low { background: rgba(148,163,184,.18); color: #cbd5e1; }
+    .fs-prio-medium { background: rgba(250,204,21,.18); color: #facc15; }
+    .fs-prio-high { background: rgba(251,146,60,.18); color: #fb923c; }
+    .fs-prio-urgent { background: rgba(239,68,68,.2); color: #f87171; }
+    .fs-support-box { border: 1px solid #1f4d3a; background: rgba(16,185,129,.07); border-radius: 10px; padding: 12px; margin-top: 12px; }
+
+    @media (max-width: 767.98px) {
+        .fs-cards { grid-template-columns: 1fr; gap: 10px; margin-bottom: 14px; }
+        .fs-card-tab { padding: 12px; gap: 12px; }
+        .fs-card-icon { width: 42px; height: 42px; font-size: 1.1rem; }
+
+        /* Suggestion / feedback tables -> same stacked cards as the report lists */
+        #fs-sg-body td[data-label="ID"],   #fs-fb-body td[data-label="ID"]       { grid-area: id; font-size: .95rem; margin-bottom: 10px; }
+        #fs-sg-body td[data-label="Farmer"], #fs-fb-body td[data-label="Farmer"] { grid-area: type; text-align: right; margin-bottom: 10px; }
+        #fs-sg-body td[data-label="Category"], #fs-fb-body td[data-label="Rating"] { grid-area: category; margin-bottom: 8px; }
+        #fs-sg-body td[data-label="Suggestion"], #fs-fb-body td[data-label="Comment"] { grid-area: desc; margin-bottom: 10px; }
+        #fs-fb-body td[data-label="Feature"] { display: none; }
+        #fs-sg-body td[data-label="Date"], #fs-fb-body td[data-label="Date"]     { grid-area: date; }
+        #fs-sg-body td[data-label="Status"], #fs-fb-body td[data-label="Status"] { grid-area: status; text-align: right; }
+        #fs-sg-body td[data-label="Action"], #fs-fb-body td[data-label="Action"] {
+            grid-area: actions; text-align: right; padding-top: 10px; margin-top: 6px;
+            border-top: 1px solid #1d2636 !important;
+        }
+        #fs-sg-body td[data-label="ID"]::before, #fs-fb-body td[data-label="ID"]::before,
+        #fs-sg-body td[data-label="Farmer"]::before, #fs-fb-body td[data-label="Farmer"]::before { display: none; }
+        .fs-msg-cell { max-width: 100%; white-space: normal; }
+    }
 </style>
 
 <div class="nxl-content">
@@ -506,7 +583,7 @@
         <div class="page-header-title">
             <h4 class="m-b-10 fw-bold">Farmer Reports</h4>
         </div>
-        <div class="d-flex flex-wrap gap-2">
+        <div id="fr-header-filters" class="d-flex flex-wrap gap-2">
             <select id="fr-filter-status" class="form-select form-select-sm fr-input" style="width: 165px;" onchange="frApplyFilters()">
                 <option value="">All Status</option>
                 @foreach($statuses as $key => $meta)
@@ -533,6 +610,34 @@
             @if(session('error'))
                 <div class="alert alert-danger">{{ session('error') }}</div>
             @endif
+
+            {{-- ============ THREE CARDS: pick which list to show below ============ --}}
+            <div class="fs-cards" id="fs-cards">
+                <button type="button" class="fs-card-tab active" data-tab="report" onclick="fsSelectTab('report')">
+                    <span class="fs-card-icon fs-icon-report"><i class="fa-solid fa-bug"></i></span>
+                    <span class="fs-card-body">
+                        <span class="fs-card-title">Farmer Reports</span>
+                        <span class="fs-card-desc">Wrong detections reported by farmers in your area.</span>
+                    </span>
+                    <span class="fs-card-count" title="Farmer reports">{{ count($reports) }}</span>
+                </button>
+                <button type="button" class="fs-card-tab" data-tab="suggestion" onclick="fsSelectTab('suggestion')">
+                    <span class="fs-card-icon fs-icon-suggest"><i class="fa-solid fa-lightbulb"></i></span>
+                    <span class="fs-card-body">
+                        <span class="fs-card-title">Suggest Improvement</span>
+                        <span class="fs-card-desc">Ideas farmers sent to make the system better.</span>
+                    </span>
+                    <span class="fs-card-count" title="Suggestions">{{ count($suggestions) }}</span>
+                </button>
+                <button type="button" class="fs-card-tab" data-tab="general" onclick="fsSelectTab('general')">
+                    <span class="fs-card-icon fs-icon-feedback"><i class="fa-solid fa-comment-dots"></i></span>
+                    <span class="fs-card-body">
+                        <span class="fs-card-title">General Feedback</span>
+                        <span class="fs-card-desc">Farmers' experience and other concerns.</span>
+                    </span>
+                    <span class="fs-card-count" title="General feedback">{{ count($feedbacks) }}</span>
+                </button>
+            </div>
 
             {{-- ============ LIST VIEW ============ --}}
             <div id="fr-list-view">
@@ -645,6 +750,113 @@
                     </div>
                 @endif
                 </div>
+            </div>
+
+            {{-- ============ SUGGESTIONS (shown when the "Suggest Improvement" card is active) ============ --}}
+            <div id="fs-panel-suggestion" class="fr-card p-3 p-md-4 fr-hidden">
+                <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                    <h6 class="mb-0 fw-bold text-white">Farmer suggestions</h6>
+                    <span class="small text-secondary">View only. Suggestions the admin assigned to you can get a support reply.</span>
+                </div>
+
+                @if(count($suggestions) === 0)
+                    <p class="text-secondary mb-0">No suggestions from farmers in your area yet.</p>
+                @else
+                    <div class="table-responsive">
+                        <table class="table table-borderless mb-0 fr-table fs-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Farmer</th>
+                                    <th>Category</th>
+                                    <th>Suggestion</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                    <th class="text-end">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fs-sg-body">
+                                @foreach($suggestions as $s)
+                                    <tr data-sg-id="{{ $s['id'] }}">
+                                        <td class="fw-bold" data-label="ID">#{{ $s['code'] }}</td>
+                                        <td data-label="Farmer">{{ $s['farmer_name'] ?? '—' }}</td>
+                                        <td data-label="Category">{{ $s['category_label'] ?? '—' }}</td>
+                                        <td data-label="Suggestion"><div class="fs-msg-cell">{{ $s['message'] }}</div></td>
+                                        <td class="text-secondary" data-label="Date">{{ $s['date'] }}</td>
+                                        <td data-label="Status" class="fs-sg-status">
+                                            <span class="badge {{ $feedbackStatuses[$s['status']]['class'] ?? 'bg-secondary' }}">{{ $feedbackStatuses[$s['status']]['label'] ?? ucfirst($s['status']) }}</span>
+                                            @if(!empty($s['assigned_to_me']))
+                                                <span class="fs-assigned-chip"><i class="fa-solid fa-user-check"></i> Assigned to you</span>
+                                            @endif
+                                            @if(!empty($s['support_status_label']))
+                                                <span class="small text-secondary">{{ $s['support_status_label'] }}</span>
+                                            @endif
+                                        </td>
+                                        <td class="text-end" data-label="Action">
+                                            <button type="button" class="btn btn-sm btn-outline-info" onclick="fsViewEntry('suggestion', {{ $s['id'] }})">
+                                                <i class="fa-solid fa-eye me-1"></i> View
+                                            </button>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            </div>
+
+            {{-- ============ GENERAL FEEDBACK (shown when the "General Feedback" card is active) ============ --}}
+            <div id="fs-panel-general" class="fr-card p-3 p-md-4 fr-hidden">
+                <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                    <h6 class="mb-0 fw-bold text-white">Farmer feedback</h6>
+                    <span class="small text-secondary">View only.</span>
+                </div>
+
+                @if(count($feedbacks) === 0)
+                    <p class="text-secondary mb-0">No general feedback from farmers in your area yet.</p>
+                @else
+                    <div class="table-responsive">
+                        <table class="table table-borderless mb-0 fr-table fs-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Farmer</th>
+                                    <th>Rating</th>
+                                    <th>Feature</th>
+                                    <th>Comment</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                    <th class="text-end">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fs-fb-body">
+                                @foreach($feedbacks as $f)
+                                    <tr>
+                                        <td class="fw-bold" data-label="ID">#{{ $f['code'] }}</td>
+                                        <td data-label="Farmer">{{ $f['farmer_name'] ?? '—' }}</td>
+                                        <td data-label="Rating">
+                                            <span class="fs-stars-inline">
+                                                @for($i = 1; $i <= 5; $i++)<i class="fa-solid fa-star {{ $i <= (int) $f['rating'] ? '' : 'off' }}"></i>@endfor
+                                            </span>
+                                            <span class="small text-secondary ms-1">{{ $f['rating_label'] }}</span>
+                                        </td>
+                                        <td data-label="Feature">{{ $f['feature_label'] ?? '—' }}</td>
+                                        <td data-label="Comment"><div class="fs-msg-cell">{{ $f['message'] }}</div></td>
+                                        <td class="text-secondary" data-label="Date">{{ $f['date'] }}</td>
+                                        <td data-label="Status">
+                                            <span class="badge {{ $feedbackStatuses[$f['status']]['class'] ?? 'bg-secondary' }}">{{ $feedbackStatuses[$f['status']]['label'] ?? ucfirst($f['status']) }}</span>
+                                        </td>
+                                        <td class="text-end" data-label="Action">
+                                            <button type="button" class="btn btn-sm btn-outline-info" onclick="fsViewEntry('general', {{ $f['id'] }})">
+                                                <i class="fa-solid fa-eye me-1"></i> View
+                                            </button>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
             </div>
 
             {{-- ============ REVIEW VIEW ============ --}}
@@ -925,6 +1137,26 @@
         <div class="fe-foot">
             <span id="fe-m-footnote" class="small text-secondary me-auto"></span>
             <button type="button" class="btn btn-sm btn-secondary" onclick="frCloseEscModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+{{-- ============ View one suggestion / feedback (+ Create Support for suggestions assigned to this technician) ============ --}}
+<div id="fs-modal" class="fe-backdrop fr-hidden" onclick="if (event.target === this) fsCloseModal()">
+    <div class="fe-dialog fs-dialog">
+        <div class="fe-head">
+            <h6 class="mb-0 fw-bold text-white" id="fs-modal-title">—</h6>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="fsCloseModal()" title="Close">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="fe-body" id="fs-modal-body"></div>
+        <div class="fe-foot">
+            <span id="fs-modal-msg" class="small text-danger me-auto"></span>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="fsCloseModal()">Close</button>
+            <button type="button" id="fs-support-save" class="btn btn-sm btn-success fr-hidden" onclick="fsSaveSupport()">
+                <i class="fa-solid fa-floppy-disk me-1"></i> Save Support
+            </button>
         </div>
     </div>
 </div>
@@ -1587,6 +1819,7 @@ document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
     if (!document.getElementById('fr-lightbox').classList.contains('fr-hidden')) { frCloseZoom(); return; }
     if (!document.getElementById('fr-solution-modal').classList.contains('fr-hidden')) { frCloseSolutionModal(); return; }
+    if (!document.getElementById('fs-modal').classList.contains('fr-hidden')) { fsCloseModal(); return; }
     if (!document.getElementById('fe-modal').classList.contains('fr-hidden')) frCloseEscModal();
 });
 
@@ -1686,5 +1919,196 @@ document.getElementById('fr-review-form').addEventListener('submit', function (e
         return stop('Please add your technician notes.');
     }
 });
+// ==================== FEEDBACK & SUPPORT: three cards ====================
+// Card 1 = the existing farmer-report screens (list + review). Card 2 / 3 are
+// read-only tables of the farmers' suggestions / general feedback. A suggestion
+// the admin assigned to THIS technician also shows the admin's priority + notes
+// and a "Create Support" form (status + notes) -> technician.suggestions.support.
+const fsSuggestions     = @json($suggestions);
+const fsFeedbacks       = @json($feedbacks);
+const fsFeedbackStatus  = @json($feedbackStatuses);
+const fsSupportStatuses = @json($supportStatuses);
+const FS_SUPPORT_URL    = "{{ route('technician.suggestions.support', ['feedback' => '__ID__']) }}";
+const FS_TABS           = ['report', 'suggestion', 'general'];
+let fsOpenId = null;       // suggestion currently open in the modal (null = feedback / closed)
+
+window.fsSelectTab = function (tab) {
+    if (!FS_TABS.includes(tab)) tab = 'report';
+
+    document.querySelectorAll('.fs-card-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+
+    // Leaving the report card closes any open review screen.
+    document.getElementById('fr-detail-view').classList.add('fr-hidden');
+    if (typeof frCloseSolutionModal === 'function') frCloseSolutionModal();
+    frCurrent = null;
+
+    document.getElementById('fr-list-view').classList.toggle('fr-hidden', tab !== 'report');
+    document.getElementById('fs-panel-suggestion').classList.toggle('fr-hidden', tab !== 'suggestion');
+    document.getElementById('fs-panel-general').classList.toggle('fr-hidden', tab !== 'general');
+    // The status / type / search filters in the header belong to the report list only.
+    document.getElementById('fr-header-filters').classList.toggle('fr-hidden', tab !== 'report');
+
+    try { history.replaceState(null, '', tab === 'report' ? location.pathname + location.search : '#' + tab); } catch (e) {}
+};
+
+function fsStarsHtml(n) {
+    let html = '';
+    for (let i = 1; i <= 5; i++) html += `<i class="fa-solid fa-star ${i <= n ? '' : 'off'}"></i>`;
+    return `<span class="fs-stars-inline">${html}</span>`;
+}
+
+function fsViewRow(label, valueHtml) {
+    return `<div class="fs-view-row"><div class="fs-view-label">${label}</div><div class="fs-view-value">${valueHtml}</div></div>`;
+}
+
+function fsStatusCellHtml(e) {
+    const st = fsFeedbackStatus[e.status] || fsFeedbackStatus.submitted || { label: 'Submitted', class: 'bg-info text-dark' };
+    let html = `<span class="badge ${frAttr(st.class)}">${frEscape(st.label)}</span>`;
+    if (e.assigned_to_me) {
+        html += ` <span class="fs-assigned-chip"><i class="fa-solid fa-user-check"></i> Assigned to you</span>`;
+    }
+    if (e.support_status_label) {
+        html += ` <span class="small text-secondary">${frEscape(e.support_status_label)}</span>`;
+    }
+    return html;
+}
+
+window.fsViewEntry = function (type, id) {
+    const list = type === 'suggestion' ? fsSuggestions : fsFeedbacks;
+    const e = list.find(x => String(x.id) === String(id));
+    if (!e) return;
+
+    const st = fsFeedbackStatus[e.status] || fsFeedbackStatus.submitted || { label: 'Submitted', class: 'bg-info text-dark' };
+    let html = fsViewRow('Status', `<span class="badge ${frAttr(st.class)}">${frEscape(st.label)}</span>`);
+    html += fsViewRow('From', frEscape(e.farmer_name || '—'));
+
+    if (type === 'suggestion') {
+        html += fsViewRow('What to improve', frEscape(e.category_label || '—'));
+        html += fsViewRow('Suggestion', frEscape(e.message));
+        if (e.screenshot) {
+            html += fsViewRow('Screenshot', '<img id="fs-view-shot" src="" alt="Screenshot" class="fr-thumb" style="width:120px;height:120px;">');
+        }
+    } else {
+        html += fsViewRow('Rating', fsStarsHtml(Number(e.rating) || 0) + ' <span class="ms-1">' + frEscape(e.rating_label || '') + '</span>');
+        html += fsViewRow('Feature', frEscape(e.feature_label || '—'));
+        html += fsViewRow('Comments', frEscape(e.message));
+    }
+    html += fsViewRow('Farmer allows contact', e.allow_contact ? 'Yes' : 'No');
+    html += fsViewRow('Sent', frEscape(e.submitted_at || e.date || '—'));
+
+    const canSupport = type === 'suggestion' && e.assigned_to_me;
+    if (type === 'suggestion' && e.assigned_tech_name) {
+        html += fsViewRow('Assigned technician', frEscape(e.assigned_tech_name) + (e.assigned_date ? ' <span class="text-secondary small">· ' + frEscape(e.assigned_date) + '</span>' : ''));
+    }
+    if (canSupport) {
+        if (e.assigned_priority) {
+            html += fsViewRow('Admin priority', `<span class="fs-prio fs-prio-${frAttr(e.assigned_priority)}">${frEscape(String(e.assigned_priority).charAt(0).toUpperCase() + String(e.assigned_priority).slice(1))}</span>`);
+        }
+        if (e.assigned_notes) html += fsViewRow('Admin notes', frEscape(e.assigned_notes));
+
+        const opts = Object.keys(fsSupportStatuses).map(k =>
+            `<option value="${frAttr(k)}" ${e.support_status === k ? 'selected' : ''}>${frEscape(fsSupportStatuses[k].label)}</option>`).join('');
+        html += `
+            <div class="fs-support-box">
+                <div class="fr-col-head">Create Support</div>
+                <label class="small text-secondary mb-1" for="fs-support-status">Status</label>
+                <select id="fs-support-status" class="form-select form-select-sm fr-input mb-2">
+                    <option value="">Choose a status…</option>${opts}
+                </select>
+                <label class="small text-secondary mb-1" for="fs-support-notes">Notes (the farmer will see these)</label>
+                <textarea id="fs-support-notes" rows="4" maxlength="2000" class="form-control form-control-sm fr-input"
+                          placeholder="What will be done about this suggestion?">${frEscape(e.support_notes || '')}</textarea>
+            </div>`;
+    } else if (type === 'suggestion' && e.support_status_label) {
+        html += fsViewRow('Support status', frEscape(e.support_status_label));
+    }
+
+    fsOpenId = canSupport ? e.id : null;
+    document.getElementById('fs-modal-title').textContent = (type === 'suggestion' ? 'Suggestion #' : 'Feedback #') + e.code;
+    document.getElementById('fs-modal-body').innerHTML = html;
+    document.getElementById('fs-modal-msg').textContent = '';
+    const saveBtn = document.getElementById('fs-support-save');
+    saveBtn.classList.toggle('fr-hidden', !canSupport);
+    saveBtn.disabled = false;
+
+    // Screenshot is a large data URI: set it through the DOM, not inline markup.
+    const shot = document.getElementById('fs-view-shot');
+    if (shot) {
+        shot.src = e.screenshot;
+        shot.addEventListener('click', () => frZoom(e.screenshot));
+    }
+
+    const modal = document.getElementById('fs-modal');
+    modal.classList.remove('fr-hidden');
+    modal.scrollTop = 0;
+};
+
+window.fsCloseModal = function () {
+    document.getElementById('fs-modal').classList.add('fr-hidden');
+    fsOpenId = null;
+};
+
+window.fsSaveSupport = async function () {
+    if (fsOpenId === null) return;
+    const msg    = document.getElementById('fs-modal-msg');
+    const status = document.getElementById('fs-support-status').value;
+    const notes  = document.getElementById('fs-support-notes').value.trim();
+    msg.textContent = '';
+
+    if (!status) { msg.textContent = 'Please choose a support status.'; return; }
+    if (!notes)  { msg.textContent = 'Please add your notes.'; return; }
+
+    const btn = document.getElementById('fs-support-save');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving…';
+
+    try {
+        const res = await fetch(FS_SUPPORT_URL.replace('__ID__', fsOpenId), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': "{{ csrf_token() }}"
+            },
+            body: JSON.stringify({ status, notes })
+        });
+
+        if (res.status === 401 || res.status === 419) {
+            alert('Your login session has expired. The page will now refresh so you can log back in.');
+            window.location.reload();
+            return;
+        }
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+            const firstErr = data.errors ? Object.values(data.errors)[0][0] : null;
+            throw new Error(firstErr || data.message || 'Support could not be saved. Please try again.');
+        }
+
+        // Swap in the fresh copy, repaint the row, and re-open the modal on it.
+        const idx = fsSuggestions.findIndex(x => Number(x.id) === Number(data.suggestion.id));
+        if (idx !== -1) fsSuggestions[idx] = data.suggestion;
+        const cell = document.querySelector(`#fs-sg-body tr[data-sg-id="${data.suggestion.id}"] .fs-sg-status`);
+        if (cell) cell.innerHTML = fsStatusCellHtml(data.suggestion);
+        fsViewEntry('suggestion', data.suggestion.id);
+        btn.innerHTML = original;
+        document.getElementById('fs-modal-msg').classList.replace('text-danger', 'text-success');
+        document.getElementById('fs-modal-msg').textContent = 'Support saved. The farmer can now see it.';
+        setTimeout(() => {
+            const m = document.getElementById('fs-modal-msg');
+            if (m) m.classList.replace('text-success', 'text-danger');
+        }, 4000);
+    } catch (err) {
+        msg.textContent = err.message || 'Something went wrong. Please try again.';
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+};
+
+// Open on the card the URL remembers (#suggestion / #general), else Farmer Reports.
+fsSelectTab((location.hash || '').replace('#', '') || 'report');
 </script>
 @endsection
