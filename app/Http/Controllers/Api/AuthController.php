@@ -106,7 +106,7 @@ class AuthController extends Controller
             return $this->lockedResponse($remaining);
         }
 
-        $user = User::where('email', $data['email'])->first();
+        $user = User::whereRaw('LOWER(email) = ?', [$data['email']])->first();
 
         if (!$user || !Hash::check($data['password'], $user->password)) {
             [$lockedNow, $attemptsLeft] = $this->registerFailure($lockKey);
@@ -250,7 +250,7 @@ class AuthController extends Controller
             ], 422);
         }
 
-        if (User::where('email', $data['email'])->exists()) {
+        if (User::whereRaw('LOWER(email) = ?', [$data['email']])->exists()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Ang email na ito ay nagamit na.',
@@ -395,7 +395,7 @@ class AuthController extends Controller
             'email' => 'required|email|max:100',
         ]);
 
-        $user = User::where('email', $data['email'])->first();
+        $user = User::whereRaw('LOWER(email) = ?', [$data['email']])->first();
 
         // This app is the farmer side only.
         if (!$user || strtolower(trim((string) $user->role)) !== 'farmer') {
@@ -499,7 +499,7 @@ class AuthController extends Controller
     /** Used by the "waiting for approval" screen (same idea as web /check-status). */
     public function checkStatus(Request $request)
     {
-        $user = User::where('email', $request->query('email'))->first();
+        $user = User::whereRaw('LOWER(email) = ?', [Str::lower(trim((string) $request->query('email')))])->first();
 
         return response()->json(['status' => $user ? $user->status : 'none'])
             ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
@@ -578,4 +578,4 @@ class AuthController extends Controller
             'lang'            => $user->lang,
         ];
     }
-}   
+}

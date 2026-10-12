@@ -614,7 +614,6 @@ class FarmerReportController extends Controller
             'feature'       => 'required_if:type,general|nullable|in:' . implode(',', array_keys(self::FEEDBACK_FEATURES)),
             'message'       => 'required|string|max:2000',
             'screenshot'    => 'nullable|string|max:8000000',
-            'allow_contact' => 'nullable|boolean',
         ]);
 
         $isSuggestion = $data['type'] === FarmerFeedback::TYPE_SUGGESTION;
@@ -640,7 +639,7 @@ class FarmerReportController extends Controller
                 'feature'       => $isSuggestion ? null : $data['feature'],
                 'message'       => $data['message'],
                 'screenshot'    => $screenshot,
-                'allow_contact' => $request->boolean('allow_contact', true),
+                'allow_contact' => true, // option removed from the UI; column kept so the insert never breaks
                 'status'        => 'submitted',
             ])->save();
 
@@ -1030,7 +1029,6 @@ class FarmerReportController extends Controller
             'feature_label'  => self::FEEDBACK_FEATURES[$f->feature] ?? null,
             'message'        => $f->message,
             'screenshot'     => $this->normalizeImage($f->screenshot),
-            'allow_contact'  => (bool) $f->allow_contact,
             'status'         => $status,
             'date'           => $f->created_at?->timezone('Asia/Manila')->format('M d, Y'),
             'submitted_at'   => $f->created_at?->timezone('Asia/Manila')->format('M d, Y h:i A'),

@@ -300,8 +300,6 @@
     .fs-select-wrap > i { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
     .fs-select-wrap select { padding-left: 38px; }
 
-    .fs-check { display: flex; align-items: center; gap: 9px; margin-top: 16px; font-size: .85rem; color: #cbd5e1; cursor: pointer; }
-    .fs-check input { accent-color: #16a34a; width: 17px; height: 17px; flex: 0 0 auto; }
     .fs-submit {
         width: 100%; margin-top: 16px; background: #15803d; border: none; color: #fff;
         font-weight: 800; padding: 12px; border-radius: 10px; font-size: .95rem;
@@ -314,6 +312,18 @@
     .fs-view-row:last-child { border-bottom: none; }
     .fs-view-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; margin-bottom: 3px; }
     .fs-view-value { color: #e2e8f0; font-size: .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+    /* Suggestion view: LEFT = what the farmer sent, RIGHT = the team's response */
+    .rg-report-dialog.fs-dialog.fs-dialog-wide { max-width: 900px; }
+    .fs-view-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+    .fs-view-col { border: 1px solid #263349; border-radius: 10px; padding: 8px 14px 6px; min-width: 0; }
+    .fs-view-col-title {
+        font-size: .78rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;
+        color: #86efac; padding: 8px 2px 4px; border-bottom: 1px solid rgba(255,255,255,.12);
+    }
+    .fs-view-col.fs-response { border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.04); }
+    .fs-view-empty { color: #94a3b8; font-size: .88rem; padding: 14px 2px; }
+    @media (max-width: 767px) { .fs-view-cols { grid-template-columns: 1fr; } }
 
     /* ===================== MOBILE (phones) ===================== */
     @media (max-width: 767px) {
@@ -569,6 +579,9 @@
                                         <td class="text-secondary" data-label="Date">{{ $s['date'] }}</td>
                                         <td data-label="Status">
                                             <span class="badge {{ $feedbackStatuses[$s['status']]['class'] }}">{{ $feedbackStatuses[$s['status']]['label'] }}</span>
+                                            @if(!empty($s['support_status_label']))
+                                                <div class="small text-secondary mt-1">{{ $s['support_by'] ?? 'Team' }}: {{ $s['support_status_label'] }}</div>
+                                            @endif
                                         </td>
                                         <td class="text-end" data-label="Action">
                                             <div class="fr-action-dd">
@@ -1024,10 +1037,6 @@
                 <button type="button" class="fs-upload-remove" onclick="sgClearImage()" title="Remove image"><i class="fa-solid fa-xmark"></i></button>
             </div>
 
-            <label class="fs-check">
-                <input type="checkbox" id="sg-contact" checked> Allow the team to contact me
-            </label>
-
             <button type="button" id="sg-submit-btn" class="fs-submit" onclick="fsSubmit('suggestion')">
                 <i class="fa-solid fa-paper-plane me-2"></i> Submit Suggestion
             </button>
@@ -1093,10 +1102,6 @@
                 @endforeach
             </div>
 
-            <label class="fs-check">
-                <input type="checkbox" id="fb-contact" checked> Allow the team to contact me
-            </label>
-
             <button type="button" id="fb-submit-btn" class="fs-submit" onclick="fsSubmit('general')">
                 <i class="fa-solid fa-paper-plane me-2"></i> Send Feedback
             </button>
@@ -1106,7 +1111,7 @@
 
 {{-- ============ View one suggestion / feedback (read-only) ============ --}}
 <div id="fs-view-modal" class="rg-report-backdrop fr-hidden" onclick="if (event.target === this) fsCloseView()">
-    <div class="rg-report-dialog fs-dialog">
+    <div class="rg-report-dialog fs-dialog" id="fs-view-dialog">
         <div class="rg-report-head">
             <h6 class="mb-0 fw-bold text-white" id="fs-view-title">—</h6>
             <button type="button" class="btn btn-sm btn-link text-secondary p-0" onclick="fsCloseView()" title="Close">
@@ -2139,7 +2144,6 @@ window.openSuggestionModal = function() {
     const first = document.querySelector('#sg-category-chips .fs-chip');
     sgSetCategory(first ? first.dataset.value : null);
     document.getElementById('sg-message').value = '';
-    document.getElementById('sg-contact').checked = true;
     sgClearImage();
     document.getElementById('suggestion-modal').classList.remove('fr-hidden');
 };
@@ -2172,7 +2176,6 @@ window.openFeedbackModal = function() {
     fbSetRating(5);
     fbPickFeature('');
     document.getElementById('fb-message').value = '';
-    document.getElementById('fb-contact').checked = true;
     document.getElementById('feedback-modal').classList.remove('fr-hidden');
 };
 window.closeFeedbackModal = function() {
@@ -2202,15 +2205,13 @@ window.fsSubmit = async function(type) {
                 type: 'suggestion',
                 category: sgCategory,
                 message: message,
-                screenshot: sgScreenshot,
-                allow_contact: document.getElementById('sg-contact').checked
+                screenshot: sgScreenshot
             }
             : {
                 type: 'general',
                 rating: fbRating,
                 feature: fbFeature,
-                message: message,
-                allow_contact: document.getElementById('fb-contact').checked
+                message: message
             };
 
         const response = await fetch(FS_STORE_URL, {
@@ -2259,21 +2260,51 @@ window.fsViewEntry = function(type, id) {
     if (!e) return;
 
     const status = fsStatuses[e.status] || fsStatuses.submitted;
-    let html = fsViewRow('Status', `<span class="badge ${status.class}">${frEscape(status.label)}</span>`);
+    const dialog = document.getElementById('fs-view-dialog');
+    let html = '';
 
     if (type === 'suggestion') {
-        html += fsViewRow('What to improve', frEscape(e.category_label || '—'));
-        html += fsViewRow('Suggestion', frEscape(e.message));
+        // LEFT: what the farmer sent
+        let left = fsViewRow('Status', `<span class="badge ${status.class}">${frEscape(status.label)}</span>`);
+        left += fsViewRow('What to improve', frEscape(e.category_label || '—'));
+        left += fsViewRow('Suggestion', frEscape(e.message));
         if (e.screenshot) {
-            html += fsViewRow('Screenshot', '<img id="fs-view-shot" src="" alt="Screenshot" class="fr-thumb" style="width:120px;height:120px;">');
+            left += fsViewRow('Screenshot', '<img id="fs-view-shot" src="" alt="Screenshot" class="fr-thumb" style="width:120px;height:120px;">');
         }
+        left += fsViewRow('Sent', frEscape(e.submitted_at || e.date || '—'));
+
+        // RIGHT: what the admin / technician did about it
+        let right = '';
+        if (e.assigned_tech_name) {
+            right += fsViewRow('Assigned to', frEscape(e.assigned_tech_name) + (e.assigned_date ? ` <span class="text-secondary">· ${frEscape(e.assigned_date)}</span>` : ''));
+        }
+        if (e.support_status) {
+            const tone = e.support_status === 'resolved' ? 'bg-success text-white'
+                       : e.support_status === 'declined' ? 'bg-secondary text-white'
+                       : 'bg-warning text-dark';
+            right += fsViewRow('Response', `<span class="badge ${tone}">${frEscape(e.support_status_label || '')}</span>`);
+            right += fsViewRow('Handled by', frEscape(e.support_by || 'Team'));
+            right += fsViewRow('Notes', e.support_notes ? frEscape(e.support_notes) : '—');
+            if (e.support_updated_at) right += fsViewRow('Updated', frEscape(e.support_updated_at));
+        } else if (!e.assigned_tech_name) {
+            right = '<div class="fs-view-empty">No response yet. When an admin or technician takes action on your suggestion, it will show here.</div>';
+        } else {
+            right += '<div class="fs-view-empty">Your suggestion has been assigned. The technician\'s response will show here.</div>';
+        }
+
+        html = `<div class="fs-view-cols">
+            <div class="fs-view-col"><div class="fs-view-col-title">Your suggestion</div>${left}</div>
+            <div class="fs-view-col fs-response"><div class="fs-view-col-title">Team response</div>${right}</div>
+        </div>`;
+        dialog.classList.add('fs-dialog-wide');
     } else {
+        html = fsViewRow('Status', `<span class="badge ${status.class}">${frEscape(status.label)}</span>`);
         html += fsViewRow('Rating', fsStarsHtml(Number(e.rating) || 0) + ' <span class="ms-1">' + frEscape(e.rating_label || '') + '</span>');
         html += fsViewRow('Feature', frEscape(e.feature_label || '—'));
         html += fsViewRow('Comments', frEscape(e.message));
+        html += fsViewRow('Sent', frEscape(e.submitted_at || e.date || '—'));
+        dialog.classList.remove('fs-dialog-wide');
     }
-    html += fsViewRow('Team may contact me', e.allow_contact ? 'Yes' : 'No');
-    html += fsViewRow('Sent', frEscape(e.submitted_at || e.date || '—'));
 
     document.getElementById('fs-view-title').textContent = (type === 'suggestion' ? 'Suggestion #' : 'Feedback #') + e.code;
     document.getElementById('fs-view-body').innerHTML = html;

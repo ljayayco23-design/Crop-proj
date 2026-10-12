@@ -911,10 +911,6 @@
                         <div class="small text-light mb-1">Screenshot</div>
                         <img id="sg-m-shot" class="sg-shot" alt="Screenshot" onclick="srZoom(this.src)">
                     </div>
-
-                    <div class="small text-secondary">
-                        <i class="fa-solid fa-envelope me-1"></i>Team may contact the farmer: <span id="sg-m-contact" class="text-light">—</span>
-                    </div>
                 </div>
 
                 {{-- RIGHT: admin actions + outcome --}}
@@ -1767,7 +1763,6 @@ window.sgOpenModal = function (type, id) {
     document.getElementById('sg-m-label-key').textContent = isSg ? 'Category' : 'Feature';
     document.getElementById('sg-m-label').textContent     = (isSg ? e.category_label : e.feature_label) || '—';
     document.getElementById('sg-m-message').textContent   = e.message || '—';
-    document.getElementById('sg-m-contact').textContent   = e.allow_contact ? 'Yes' : 'No';
 
     const ratingWrap = document.getElementById('sg-m-rating-wrap');
     ratingWrap.classList.toggle('fr-hidden', isSg);

@@ -1993,7 +1993,6 @@ window.fsViewEntry = function (type, id) {
         html += fsViewRow('Feature', frEscape(e.feature_label || '—'));
         html += fsViewRow('Comments', frEscape(e.message));
     }
-    html += fsViewRow('Farmer allows contact', e.allow_contact ? 'Yes' : 'No');
     html += fsViewRow('Sent', frEscape(e.submitted_at || e.date || '—'));
 
     const canSupport = type === 'suggestion' && e.assigned_to_me;

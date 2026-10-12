@@ -7,10 +7,13 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\DetectionController;
 use App\Http\Controllers\Api\HistoryController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\FeedbackController;
 use App\Http\Controllers\Api\FieldMapController;
 use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\ScheduleController;
+use App\Http\Controllers\Api\ProfileController;
+use App\Http\Middleware\EnsureApiFarmer;
 
 Route::prefix('v1')->group(function () {
     Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:30,1');
@@ -34,12 +37,17 @@ Route::prefix('v1')->group(function () {
     Route::get('/locations/cities/{province}', [LocationController::class, 'cities']);
     Route::get('/locations/barangays/{city}', [LocationController::class, 'barangays']);
 
-    Route::middleware('auth:sanctum')->group(function () {
+    // auth:sanctum = valid token. EnsureApiFarmer = the account is STILL an approved
+    // farmer on every request (same idea as EnsureUserRole on the website).
+    Route::middleware(['auth:sanctum', EnsureApiFarmer::class])->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/dashboard', [DashboardController::class, 'index']);
         // Farm Address editor on the dashboard (same save as the website's farmer.profile.address)
         Route::post('/profile/address', [DashboardController::class, 'updateAddress']);
+
+        // Account Center: change password (same as the website's password.update)
+        Route::post('/profile/password', [ProfileController::class, 'password'])->middleware('throttle:5,1');
 
         Route::get('/detection/meta', [DetectionController::class, 'meta']);
         Route::post('/detection/groq', [DetectionController::class, 'groq']);
@@ -68,6 +76,13 @@ Route::prefix('v1')->group(function () {
         Route::get('/reports/{id}', [ReportController::class, 'show'])->whereNumber('id');
         Route::post('/reports', [ReportController::class, 'store']);
         Route::post('/reports/delete', [ReportController::class, 'destroy']);
+
+        // Suggest Improvement + General Feedback (same data as the website's farmer_report tabs;
+        // each entry carries the admin / technician response)
+        Route::get('/feedback', [FeedbackController::class, 'index']);
+        Route::get('/feedback/{id}', [FeedbackController::class, 'show'])->whereNumber('id');
+        Route::post('/feedback', [FeedbackController::class, 'store']);
+        Route::post('/feedback/delete', [FeedbackController::class, 'destroy']);
 
         // Messenger (same people + same messages as the website's live_com page)
         Route::get('/chat/users', [ChatController::class, 'users']);
