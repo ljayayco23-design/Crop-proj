@@ -15,7 +15,7 @@
 --}}
 @extends('layouts.farmer')
 
-@section('title', 'RICEGUARD AI • Report Problem')
+@section('title', 'RICEGUARD AI • Feedback & Support')
 
 @section('content')
 <style>
@@ -215,6 +215,106 @@
     .fr-action-item:hover { background: rgba(255,255,255,.06); color: #fff; }
     .fr-action-item.text-danger:hover { background: rgba(239,68,68,.12); color: #f87171 !important; }
 
+    /* ===================== FEEDBACK & SUPPORT: top cards ===================== */
+    .fs-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .fs-card-tab {
+        display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+        background: #121826; border: 1px solid #263349; border-radius: 12px;
+        padding: 16px; color: #e2e8f0; cursor: pointer;
+        transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease, background-color .15s ease;
+    }
+    .fs-card-tab:hover { border-color: #3b4c66; transform: translateY(-1px); }
+    .fs-card-tab:focus-visible { outline: 2px solid #10b981; outline-offset: 2px; }
+    .fs-card-tab.active {
+        border-color: #10b981; background: rgba(16,185,129,.07);
+        box-shadow: 0 0 0 1px #10b981 inset, 0 8px 24px rgba(16,185,129,.12);
+    }
+    .fs-card-icon {
+        width: 48px; height: 48px; border-radius: 12px; flex: 0 0 auto;
+        display: flex; align-items: center; justify-content: center; font-size: 1.25rem; color: #fff;
+    }
+    .fs-icon-report   { background: #22c55e; }
+    .fs-icon-suggest  { background: #3b82f6; }
+    .fs-icon-feedback { background: #8b5cf6; }
+    .fs-card-body { flex: 1 1 auto; min-width: 0; }
+    .fs-card-title { font-weight: 800; color: #fff; font-size: .95rem; line-height: 1.25; }
+    .fs-card-desc  { font-size: .76rem; color: #94a3b8; line-height: 1.35; margin-top: 2px; }
+    .fs-card-count {
+        flex: 0 0 auto; font-size: .72rem; font-weight: 800; padding: 3px 10px; border-radius: 999px;
+        background: rgba(148,163,184,.15); color: #cbd5e1;
+    }
+    .fs-card-tab.active .fs-card-count { background: rgba(16,185,129,.2); color: #34d399; }
+
+    /* history tables for Suggestions / General Feedback */
+    .fs-msg-cell { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cbd5e1; }
+    .fs-stars-inline { color: #22c55e; font-size: .78rem; letter-spacing: 1px; white-space: nowrap; }
+    .fs-stars-inline .off { color: #334155; }
+
+    /* ---------- Suggest Improvement / General Feedback (floating modals) ----------
+       Reuse the Create-a-Report backdrop + dialog look, narrower, and laid out
+       like the app mockups: hero icon, title, subtitle, then the form. */
+    .rg-report-dialog.fs-dialog { max-width: 520px; }
+    .fs-hero { text-align: center; padding: 2px 0 6px; }
+    .fs-hero-icon {
+        width: 78px; height: 78px; border-radius: 50%; margin: 0 auto 10px;
+        display: flex; align-items: center; justify-content: center; font-size: 2rem; color: #34d399;
+        background: radial-gradient(circle at 30% 30%, rgba(16,185,129,.30), rgba(16,185,129,.08));
+        border: 1px solid rgba(16,185,129,.35);
+    }
+    .fs-hero h5 { color: #fff; font-weight: 800; margin: 0 0 4px; }
+    .fs-hero p  { color: #94a3b8; font-size: .85rem; margin: 0; }
+    .fs-label { font-size: .88rem; font-weight: 800; color: #fff; margin: 16px 0 8px; }
+    .fs-label small { font-weight: 600; color: #94a3b8; }
+    .fs-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .fs-chip {
+        display: inline-flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: 999px;
+        background: #0f1522; border: 1px solid #334155; color: #cbd5e1;
+        font-size: .84rem; font-weight: 600; cursor: pointer; transition: all .15s ease;
+    }
+    .fs-chip:hover { border-color: #10b981; color: #fff; }
+    .fs-chip.active { background: #15803d; border-color: #16a34a; color: #fff; }
+    .fs-chip i { font-size: .95rem; }
+    .fs-chips-sm .fs-chip { padding: 7px 13px; font-size: .8rem; }
+
+    .fs-stars { display: flex; gap: 10px; margin-bottom: 12px; }
+    .fs-star { background: none; border: none; padding: 0; font-size: 1.9rem; line-height: 1; color: #334155; cursor: pointer; transition: transform .12s ease, color .12s ease; }
+    .fs-star:hover { transform: scale(1.12); }
+    .fs-star.on { color: #22c55e; }
+
+    .fs-upload {
+        display: flex; align-items: center; justify-content: center; gap: 12px; cursor: pointer;
+        border: 1.5px dashed #2f7a58; background: rgba(16,185,129,.06); border-radius: 10px;
+        padding: 16px; color: #e2e8f0; font-size: .85rem; font-weight: 600;
+    }
+    .fs-upload:hover { background: rgba(16,185,129,.1); }
+    .fs-upload i { font-size: 1.7rem; color: #34d399; }
+    .fs-upload small { display: block; color: #94a3b8; font-weight: 500; font-size: .72rem; }
+    .fs-upload-preview { position: relative; display: inline-block; margin-top: 10px; }
+    .fs-upload-preview img { max-height: 150px; max-width: 100%; border-radius: 10px; display: block; border: 1px solid #334155; }
+    .fs-upload-remove {
+        position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; border-radius: 50%;
+        background: #ef4444; color: #fff; border: none; font-size: .7rem; display: flex; align-items: center; justify-content: center;
+    }
+
+    .fs-select-wrap { position: relative; margin-bottom: 10px; }
+    .fs-select-wrap > i { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
+    .fs-select-wrap select { padding-left: 38px; }
+
+    .fs-check { display: flex; align-items: center; gap: 9px; margin-top: 16px; font-size: .85rem; color: #cbd5e1; cursor: pointer; }
+    .fs-check input { accent-color: #16a34a; width: 17px; height: 17px; flex: 0 0 auto; }
+    .fs-submit {
+        width: 100%; margin-top: 16px; background: #15803d; border: none; color: #fff;
+        font-weight: 800; padding: 12px; border-radius: 10px; font-size: .95rem;
+    }
+    .fs-submit:hover { background: #166534; color: #fff; }
+    .fs-submit:disabled { opacity: .65; }
+
+    /* read-only "View" modal for a suggestion / feedback */
+    .fs-view-row { border-bottom: 1px solid rgba(255,255,255,.08); padding: 10px 2px; }
+    .fs-view-row:last-child { border-bottom: none; }
+    .fs-view-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; margin-bottom: 3px; }
+    .fs-view-value { color: #e2e8f0; font-size: .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+
     /* ===================== MOBILE (phones) ===================== */
     @media (max-width: 767px) {
         .page-header { gap: .5rem; margin-bottom: 1rem !important; }
@@ -294,6 +394,37 @@
         .rg-report-foot { flex-wrap: wrap; padding: 10px 14px; }
         .rg-report-foot .btn { flex: 1 1 auto; }
 
+        /* ---- Feedback & Support cards + new history tables ---- */
+        .fs-cards { grid-template-columns: 1fr; gap: 10px; margin-bottom: 14px; }
+        .fs-card-tab { padding: 12px; gap: 12px; }
+        .fs-card-icon { width: 42px; height: 42px; font-size: 1.1rem; }
+
+        .fr-table.fs-table tbody tr {
+            grid-template-columns: 1fr 1fr;
+            grid-template-areas:
+                "code   status"
+                "main   feat"
+                "msg    msg"
+                "date   actions";
+        }
+        #fs-sg-body tr { grid-template-areas: "code status" "main main" "msg msg" "date actions"; }
+        .fs-table td[data-label="ID"]      { grid-area: code; font-size: .95rem; margin-bottom: 8px; }
+        .fs-table td[data-label="Status"]  { grid-area: status; text-align: right; margin-bottom: 8px; }
+        .fs-table td[data-label="Category"], .fs-table td[data-label="Rating"] { grid-area: main; margin-bottom: 8px; }
+        .fs-table td[data-label="Feature"] { grid-area: feat; text-align: right; margin-bottom: 8px; }
+        .fs-table td[data-label="Suggestion"], .fs-table td[data-label="Comment"] { grid-area: msg; margin-bottom: 8px; }
+        .fs-table td[data-label="Date"]    { grid-area: date; align-self: center; }
+        .fs-table td[data-label="Action"]  { grid-area: actions; text-align: right; }
+        .fr-table.fs-table td[data-label="ID"]::before,
+        .fr-table.fs-table td[data-label="Status"]::before,
+        .fr-table.fs-table td[data-label="Action"]::before,
+        .fr-table.fs-table td[data-label="Date"]::before { display: none !important; }
+        .fs-msg-cell { max-width: none; white-space: normal; display: -webkit-box !important; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+        .rg-report-dialog.fs-dialog { max-width: none; }
+        .fs-stars { gap: 8px; }
+        .fs-star { font-size: 1.7rem; }
+
         /* ---- lightbox ---- */
         .fr-lightbox { padding: 1rem .75rem; }
     }
@@ -302,12 +433,41 @@
 <div class="nxl-content">
     <div class="page-header mb-4">
         <div class="page-header-title">
-            <h4 class="m-b-10 fw-bold">Report Problem</h4>
+            <h4 class="m-b-10 fw-bold">Feedback &amp; Support</h4>
+            <div class="small text-secondary">Your feedback matters. Report a wrong detection, suggest an improvement, or tell us about your experience.</div>
         </div>
     </div>
 
     <div class="main-content">
         <div class="container-fluid">
+
+            {{-- ============ THREE CARDS: pick which history to show below ============ --}}
+            <div class="fs-cards" id="fs-cards">
+                <button type="button" class="fs-card-tab active" data-tab="report" onclick="fsSelectTab('report')">
+                    <span class="fs-card-icon fs-icon-report"><i class="fa-solid fa-bug"></i></span>
+                    <span class="fs-card-body">
+                        <span class="fs-card-title d-block">Report Wrong Detection</span>
+                        <span class="fs-card-desc d-block">The result is incorrect or not relevant.</span>
+                    </span>
+                    <span class="fs-card-count" title="Reports submitted">{{ count($reports) }}</span>
+                </button>
+                <button type="button" class="fs-card-tab" data-tab="suggestion" onclick="fsSelectTab('suggestion')">
+                    <span class="fs-card-icon fs-icon-suggest"><i class="fa-solid fa-lightbulb"></i></span>
+                    <span class="fs-card-body">
+                        <span class="fs-card-title d-block">Suggest Improvement</span>
+                        <span class="fs-card-desc d-block">Share ideas to make the system better.</span>
+                    </span>
+                    <span class="fs-card-count" title="Suggestions submitted">{{ count($suggestions) }}</span>
+                </button>
+                <button type="button" class="fs-card-tab" data-tab="general" onclick="fsSelectTab('general')">
+                    <span class="fs-card-icon fs-icon-feedback"><i class="fa-solid fa-comment-dots"></i></span>
+                    <span class="fs-card-body">
+                        <span class="fs-card-title d-block">General Feedback</span>
+                        <span class="fs-card-desc d-block">Tell us about your experience or other concerns.</span>
+                    </span>
+                    <span class="fs-card-count" title="Feedback sent">{{ count($feedbacks) }}</span>
+                </button>
+            </div>
 
             {{-- ============ LIST ============ --}}
             <div id="fr-list-view" class="fr-card p-3 p-md-4">
@@ -363,6 +523,135 @@
                                                             data-delete-url="{{ route('farmer.reports.destroy', $report['id']) }}"
                                                             data-report-code="{{ $report['report_id'] }}"
                                                             onclick="frCloseAllActionDropdowns(); frDeleteReport(this.dataset.deleteUrl, this.dataset.reportCode, this.closest('tr'))">
+                                                        <i class="fa-solid fa-trash"></i> Delete
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            </div>
+
+            {{-- ============ SUGGESTIONS (shown when the "Suggest Improvement" card is active) ============ --}}
+            <div id="fs-panel-suggestion" class="fr-card p-3 p-md-4 fr-hidden">
+                <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                    <h6 class="mb-0 fw-bold text-white">My suggestions</h6>
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="openSuggestionModal()">
+                        <i class="fa-solid fa-lightbulb me-1"></i> Create Suggestion
+                    </button>
+                </div>
+
+                @if(count($suggestions) === 0)
+                    <p class="text-secondary mb-0">You haven't sent any suggestion yet. Use "Create Suggestion" above to share an idea to make RiceGuard AI better.</p>
+                @else
+                    <div class="table-responsive">
+                        <table class="table table-borderless mb-0 fr-table fs-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Category</th>
+                                    <th>Suggestion</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                    <th class="text-end">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fs-sg-body">
+                                @foreach($suggestions as $s)
+                                    <tr>
+                                        <td class="fw-bold" data-label="ID">#{{ $s['code'] }}</td>
+                                        <td data-label="Category">{{ $s['category_label'] ?? '—' }}</td>
+                                        <td data-label="Suggestion"><div class="fs-msg-cell">{{ $s['message'] }}</div></td>
+                                        <td class="text-secondary" data-label="Date">{{ $s['date'] }}</td>
+                                        <td data-label="Status">
+                                            <span class="badge {{ $feedbackStatuses[$s['status']]['class'] }}">{{ $feedbackStatuses[$s['status']]['label'] }}</span>
+                                        </td>
+                                        <td class="text-end" data-label="Action">
+                                            <div class="fr-action-dd">
+                                                <button type="button" class="fr-action-dd-toggle" onclick="frToggleActionDropdown(this)" title="Actions">
+                                                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                                                </button>
+                                                <div class="fr-action-dd-menu fr-hidden">
+                                                    <button type="button" class="fr-action-item"
+                                                            onclick="frCloseAllActionDropdowns(); fsViewEntry('suggestion', {{ $s['id'] }})">
+                                                        <i class="fa-solid fa-eye"></i> View
+                                                    </button>
+                                                    <button type="button" class="fr-action-item text-danger"
+                                                            data-delete-url="{{ route('farmer.feedback.destroy', $s['id']) }}"
+                                                            data-code="{{ $s['code'] }}"
+                                                            onclick="frCloseAllActionDropdowns(); fsDeleteEntry(this.dataset.deleteUrl, this.dataset.code)">
+                                                        <i class="fa-solid fa-trash"></i> Delete
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            </div>
+
+            {{-- ============ GENERAL FEEDBACK (shown when the "General Feedback" card is active) ============ --}}
+            <div id="fs-panel-general" class="fr-card p-3 p-md-4 fr-hidden">
+                <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                    <h6 class="mb-0 fw-bold text-white">My feedback</h6>
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="openFeedbackModal()">
+                        <i class="fa-solid fa-comment-dots me-1"></i> Create Feedback
+                    </button>
+                </div>
+
+                @if(count($feedbacks) === 0)
+                    <p class="text-secondary mb-0">You haven't sent any feedback yet. Use "Create Feedback" above to tell us about your experience using RiceGuard AI.</p>
+                @else
+                    <div class="table-responsive">
+                        <table class="table table-borderless mb-0 fr-table fs-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Rating</th>
+                                    <th>Feature</th>
+                                    <th>Comment</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                    <th class="text-end">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fs-fb-body">
+                                @foreach($feedbacks as $f)
+                                    <tr>
+                                        <td class="fw-bold" data-label="ID">#{{ $f['code'] }}</td>
+                                        <td data-label="Rating">
+                                            <span class="fs-stars-inline">
+                                                @for($i = 1; $i <= 5; $i++)<i class="fa-solid fa-star {{ $i <= (int) $f['rating'] ? '' : 'off' }}"></i>@endfor
+                                            </span>
+                                            <span class="small text-secondary ms-1">{{ $f['rating_label'] }}</span>
+                                        </td>
+                                        <td data-label="Feature">{{ $f['feature_label'] ?? '—' }}</td>
+                                        <td data-label="Comment"><div class="fs-msg-cell">{{ $f['message'] }}</div></td>
+                                        <td class="text-secondary" data-label="Date">{{ $f['date'] }}</td>
+                                        <td data-label="Status">
+                                            <span class="badge {{ $feedbackStatuses[$f['status']]['class'] }}">{{ $feedbackStatuses[$f['status']]['label'] }}</span>
+                                        </td>
+                                        <td class="text-end" data-label="Action">
+                                            <div class="fr-action-dd">
+                                                <button type="button" class="fr-action-dd-toggle" onclick="frToggleActionDropdown(this)" title="Actions">
+                                                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                                                </button>
+                                                <div class="fr-action-dd-menu fr-hidden">
+                                                    <button type="button" class="fr-action-item"
+                                                            onclick="frCloseAllActionDropdowns(); fsViewEntry('general', {{ $f['id'] }})">
+                                                        <i class="fa-solid fa-eye"></i> View
+                                                    </button>
+                                                    <button type="button" class="fr-action-item text-danger"
+                                                            data-delete-url="{{ route('farmer.feedback.destroy', $f['id']) }}"
+                                                            data-code="{{ $f['code'] }}"
+                                                            onclick="frCloseAllActionDropdowns(); fsDeleteEntry(this.dataset.deleteUrl, this.dataset.code)">
                                                         <i class="fa-solid fa-trash"></i> Delete
                                                     </button>
                                                 </div>
@@ -665,6 +954,168 @@
             <button type="button" id="cr-submit-btn" class="btn btn-success fw-bold" onclick="submitCreateReport()">
                 <i class="fa-solid fa-paper-plane me-2"></i> Submit Report
             </button>
+        </div>
+    </div>
+</div>
+{{-- ============ Suggest Improvement (floating modal) ============
+     Content mirrors the app mockup: hero icon + title + subtitle, "What would
+     you like to improve?" chips, description, optional screenshot, consent
+     checkbox, Submit Suggestion. Saves to farmer_feedback (type=suggestion). --}}
+@php
+    $fsCategoryIcons = [
+        'detection_accuracy' => 'fa-bullseye',
+        'treatment_guide'    => 'fa-leaf',
+        'offline_mode'       => 'fa-plane',
+        'planner'            => 'fa-calendar-days',
+        'other'              => 'fa-ellipsis',
+    ];
+    $fsFeatureIcons = [
+        'detection'    => 'fa-brain',
+        'rice_planner' => 'fa-calendar-days',
+        'reports'      => 'fa-file-lines',
+        'chat_support' => 'fa-comments',
+        'other'        => 'fa-ellipsis',
+    ];
+    $fsRatingChips = [
+        5 => ['Excellent', 'fa-face-grin'],
+        4 => ['Good',      'fa-face-smile'],
+        3 => ['Okay',      'fa-face-meh'],
+        1 => ['Poor',      'fa-face-frown'],
+    ];
+@endphp
+
+<div id="suggestion-modal" class="rg-report-backdrop fr-hidden" onclick="if (event.target === this) closeSuggestionModal()">
+    <div class="rg-report-dialog fs-dialog">
+        <div class="rg-report-head">
+            <h6 class="mb-0 fw-bold text-white">Suggest Improvement</h6>
+            <button type="button" class="btn btn-sm btn-link text-secondary p-0" onclick="closeSuggestionModal()" title="Close">
+                <i class="fa-solid fa-xmark fa-lg"></i>
+            </button>
+        </div>
+
+        <div class="rg-report-body">
+            <div class="fs-hero">
+                <div class="fs-hero-icon"><i class="fa-solid fa-lightbulb"></i></div>
+                <h5>Suggest Improvement</h5>
+                <p>Share an idea to make RiceGuard AI better.</p>
+            </div>
+
+            <div class="fs-label">What would you like to improve?</div>
+            <div class="fs-chips" id="sg-category-chips">
+                @foreach($suggestionCategories as $key => $label)
+                    <button type="button" class="fs-chip {{ $loop->first ? 'active' : '' }}" data-value="{{ $key }}" onclick="sgPickCategory('{{ $key }}')">
+                        <i class="fa-solid {{ $fsCategoryIcons[$key] ?? 'fa-circle' }}"></i> {{ $label }}
+                    </button>
+                @endforeach
+            </div>
+
+            <div class="fs-label">Describe your suggestion</div>
+            <textarea id="sg-message" rows="4" maxlength="2000" class="form-control rg-report-input"
+                      placeholder="Tell us what should work better and how..."></textarea>
+
+            <div class="fs-label">Attach screenshot <small>(optional)</small></div>
+            <label class="fs-upload" for="sg-image">
+                <i class="fa-regular fa-image"></i>
+                <span>Tap to upload image<small>PNG, JPG up to 5MB</small></span>
+            </label>
+            <input type="file" id="sg-image" accept="image/png,image/jpeg" class="fr-hidden" onchange="sgOnImage(this)">
+            <div id="sg-preview" class="fs-upload-preview fr-hidden">
+                <img id="sg-preview-img" alt="Screenshot preview">
+                <button type="button" class="fs-upload-remove" onclick="sgClearImage()" title="Remove image"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <label class="fs-check">
+                <input type="checkbox" id="sg-contact" checked> Allow the team to contact me
+            </label>
+
+            <button type="button" id="sg-submit-btn" class="fs-submit" onclick="fsSubmit('suggestion')">
+                <i class="fa-solid fa-paper-plane me-2"></i> Submit Suggestion
+            </button>
+        </div>
+    </div>
+</div>
+
+{{-- ============ General Feedback (floating modal) ============
+     Mirrors the app mockup: star rating + Excellent/Good/Okay/Poor chips,
+     comments, "Which feature is this about?" (select + quick chips), consent
+     checkbox, Send Feedback. Saves to farmer_feedback (type=general). --}}
+<div id="feedback-modal" class="rg-report-backdrop fr-hidden" onclick="if (event.target === this) closeFeedbackModal()">
+    <div class="rg-report-dialog fs-dialog">
+        <div class="rg-report-head">
+            <h6 class="mb-0 fw-bold text-white">General Feedback</h6>
+            <button type="button" class="btn btn-sm btn-link text-secondary p-0" onclick="closeFeedbackModal()" title="Close">
+                <i class="fa-solid fa-xmark fa-lg"></i>
+            </button>
+        </div>
+
+        <div class="rg-report-body">
+            <div class="fs-hero">
+                <div class="fs-hero-icon"><i class="fa-solid fa-comment-dots"></i></div>
+                <h5>General Feedback</h5>
+                <p>Tell us about your experience using RiceGuard AI.</p>
+            </div>
+
+            <div class="fs-label">How was your experience?</div>
+            <div class="fs-stars" id="fb-stars">
+                @for($i = 1; $i <= 5; $i++)
+                    <button type="button" class="fs-star on" data-star="{{ $i }}" onclick="fbSetRating({{ $i }})" title="{{ $i }} star{{ $i === 1 ? '' : 's' }}">
+                        <i class="fa-solid fa-star"></i>
+                    </button>
+                @endfor
+            </div>
+            <div class="fs-chips fs-chips-sm" id="fb-rating-chips">
+                @foreach($fsRatingChips as $value => [$label, $icon])
+                    <button type="button" class="fs-chip {{ $value === 5 ? 'active' : '' }}" data-rating="{{ $value }}" onclick="fbSetRating({{ $value }})">
+                        <i class="fa-regular {{ $icon }}"></i> {{ $label }}
+                    </button>
+                @endforeach
+            </div>
+
+            <div class="fs-label">What went well or what could be better?</div>
+            <textarea id="fb-message" rows="4" maxlength="2000" class="form-control rg-report-input"
+                      placeholder="Share your experience or comments..."></textarea>
+
+            <div class="fs-label">Which feature is this about?</div>
+            <div class="fs-select-wrap">
+                <i class="fa-solid fa-table-cells-large"></i>
+                <select id="fb-feature" class="form-select rg-report-input" onchange="fbPickFeature(this.value)">
+                    <option value="">Select a feature</option>
+                    @foreach($feedbackFeatures as $key => $label)
+                        <option value="{{ $key }}">{{ $label }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="fs-chips fs-chips-sm" id="fb-feature-chips">
+                @foreach($feedbackFeatures as $key => $label)
+                    <button type="button" class="fs-chip" data-value="{{ $key }}" onclick="fbPickFeature('{{ $key }}')">
+                        <i class="fa-solid {{ $fsFeatureIcons[$key] ?? 'fa-circle' }}"></i> {{ $label }}
+                    </button>
+                @endforeach
+            </div>
+
+            <label class="fs-check">
+                <input type="checkbox" id="fb-contact" checked> Allow the team to contact me
+            </label>
+
+            <button type="button" id="fb-submit-btn" class="fs-submit" onclick="fsSubmit('general')">
+                <i class="fa-solid fa-paper-plane me-2"></i> Send Feedback
+            </button>
+        </div>
+    </div>
+</div>
+
+{{-- ============ View one suggestion / feedback (read-only) ============ --}}
+<div id="fs-view-modal" class="rg-report-backdrop fr-hidden" onclick="if (event.target === this) fsCloseView()">
+    <div class="rg-report-dialog fs-dialog">
+        <div class="rg-report-head">
+            <h6 class="mb-0 fw-bold text-white" id="fs-view-title">—</h6>
+            <button type="button" class="btn btn-sm btn-link text-secondary p-0" onclick="fsCloseView()" title="Close">
+                <i class="fa-solid fa-xmark fa-lg"></i>
+            </button>
+        </div>
+        <div class="rg-report-body" id="fs-view-body"></div>
+        <div class="rg-report-foot">
+            <button type="button" class="btn btn-secondary" onclick="fsCloseView()">Close</button>
         </div>
     </div>
 </div>
@@ -1580,5 +2031,295 @@ window.submitCreateReport = async function() {
         submitBtn.innerHTML = original;
     }
 };
+
+// ==================== FEEDBACK & SUPPORT: cards + Suggestion / General Feedback ====================
+// The three cards at the top decide which history is shown below. Report keeps
+// its own list/detail views (everything above); Suggestion and General Feedback
+// are plain tables with their own floating "create" modal. Both save to
+// farmer_feedback through one endpoint (the `type` field says which).
+const fsSuggestions  = @json($suggestions);
+const fsFeedbacks    = @json($feedbacks);
+const fsStatuses     = @json($feedbackStatuses);
+const fsRatingLabels = @json($ratingLabels);
+const FS_STORE_URL   = "{{ route('farmer.feedback.store') }}";
+const FS_TABS        = ['report', 'suggestion', 'general'];
+
+window.fsSelectTab = function(tab) {
+    if (!FS_TABS.includes(tab)) tab = 'report';
+
+    document.querySelectorAll('.fs-card-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    // Report history = the original list view (its detail view closes when switching cards).
+    document.getElementById('fr-list-view').classList.toggle('fr-hidden', tab !== 'report');
+    document.getElementById('fr-detail-view').classList.add('fr-hidden');
+    document.getElementById('fs-panel-suggestion').classList.toggle('fr-hidden', tab !== 'suggestion');
+    document.getElementById('fs-panel-general').classList.toggle('fr-hidden', tab !== 'general');
+    frCloseAllActionDropdowns();
+
+    // Remember the card across the reload that follows a submit / delete.
+    try { history.replaceState(null, '', tab === 'report' ? location.pathname + location.search : '#' + tab); } catch (e) {}
+};
+
+// ---------- shared helpers ----------
+function fsStarsHtml(n) {
+    let html = '';
+    for (let i = 1; i <= 5; i++) html += `<i class="fa-solid fa-star ${i <= n ? '' : 'off'}"></i>`;
+    return `<span class="fs-stars-inline">${html}</span>`;
+}
+
+// Screenshots are downscaled + re-encoded as JPEG in the browser before upload,
+// so even a 5MB photo goes up as a few hundred KB (keeps the request small).
+function fsCompressImage(file, maxSide = 1280, quality = 0.82) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('The image could not be read.'));
+        reader.onload = () => {
+            const img = new Image();
+            img.onerror = () => reject(new Error('That file is not a valid image.'));
+            img.onload = () => {
+                const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+                const w = Math.max(1, Math.round(img.width * scale));
+                const h = Math.max(1, Math.round(img.height * scale));
+                const canvas = document.createElement('canvas');
+                canvas.width = w; canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, w, h);
+                ctx.drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+// ---------- Suggest Improvement ----------
+let sgCategory   = null;
+let sgScreenshot = null;
+
+function sgSetCategory(key) {
+    sgCategory = key;
+    document.querySelectorAll('#sg-category-chips .fs-chip').forEach(c => c.classList.toggle('active', c.dataset.value === key));
+}
+window.sgPickCategory = sgSetCategory;
+
+window.sgClearImage = function() {
+    sgScreenshot = null;
+    document.getElementById('sg-image').value = '';
+    document.getElementById('sg-preview').classList.add('fr-hidden');
+    document.getElementById('sg-preview-img').removeAttribute('src');
+};
+
+window.sgOnImage = async function(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+
+    if (!['image/png', 'image/jpeg'].includes(file.type)) {
+        alert('Please choose a PNG or JPG image.');
+        sgClearImage();
+        return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+        alert('That image is larger than 5MB. Please choose a smaller one.');
+        sgClearImage();
+        return;
+    }
+
+    try {
+        sgScreenshot = await fsCompressImage(file);
+        document.getElementById('sg-preview-img').src = sgScreenshot;
+        document.getElementById('sg-preview').classList.remove('fr-hidden');
+    } catch (err) {
+        alert(err.message || 'The image could not be loaded.');
+        sgClearImage();
+    }
+};
+
+window.openSuggestionModal = function() {
+    const first = document.querySelector('#sg-category-chips .fs-chip');
+    sgSetCategory(first ? first.dataset.value : null);
+    document.getElementById('sg-message').value = '';
+    document.getElementById('sg-contact').checked = true;
+    sgClearImage();
+    document.getElementById('suggestion-modal').classList.remove('fr-hidden');
+};
+window.closeSuggestionModal = function() {
+    document.getElementById('suggestion-modal').classList.add('fr-hidden');
+};
+
+// ---------- General Feedback ----------
+let fbRating  = 5;
+let fbFeature = '';
+
+// Stars 1-2 both read as "Poor", same as the server's label map.
+function fbLabelFor(n) { return fsRatingLabels[n] || ''; }
+
+window.fbSetRating = function(n) {
+    fbRating = n;
+    document.querySelectorAll('#fb-stars .fs-star').forEach(s => s.classList.toggle('on', Number(s.dataset.star) <= n));
+    document.querySelectorAll('#fb-rating-chips .fs-chip').forEach(c => {
+        c.classList.toggle('active', fbLabelFor(Number(c.dataset.rating)) === fbLabelFor(n));
+    });
+};
+
+window.fbPickFeature = function(key) {
+    fbFeature = key || '';
+    document.getElementById('fb-feature').value = fbFeature;
+    document.querySelectorAll('#fb-feature-chips .fs-chip').forEach(c => c.classList.toggle('active', c.dataset.value === fbFeature));
+};
+
+window.openFeedbackModal = function() {
+    fbSetRating(5);
+    fbPickFeature('');
+    document.getElementById('fb-message').value = '';
+    document.getElementById('fb-contact').checked = true;
+    document.getElementById('feedback-modal').classList.remove('fr-hidden');
+};
+window.closeFeedbackModal = function() {
+    document.getElementById('feedback-modal').classList.add('fr-hidden');
+};
+
+// ---------- submit (both) ----------
+window.fsSubmit = async function(type) {
+    const isSg = type === 'suggestion';
+    const message = document.getElementById(isSg ? 'sg-message' : 'fb-message').value.trim();
+
+    if (isSg && !sgCategory) { alert('Please choose what you would like to improve.'); return; }
+    if (!message) {
+        alert(isSg ? 'Please describe your suggestion before submitting.' : 'Please share your experience or comments before sending.');
+        return;
+    }
+    if (!isSg && !fbFeature) { alert('Please choose which feature this feedback is about.'); return; }
+
+    const btn = document.getElementById(isSg ? 'sg-submit-btn' : 'fb-submit-btn');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> Sending...';
+
+    try {
+        const payload = isSg
+            ? {
+                type: 'suggestion',
+                category: sgCategory,
+                message: message,
+                screenshot: sgScreenshot,
+                allow_contact: document.getElementById('sg-contact').checked
+            }
+            : {
+                type: 'general',
+                rating: fbRating,
+                feature: fbFeature,
+                message: message,
+                allow_contact: document.getElementById('fb-contact').checked
+            };
+
+        const response = await fetch(FS_STORE_URL, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': "{{ csrf_token() }}"
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (response.status === 401 || response.status === 419) {
+            alert('Your login session has expired. The page will now refresh so you can log back in.');
+            window.location.reload();
+            return;
+        }
+
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || 'It could not be saved. Please try again.');
+        }
+
+        if (isSg) closeSuggestionModal(); else closeFeedbackModal();
+        alert((isSg ? 'Suggestion #' : 'Feedback #') + result.code + ' sent. Thank you for helping us improve RiceGuard AI!');
+        window.location.reload();
+    } catch (err) {
+        alert(err.message || 'Something went wrong while sending. Please try again.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+};
+
+// ---------- view / delete ----------
+function fsViewRow(label, valueHtml) {
+    return `<div class="fs-view-row"><div class="fs-view-label">${label}</div><div class="fs-view-value">${valueHtml}</div></div>`;
+}
+
+window.fsViewEntry = function(type, id) {
+    const list = type === 'suggestion' ? fsSuggestions : fsFeedbacks;
+    const e = list.find(x => String(x.id) === String(id));
+    if (!e) return;
+
+    const status = fsStatuses[e.status] || fsStatuses.submitted;
+    let html = fsViewRow('Status', `<span class="badge ${status.class}">${frEscape(status.label)}</span>`);
+
+    if (type === 'suggestion') {
+        html += fsViewRow('What to improve', frEscape(e.category_label || '—'));
+        html += fsViewRow('Suggestion', frEscape(e.message));
+        if (e.screenshot) {
+            html += fsViewRow('Screenshot', '<img id="fs-view-shot" src="" alt="Screenshot" class="fr-thumb" style="width:120px;height:120px;">');
+        }
+    } else {
+        html += fsViewRow('Rating', fsStarsHtml(Number(e.rating) || 0) + ' <span class="ms-1">' + frEscape(e.rating_label || '') + '</span>');
+        html += fsViewRow('Feature', frEscape(e.feature_label || '—'));
+        html += fsViewRow('Comments', frEscape(e.message));
+    }
+    html += fsViewRow('Team may contact me', e.allow_contact ? 'Yes' : 'No');
+    html += fsViewRow('Sent', frEscape(e.submitted_at || e.date || '—'));
+
+    document.getElementById('fs-view-title').textContent = (type === 'suggestion' ? 'Suggestion #' : 'Feedback #') + e.code;
+    document.getElementById('fs-view-body').innerHTML = html;
+
+    // Set the (large) data URI via the DOM, not inline markup.
+    const shot = document.getElementById('fs-view-shot');
+    if (shot) {
+        shot.src = e.screenshot;
+        shot.addEventListener('click', () => frZoom(e.screenshot));
+    }
+    document.getElementById('fs-view-modal').classList.remove('fr-hidden');
+};
+window.fsCloseView = function() {
+    document.getElementById('fs-view-modal').classList.add('fr-hidden');
+};
+
+window.fsDeleteEntry = async function(url, code) {
+    if (!confirm('Delete #' + code + '? This cannot be undone.')) return;
+
+    try {
+        const response = await fetch(url, {
+            method: 'DELETE',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': "{{ csrf_token() }}"
+            }
+        });
+
+        if (response.status === 401 || response.status === 419) {
+            alert('Your login session has expired. The page will now refresh so you can log back in.');
+            window.location.reload();
+            return;
+        }
+
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || 'It could not be deleted.');
+        }
+        window.location.reload();
+    } catch (err) {
+        alert(err.message || 'Something went wrong while deleting.');
+    }
+};
+
+// Open on the card the URL remembers (#suggestion / #general), else Report.
+fsSelectTab((location.hash || '').replace('#', '') || 'report');
 </script>
 @endsection

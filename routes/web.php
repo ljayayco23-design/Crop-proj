@@ -19,6 +19,7 @@ use App\Http\Controllers\Admin\AdminSystemReportController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\FarmerReportController;
 use App\Http\Controllers\ScheduleController;
+use App\Http\Middleware\EnsureUserRole;
 
 Route::get('/locations/provinces', [LocationController::class, 'provinces']);
 Route::get('/locations/cities/{province}', [LocationController::class, 'cities']);
@@ -31,7 +32,10 @@ Route::get('/sw.js', function () {
     ]);
 });
 
-Route::post('/farmer/chat-query', [FarmerChatController::class, 'handleChat'])->name('farmer.chat.query');
+// Was open to anyone (no login). Now needs a logged-in account of any valid role.
+Route::post('/farmer/chat-query', [FarmerChatController::class, 'handleChat'])
+    ->middleware(['auth', EnsureUserRole::allow('farmer', 'technician', 'admin', 'developer')])
+    ->name('farmer.chat.query');
 
 // ============================================
 // DETECTION FEEDBACK LOOP (farmer report -> technician review)
@@ -39,17 +43,23 @@ Route::post('/farmer/chat-query', [FarmerChatController::class, 'handleChat'])->
 // FarmerReportController re-checks auth()->user()->role server-side, so
 // neither side can reach the other's screen or rows.
 // ============================================
-Route::middleware(['auth', 'role:farmer'])->prefix('farmer')->group(function () {
+Route::middleware(['auth', EnsureUserRole::allow('farmer')])->prefix('farmer')->group(function () {
     Route::get('/reports', [FarmerReportController::class, 'index'])->name('farmer.reports');
     // Posted by the "Report a Problem" modal on the detection page.
     Route::post('/reports', [FarmerReportController::class, 'store'])->name('farmer.reports.store');
     // Posted by the three-dot "Delete" action on the farmer's own Report
     // Problem page. Scoped to the farmer's own rows inside the controller.
     Route::delete('/reports/{report}', [FarmerReportController::class, 'destroy'])->name('farmer.reports.destroy');
+
+    // Feedback & Support: "Suggest Improvement" and "General Feedback" share
+    // one endpoint (the `type` field says which). Both are scoped to the
+    // farmer's own rows inside the controller.
+    Route::post('/feedback', [FarmerReportController::class, 'storeFeedback'])->name('farmer.feedback.store');
+    Route::delete('/feedback/{feedback}', [FarmerReportController::class, 'destroyFeedback'])->name('farmer.feedback.destroy');
 });
 
 
-Route::middleware(['auth', 'role:technician'])->prefix('technician')->group(function () {
+Route::middleware(['auth', EnsureUserRole::allow('technician')])->prefix('technician')->group(function () {
     Route::get('/reports', [FarmerReportController::class, 'index'])->name('technician.reports');
     // "Save Review & Resolve". {report} is re-scoped to this technician's
     // own queue inside the controller before anything is updated.
@@ -112,7 +122,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
 });
 
 // ==================== PROTECTED ADMIN ROUTES ====================
-Route::prefix('admin')->middleware(['auth', 'role:admin'])->name('admin.')->group(function () {
+// admin + developer share the admin panel; nobody else may enter it.
+Route::prefix('admin')->middleware(['auth', EnsureUserRole::allow('admin', 'developer')])->name('admin.')->group(function () {
 
 
 // Admin Documents Route
@@ -189,7 +200,7 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->name('admin.')->grou
 // logged-in user (e.g. a farmer) could open technician pages just by
 // knowing the URL. Added 'role:technician' here to close that gap — same
 // pattern already used by the admin group below ('role:admin').
-Route::prefix('technician')->middleware(['auth', 'role:technician'])->group(function () {
+Route::prefix('technician')->middleware(['auth', EnsureUserRole::allow('technician')])->group(function () {
 
 // Technician Documents Route
     Route::get('/documents', function () {
@@ -256,7 +267,8 @@ Route::prefix('technician')->middleware(['auth', 'role:technician'])->group(func
 });
 
 // ==================== PROTECTED FARMER ROUTES ====================
-Route::prefix('farmer')->middleware(['auth'])->group(function () {
+// Was ['auth'] only, so an admin/technician could open farmer pages by URL. Farmer only now.
+Route::prefix('farmer')->middleware(['auth', EnsureUserRole::allow('farmer')])->group(function () {
     
     // 🗺️ UNIFIED FIELD MAP & WEATHER ROUTES
     Route::get('/field-map/weather', [FieldMapController::class, 'getWeather'])->name('farmer.field_map.weather');
@@ -388,7 +400,7 @@ if ($authUser) {
 
 
     return view('farmer.detection.index', compact('diseaseNames', 'pestNames', 'knowledgeBase', 'farmFields'));
-})->name('farmer.detection');
+})->middleware(['auth', EnsureUserRole::allow('farmer')])->name('farmer.detection');
 
 function tryGetChatResponse($query, $language = 'en') {
     $apiKey = env('GROQ_API_KEY');

@@ -41,7 +41,7 @@
 
             <div class="mb-4">
                 <label class="block text-zinc-400 text-sm mb-2">Email Address</label>
-                <input type="email" name="email" id="email_input" required maxlength="100" autocomplete="username" value="{{ old('email') }}"
+                <input type="email" name="email" id="email_input" required maxlength="100" autocomplete="username" autocapitalize="none" spellcheck="false" value="{{ old('email') }}"
                        class="w-full p-4 rounded-2xl bg-zinc-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none">
             </div>
 
@@ -180,12 +180,8 @@
 
                         <div>
                             <label class="block text-zinc-400 text-sm mb-1 font-medium">Rice Field Location</label>
-                            <small class="text-zinc-500 text-xs block mb-2">Search barangay, street, or city (Google Maps style)</small>
-                            <div class="flex gap-2">
-                                <input type="text" id="location-search" placeholder="Search location..." 
-                                    class="w-full p-3 rounded-xl bg-zinc-800 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
-                                <button type="button" onclick="searchLocation()" class="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-all shadow-lg">Search</button>
-                            </div>
+                            <small class="text-zinc-500 text-xs block mb-2">The pin starts at the barangay you chose in Step 1. Drag the pin or tap the map to mark your exact field.</small>
+                            <div id="map-status" class="text-xs text-emerald-400 mb-2 min-h-[1rem]" role="status"></div>
                             <input type="hidden" name="latitude" id="lat-input" required>
                             <input type="hidden" name="longitude" id="lng-input" required>
                             <input type="hidden" name="device_latitude" id="device-lat">
@@ -227,7 +223,7 @@
                     <!-- Right Column: Interactive Map with City/Street Labels -->
                     <div class="h-[400px] md:h-full min-h-[350px] flex flex-col">
                         <div id="registration-map" class="w-full flex-1 rounded-2xl border border-zinc-700 shadow-inner z-10" style="min-height: 350px;"></div>
-                        <p class="text-xs text-zinc-400 mt-2 text-center">Tip: Click map or drag pin to adjust location. Hectares automatically generate shape.</p>
+                        <p class="text-xs text-zinc-400 mt-2 text-center">Tip: Tap the map or drag the pin to adjust location. Hectares automatically generate shape.</p>
                     </div>
                 </div>
             </div>
@@ -556,7 +552,7 @@ const RG_ID = {
     FACE_MIN_RATIO: 0.003,  // face area / photo area. Smaller = no usable face
     FACE_MAX_RATIO: 0.30,   // bigger = a selfie / close-up, not an ID card
     MAX_FACES: 3,
-    STRICT_TYPE: true,    // reject when none of the words of the chosen ID type are found
+    STRICT_TYPE: false,   // true = reject when none of the words of the chosen ID type are found; false = only warn (admin reviews)
     STRICT_NAME: false,   // true = also reject when the typed name is not on the ID
     UPLOAD_MAX_SIDE: 1280,
     ANALYSIS_MAX_SIDE: 1400,
@@ -564,7 +560,7 @@ const RG_ID = {
 
 // What each ID type must look like. 'keywords' are printed on that ID (lowercase).
 const RG_ID_RULES = {
-    national_id:        { label: 'National ID',      face: true,  keywords: ['philsys', 'philippine identification', 'pambansang', 'republic of the philippines', 'republika ng pilipinas'] },
+    national_id:        { label: 'National ID',      face: true,  keywords: ['philsys', 'philippine identification', 'pambansang', 'pagkakakilanlan', 'identification', 'republic of the philippines', 'republika ng pilipinas', 'pilipinas', 'philippines'] },
     voters_id:          { label: "Voter's ID",       face: true,  keywords: ['comelec', 'commission on elections', 'voter', 'botante'] },
     barangay_clearance: { label: 'Barangay ID / Clearance', face: false, keywords: ['barangay', 'brgy', 'punong', 'kapitan', 'purok'] },
     farmer_id:          { label: "RSBSA / Farmer's ID", face: true, keywords: ['rsbsa', 'farmer', 'magsasaka', 'agriculture', 'agrikultura', 'registry'] },
@@ -655,7 +651,11 @@ document.addEventListener('DOMContentLoaded', function () {
 // ID PHOTO CHECK: quality -> face -> text on the ID (per ID type)
 // Runs in the browser, so nothing extra to install on the server.
 // ============================================================
-const RG_MODEL_URL  = "{{ asset('models') }}";   // public/models/tiny_face_detector_model-*
+// Local copy first (public/model/tiny_face_detector_model-*), then the public jsDelivr copy of the same files.
+const RG_MODEL_URLS = [
+    "{{ asset('model') }}",
+    'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights',
+];
 const RG_FACEAPI_JS = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js';
 const RG_TESS_JS    = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
 
@@ -748,8 +748,19 @@ async function rgAnalyzeId(file, idType, fullName, onStatus) {
     try {
         onStatus('Hinahanap ang mukha sa ID...');
         await rgWithTimeout(rgLoadScript(RG_FACEAPI_JS), 20000, 'face lib');
-        if (!faceapi.nets.tinyFaceDetector.isLoaded)
-            await rgWithTimeout(faceapi.nets.tinyFaceDetector.loadFromUri(RG_MODEL_URL), 20000, 'face model');
+        if (!faceapi.nets.tinyFaceDetector.isLoaded) {
+            let modelLoaded = false;
+            for (const url of RG_MODEL_URLS) {
+                try {
+                    await rgWithTimeout(faceapi.nets.tinyFaceDetector.loadFromUri(url), 12000, 'face model');
+                    modelLoaded = true;
+                    break;
+                } catch (e) {
+                    console.warn('[ID check] face model not available at', url, e);
+                }
+            }
+            if (!modelLoaded) throw new Error('face model unavailable');
+        }
         const dets = await rgWithTimeout(
             faceapi.detectAllFaces(analysis, new faceapi.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.4 })),
             20000, 'face detect');
@@ -778,11 +789,13 @@ async function rgAnalyzeId(file, idType, fullName, onStatus) {
         if (text.replace(/\s/g, '').length < RG_ID.MIN_TEXT_CHARS)
             throw new RgReject('Walang mabasang text. Siguraduhing kita ang buong ID at malinaw ang sulat.');
 
+        console.info('[ID check] OCR text:', text);
         meta.type_keyword_match = rgKeywordHit(idType, text);
         if (RG_ID.STRICT_TYPE && !meta.type_keyword_match)
             throw new RgReject(`Hindi mukhang ${rule.label} ang larawan. Piliin ang tamang uri ng ID o kunan ulit.`);
 
         meta.name_match = +rgNameScore(fullName, text).toFixed(2);
+        console.info('[ID check] result:', JSON.stringify(meta));
         if (RG_ID.STRICT_NAME && meta.name_match === 0)
             throw new RgReject('Hindi nakita ang pangalan mo sa ID. Siguraduhing ang ID ay sa iyo.');
     } catch (e) {
@@ -847,6 +860,9 @@ async function rgRunIdAnalysis() {
         idState.ok = true;
         if (meta.status === 'unverified') {
             rgIdPanel('warn', ['Natanggap ang larawan, pero hindi na-run ang awtomatikong pagsusuri. Ang Admin na ang titingin.'], dataUri);
+        } else if (meta.type_keyword_match === false) {
+            const lbl = (RG_ID_RULES[typeSel.value] || {}).label || 'ID';
+            rgIdPanel('warn', ['Natanggap ang larawan, pero hindi namin makumpirma na ito ay ' + lbl + '. Titingnan ito ng Admin.'], dataUri);
         } else if (meta.name_match === 0) {
             rgIdPanel('warn', ['Maayos ang larawan, pero hindi namin makita ang pangalan mo sa ID. Titingnan ito ng Admin.'], dataUri);
         } else {
@@ -854,6 +870,7 @@ async function rgRunIdAnalysis() {
         }
     } catch (e) {
         if (run !== idState.run) return;
+        console.warn('[ID check] rejected:', e && e.message);
         fileInput.value = '';                            // force a new pick
         rgIdPanel('fail', [e instanceof RgReject ? e.message : 'Hindi masuri ang larawan. Subukan ulit.']);
     } finally {
@@ -1102,6 +1119,9 @@ function updateFormDisplay() {
                 if (currentStep === 2 && typeof regMap !== 'undefined') {
                     setTimeout(() => {
                         regMap.invalidateSize();
+                        if (typeof regMarker !== 'undefined' && regMarker) {
+                            regMap.setView(regMarker.getLatLng(), regMap.getZoom());
+                        }
                     }, 200);
                 }
             }
@@ -1269,6 +1289,7 @@ function updateFormDisplay() {
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
 
 <script>
 let regMap, regMarker, sizePolygon;
@@ -1299,13 +1320,11 @@ document.addEventListener('DOMContentLoaded', function() {
     L.control.zoom({ position: 'topleft' }).addTo(regMap);
 
     const defaultLatLng = [10.8986, 123.4143]; 
-    placeMarker(defaultLatLng, "Default Farm Location");
-    reverseGeocode(defaultLatLng[0], defaultLatLng[1]);
+    placeMarker(defaultLatLng, "Farm Location");
 
     // Map Click Event to relocate pin and redraw polygon
     regMap.on('click', function(e) {
         placeMarker([e.latlng.lat, e.latlng.lng]);
-        reverseGeocode(e.latlng.lat, e.latlng.lng);
         drawHectarePolygon();
     });
 
@@ -1369,12 +1388,13 @@ function placeMarker(latlng, popupText = "Farm Location") {
         let position = regMarker.getLatLng();
         document.getElementById('lat-input').value = position.lat;
         document.getElementById('lng-input').value = position.lng;
-        reverseGeocode(position.lat, position.lng);
         drawHectarePolygon();
     });
 }
 
 function drawHectarePolygon() {
+  try {
+    if (typeof turf === 'undefined') return;   // library not loaded (offline/CDN blocked): skip the shape, keep the pin
     const sizeInput = document.querySelector('input[name="farm_size"]').value;
     let hectares = parseFloat(sizeInput);
     
@@ -1399,40 +1419,66 @@ function drawHectarePolygon() {
             fillOpacity: 0.25
         }
     }).addTo(regMap);
+  } catch (err) {
+    console.warn('Could not draw farm-size shape:', err);
+  }
 }
 
-function searchLocation() {
-    let query = document.getElementById('location-search').value;
-    if (!query) return;
+// ---- Dropdown -> map: pin the selected barangay automatically ----
+let pinRequestId = 0;
 
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`)
+function setMapStatus(msg, isWarn) {
+    const el = document.getElementById('map-status');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.className = 'text-xs mb-2 min-h-[1rem] ' + (isWarn ? 'text-amber-400' : 'text-emerald-400');
+}
+
+function geocodeOnce(query) {
+    return fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ph&q=${encodeURIComponent(query)}`)
         .then(res => res.json())
-        .then(data => {
-            if (data.length > 0) {
-                let latlng = [data[0].lat, data[0].lon];
-                regMap.setView(latlng, 16);
-                placeMarker(latlng, data[0].display_name);
-                drawHectarePolygon();
-            } else {
-                alert("Location not found.");
-            }
-        });
+        .then(data => (data && data.length > 0)
+            ? { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
+            : null);
 }
 
-function reverseGeocode(lat, lng) {
-    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
-        .then(res => res.json())
-        .then(data => {
-            if (data && data.display_name) {
-                document.getElementById('location-search').value = data.display_name;
-                const addressInput = document.querySelector('input[name="address"]');
-                if (addressInput) addressInput.value = data.display_name;
+// Called when the Barangay dropdown changes (see the dropdown script below).
+// Tries "barangay, city, province" first, then falls back to "city, province".
+function pinFromDropdowns(barangay, city, province) {
+    if (!regMap || !barangay) return;
+    const myRequest = ++pinRequestId;   // ignore stale answers if the dropdown changes quickly
+    setMapStatus('Hinahanap ang ' + barangay + '...');
+
+    const attempts = [
+        { q: `${barangay}, ${city}, ${province}, Philippines`, zoom: 16, label: barangay, exact: true },
+        { q: `${city}, ${province}, Philippines`,              zoom: 14, label: city,     exact: false },
+    ];
+
+    (async () => {
+        for (const a of attempts) {
+            try {
+                const hit = await geocodeOnce(a.q);
+                if (myRequest !== pinRequestId) return;
+                if (hit) {
+                    const latlng = [hit.lat, hit.lng];
+                    regMap.setView(latlng, a.zoom);
+                    placeMarker(latlng, 'Farm Location');
+                    drawHectarePolygon();
+                    setMapStatus(a.exact
+                        ? 'Nailagay ang pin sa ' + a.label + '. I-drag ang pin sa eksaktong bukid mo.'
+                        : 'Hindi makita ang barangay sa mapa, kaya sa ' + a.label + ' muna inilagay ang pin. I-drag ito sa bukid mo.',
+                        !a.exact);
+                    return;
+                }
+            } catch (err) {
+                console.warn('Geocode failed:', err);
             }
-        });
+        }
+        if (myRequest === pinRequestId) {
+            setMapStatus('Hindi makita sa mapa. I-tap ang mapa o i-drag ang pin sa bukid mo.', true);
+        }
+    })();
 }
-
-
-
 
 document.addEventListener('DOMContentLoaded', function () {
     const BASE_URL = "{{ url('/') }}"; // resolves correctly in artisan serve AND xampp subfolders
@@ -1509,6 +1555,13 @@ document.addEventListener('DOMContentLoaded', function () {
     barangaySelect.addEventListener('change', function () {
         barangayHidden.value = this.options[this.selectedIndex].text;
         barangayIdHidden.value = this.value;
+
+        // Auto-pin the map to the chosen barangay
+        pinFromDropdowns(
+            this.options[this.selectedIndex].text,
+            citySelect.options[citySelect.selectedIndex]?.text || '',
+            provinceSelect.options[provinceSelect.selectedIndex]?.text || ''
+        );
     });
 });
 </script>
@@ -1656,13 +1709,31 @@ document.addEventListener('DOMContentLoaded', function () {
     // OFFLINE login, so there is no real server session yet".
     const OFFLINE_SESSION_FLAG = 'rg_offline_session';
 
+    // The app can live in a sub-folder (http://localhost/Crop-proj/public). A bare
+    // root path such as "/admin/dashboard" ignores that folder and lands on
+    // http://localhost/admin/dashboard (404). The server now sends a full URL,
+    // but a login cached on this device by an older version may still hold a bare
+    // path — so any root-relative redirect is prefixed with the app's base URL.
+    const RG_BASE_URL = "{{ url('/') }}";
+    function rgFixRedirect(url) {
+        try {
+            if (typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')) {
+                const basePath = new URL(RG_BASE_URL, window.location.origin).pathname.replace(/\/$/, '');
+                if (basePath && !url.startsWith(basePath + '/')) {
+                    return RG_BASE_URL.replace(/\/$/, '') + url;
+                }
+            }
+        } catch (e) {}
+        return url;
+    }
+
     async function goOffline(email, password) {
         const row = await attemptOfflineLogin(email, password);
         if (row) {
             if (window.RGLock) window.RGLock.clearOffline(email);
             try { localStorage.setItem(OFFLINE_SESSION_FLAG, '1'); } catch (e) {}
             showMsg('Naka-offline login gamit ang naka-cache na account. Nagbubukas...', true);
-            setTimeout(() => { window.location.href = row.redirect; }, 350);
+            setTimeout(() => { window.location.href = rgFixRedirect(row.redirect); }, 350);
         } else {
             // 5 wrong offline attempts in a row lock the form too
             const fails = window.RGLock ? window.RGLock.offlineFail(email) : 0;
@@ -1731,7 +1802,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
                 // A real server login happened, so any "offline session" marker is stale.
                 try { localStorage.removeItem(OFFLINE_SESSION_FLAG); } catch (e) {}
-                window.location.href = data.redirect;
+                window.location.href = rgFixRedirect(data.redirect);
             } else {
                 showMsg(data.message || 'Mali ang email o password.', false);
                 resetBtn();

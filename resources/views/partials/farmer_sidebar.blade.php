@@ -42,11 +42,12 @@
                     <i class="fas fa-calendar-days me-2"></i> Schedule
                 </a>
             </li>
-            {{-- Detection feedback: the farmer's own submitted reports and
-                 the technician's resolution for each one. --}}
+            {{-- Feedback & Support: the farmer's wrong-detection reports (with the
+                 technician's resolution), improvement suggestions and general
+                 feedback — all on one page. Route name is unchanged. --}}
             <li class="nav-item mb-2">
                 <a href="{{ route('farmer.reports') }}" class="nav-link {{ request()->routeIs('farmer.reports') ? 'active' : '' }}">
-                    <i class="fas fa-flag me-2"></i> Report Problem
+                    <i class="fas fa-headset me-2"></i> Feedback &amp; Support
                 </a>
             </li>
             <!-- Chatbot Sidebar Navigation Trigger Button -->

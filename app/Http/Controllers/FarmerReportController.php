@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Assignment;
+use App\Models\FarmerFeedback;
 use App\Models\FarmerReport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -116,6 +117,38 @@ class FarmerReportController extends Controller
         'Other system problem',
     ];
 
+    /** "What would you like to improve?" chips on Suggest Improvement. */
+    public const SUGGESTION_CATEGORIES = [
+        'detection_accuracy' => 'Detection Accuracy',
+        'treatment_guide'    => 'Treatment Guide',
+        'offline_mode'       => 'Offline Mode',
+        'planner'            => 'Planner',
+        'other'              => 'Other',
+    ];
+
+    /** "Which feature is this about?" on General Feedback. */
+    public const FEEDBACK_FEATURES = [
+        'detection'    => 'Detection',
+        'rice_planner' => 'Rice Planner',
+        'reports'      => 'Reports',
+        'chat_support' => 'Chat/Support',
+        'other'        => 'Other',
+    ];
+
+    /** Star rating (1-5) -> the label chip it belongs to. */
+    public const RATING_LABELS = [
+        5 => 'Excellent',
+        4 => 'Good',
+        3 => 'Okay',
+        2 => 'Poor',
+        1 => 'Poor',
+    ];
+
+    public const FEEDBACK_STATUSES = [
+        'submitted' => ['label' => 'Submitted', 'class' => 'bg-info text-dark'],
+        'reviewed'  => ['label' => 'Reviewed',  'class' => 'bg-success text-white'],
+    ];
+
     // =====================================================================
     // SHARED ENTRY POINT
     // =====================================================================
@@ -141,7 +174,25 @@ class FarmerReportController extends Controller
             ->map(fn ($r) => $this->present($r))
             ->all();
 
+        // Suggest Improvement + General Feedback history. Guarded so the page
+        // (and the Report tab) still loads if the migration hasn't run yet.
+        $suggestions = [];
+        $feedbacks   = [];
+        if (Schema::hasTable('farmer_feedback')) {
+            $entries = FarmerFeedback::where('user_id', $actor->id)->latest()->get();
+            $suggestions = $entries->where('type', FarmerFeedback::TYPE_SUGGESTION)
+                ->map(fn ($f) => $this->presentFeedback($f))->values()->all();
+            $feedbacks = $entries->where('type', FarmerFeedback::TYPE_GENERAL)
+                ->map(fn ($f) => $this->presentFeedback($f))->values()->all();
+        }
+
         return view('farmer.farmer_report', [
+            'suggestions'          => $suggestions,
+            'feedbacks'            => $feedbacks,
+            'suggestionCategories' => self::SUGGESTION_CATEGORIES,
+            'feedbackFeatures'     => self::FEEDBACK_FEATURES,
+            'ratingLabels'         => self::RATING_LABELS,
+            'feedbackStatuses'     => self::FEEDBACK_STATUSES,
             'reports'       => $reports,
             'sections'      => self::SECTIONS,
             'statuses'      => self::STATUSES,
@@ -472,6 +523,82 @@ class FarmerReportController extends Controller
     }
 
     // =====================================================================
+    // FARMER: Suggest Improvement / General Feedback
+    // =====================================================================
+
+    /**
+     * Saves one "Suggest Improvement" (type=suggestion) or "General Feedback"
+     * (type=general) entry. Always stored under the logged-in farmer's id.
+     */
+    public function storeFeedback(Request $request)
+    {
+        $actor = auth()->user();
+        if ($actor->role !== 'farmer') {
+            abort(403, 'Only a farmer account can send feedback.');
+        }
+
+        if (!Schema::hasTable('farmer_feedback')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Feedback is not set up yet. Please run the farmer_feedback migration.',
+            ], 503);
+        }
+
+        $data = $request->validate([
+            'type'          => 'required|in:suggestion,general',
+            'category'      => 'required_if:type,suggestion|nullable|in:' . implode(',', array_keys(self::SUGGESTION_CATEGORIES)),
+            'rating'        => 'required_if:type,general|nullable|integer|min:1|max:5',
+            'feature'       => 'required_if:type,general|nullable|in:' . implode(',', array_keys(self::FEEDBACK_FEATURES)),
+            'message'       => 'required|string|max:2000',
+            'screenshot'    => 'nullable|string|max:8000000',
+            'allow_contact' => 'nullable|boolean',
+        ]);
+
+        $isSuggestion = $data['type'] === FarmerFeedback::TYPE_SUGGESTION;
+
+        // Only a real image data URI is kept (and only for suggestions).
+        $screenshot = null;
+        if ($isSuggestion && !empty($data['screenshot'])) {
+            if (!preg_match('/^data:image\/(png|jpe?g|webp);base64,/i', $data['screenshot'])) {
+                return response()->json(['success' => false, 'message' => 'The screenshot must be a PNG or JPG image.'], 422);
+            }
+            $screenshot = $data['screenshot'];
+        }
+
+        $entry = FarmerFeedback::create([
+            'user_id'       => $actor->id,
+            'type'          => $data['type'],
+            'category'      => $isSuggestion ? $data['category'] : null,
+            'rating'        => $isSuggestion ? null : $data['rating'],
+            'feature'       => $isSuggestion ? null : $data['feature'],
+            'message'       => $data['message'],
+            'screenshot'    => $screenshot,
+            'allow_contact' => $request->boolean('allow_contact', true),
+            'status'        => 'submitted',
+        ]);
+
+        // Code from the row id (no race between two simultaneous submits).
+        $entry->update([
+            'code' => ($isSuggestion ? 'SG-' : 'FB-') . str_pad((string) $entry->id, 3, '0', STR_PAD_LEFT),
+        ]);
+
+        return response()->json(['success' => true, 'code' => $entry->code]);
+    }
+
+    /** Permanent delete, scoped to the farmer's own rows (same pattern as destroy()). */
+    public function destroyFeedback(Request $request, $id)
+    {
+        $actor = auth()->user();
+        if ($actor->role !== 'farmer') {
+            abort(403, 'Only a farmer account can delete their own feedback.');
+        }
+
+        FarmerFeedback::where('user_id', $actor->id)->findOrFail($id)->delete();
+
+        return response()->json(['success' => true]);
+    }
+
+    // =====================================================================
     // TECHNICIAN: save the review
     // =====================================================================
 
@@ -737,6 +864,30 @@ class FarmerReportController extends Controller
                 'reviewed_by'        => $r->reviewed_by,
                 'reviewed_at'        => $r->reviewed_at?->timezone('Asia/Manila')->format('M d, Y h:i A'),
             ] : null,
+        ];
+    }
+
+    /** Flattens a suggestion / general-feedback row into the shape the farmer page reads. */
+    public function presentFeedback(FarmerFeedback $f): array
+    {
+        $status = array_key_exists((string) $f->status, self::FEEDBACK_STATUSES) ? $f->status : 'submitted';
+
+        return [
+            'id'             => $f->id,
+            'code'           => $f->code,
+            'type'           => $f->type,
+            'category'       => $f->category,
+            'category_label' => self::SUGGESTION_CATEGORIES[$f->category] ?? null,
+            'rating'         => $f->rating,
+            'rating_label'   => $f->rating ? (self::RATING_LABELS[$f->rating] ?? null) : null,
+            'feature'        => $f->feature,
+            'feature_label'  => self::FEEDBACK_FEATURES[$f->feature] ?? null,
+            'message'        => $f->message,
+            'screenshot'     => $this->normalizeImage($f->screenshot),
+            'allow_contact'  => (bool) $f->allow_contact,
+            'status'         => $status,
+            'date'           => $f->created_at?->timezone('Asia/Manila')->format('M d, Y'),
+            'submitted_at'   => $f->created_at?->timezone('Asia/Manila')->format('M d, Y h:i A'),
         ];
     }
 

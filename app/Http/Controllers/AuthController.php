@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Middleware\EnsureUserRole;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
@@ -99,15 +100,20 @@ class AuthController extends Controller
 
     public function showLoginForm()
     {
-    // If the user is already logged in, redirect them to their role dashboard
+    // If the user is already logged in, redirect them to THEIR OWN role dashboard.
     if (auth()->check()) {
-        $role = auth()->user()->role;
-        return match ($role) {
-            'admin', 'developer' => redirect()->route('admin.dashboard'),
-            'technician' => redirect()->route('technician.dashboard'),
-            'farmer' => redirect()->route('farmer.dashboard'),
-            default => redirect()->route('login'),
-        };
+        $user = auth()->user();
+        $home = EnsureUserRole::homeRouteFor($user->role);
+
+        if ($home && !EnsureUserRole::accountProblem($user)) {
+            return redirect()->route($home);
+        }
+
+        // Unknown role or a blocked account: log it out and show the login form.
+        // (Redirecting to 'login' again here used to loop forever.)
+        Auth::logout();
+        request()->session()->invalidate();
+        request()->session()->regenerateToken();
     }
 
     // Return view with explicit anti-caching headers
@@ -250,7 +256,8 @@ class AuthController extends Controller
             $idCheck['reported_by'] = 'browser';
             $idCheck['server_image'] = ['width' => $photoInfo[0], 'height' => $photoInfo[1], 'kb' => (int) round(strlen($photoBinary) / 1024)];
 
-            $existing = User::where('email', $request->email)->first();
+            // Case-insensitive on purpose: TiDB's default collation is case-sensitive.
+            $existing = User::whereRaw('LOWER(email) = ?', [Str::lower($request->email)])->first();
             if ($existing) {
                 return back()
                     ->with('error', 'Ang email na ito ay nagamit na.')
@@ -368,7 +375,11 @@ class AuthController extends Controller
             return $this->lockedResponse($request, $isAjax, $remaining);
         }
 
-        $user = User::where('email', $request->email)->first();
+        // Look the account up ignoring upper/lower case and stray spaces. Phones
+        // often capitalise the first letter ("Juan@gmail.com"), and signup always
+        // stores the email in lower case, so an exact match would reject a real user.
+        $loginEmail = Str::lower(trim((string) $request->input('email')));
+        $user = User::whereRaw('LOWER(email) = ?', [$loginEmail])->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
             [$lockedNow, $attemptsLeft] = $this->registerFailure($lockKey);
@@ -387,7 +398,21 @@ class AuthController extends Controller
         // Correct password: the failed-attempt counter starts over.
         $this->clearFailures($lockKey);
 
-        if ($user->role === 'farmer' && $user->status !== 'approved') {
+        // The role decides which side of the app this person belongs to. An
+        // unknown/empty role is refused — it must never fall through to the
+        // farmer dashboard (that is how someone ends up on the wrong side).
+        $role = EnsureUserRole::normalize($user->role);
+        $home = EnsureUserRole::homeRouteFor($role);
+        if (!$home) {
+            Log::warning('Login refused: account has no valid role', ['user_id' => $user->id, 'role' => $user->role]);
+            $message = 'Walang valid na role ang account na ito. Makipag-ugnayan sa admin.';
+            if ($isAjax) {
+                return response()->json(['success' => false, 'message' => $message], 403);
+            }
+            return back()->with('error', $message)->withInput($request->only('email'));
+        }
+
+        if ($role === 'farmer' && $user->status !== 'approved') {
             if ($user->status === 'pending') {
                 if ($isAjax) {
                     return response()->json(['success' => false, 'status' => 'pending', 'message' => 'Ang iyong account ay naka-pending pa para sa approval.'], 403);
@@ -400,19 +425,26 @@ class AuthController extends Controller
             return back()->with('declined', $user->email);
         }
 
-        (Auth::login($user, true));
+        // Staff accounts that were disabled / suspended cannot log in either.
+        if ($problem = EnsureUserRole::accountProblem($user)) {
+            if ($isAjax) {
+                return response()->json(['success' => false, 'message' => $problem], 403);
+            }
+            return back()->with('error', $problem)->withInput($request->only('email'));
+        }
+
+        Auth::login($user, true);
         $request->session()->regenerate();
 
         // Developer is a hardcoded, seeded-only account (see the
         // 2026_08_23_000002_seed_developer_user migration) that reuses the
         // admin panel wholesale — same dashboard, same views.
-        if ($user->role === 'admin' || $user->role === 'developer') {
-            $redirectUrl = '/admin/dashboard';
-        } elseif ($user->role === 'technician') {
-            $redirectUrl = '/technician/dashboard';
-        } else {
-            $redirectUrl = '/farmer/dashboard';
-        }
+        //
+        // Built with route(), NOT a hard-coded "/admin/dashboard": a root path
+        // ignores the folder the app lives in (http://localhost/Crop-proj/public)
+        // and lands on http://localhost/admin/dashboard, which does not exist.
+        // route() always includes the correct base URL.
+        $redirectUrl = route($home);
 
         if ($isAjax) {
             // The offline-login script caches full_name/role/redirect (never
@@ -428,7 +460,9 @@ class AuthController extends Controller
             ]);
         }
 
-        return redirect($redirectUrl);
+        // Always the person's OWN dashboard — never a previously requested URL
+        // that may belong to another role.
+        return redirect()->to($redirectUrl);
     }
 
     // ==========================================
