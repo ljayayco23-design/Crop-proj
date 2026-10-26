@@ -21,6 +21,7 @@ use App\Http\Controllers\FarmerReportController;
 use App\Http\Controllers\ScheduleController;
 use App\Http\Middleware\EnsureUserRole;
 use App\Http\Controllers\Admin\AdminFieldAnalyticsController;
+use App\Http\Controllers\Admin\AdminWeatherAlertController;
 
 
 
@@ -213,6 +214,12 @@ Route::prefix('admin')->middleware(['auth', EnsureUserRole::allow('admin', 'deve
 
     // Field Analytics: farmers + detections per barangay
     Route::get('/field-analytics', [AdminFieldAnalyticsController::class, 'index'])->name('field_analytics');
+
+    // Weather Alerts: dry-run preview, Go Live / kill switch, test email
+    Route::get('/weather-alerts', [AdminWeatherAlertController::class, 'index'])->name('weather_alerts');
+    Route::post('/weather-alerts/run', [AdminWeatherAlertController::class, 'run'])->name('weather_alerts.run');
+    Route::post('/weather-alerts/mode', [AdminWeatherAlertController::class, 'setMode'])->name('weather_alerts.mode');
+    Route::post('/weather-alerts/test', [AdminWeatherAlertController::class, 'test'])->name('weather_alerts.test');
 
 
 

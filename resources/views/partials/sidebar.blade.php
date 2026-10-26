@@ -105,6 +105,13 @@
                 </a>
             </li>
 
+            {{-- NEW: Weather Alerts (PAGASA + forecast alerts: dry-run preview, Go Live, kill switch) --}}
+            <li class="nav-item mb-1">
+                <a href="{{ route('admin.weather_alerts') }}" class="nav-link text-white {{ request()->routeIs('admin.weather_alerts*') ? 'active bg-primary' : '' }}">
+                    <i class="fas fa-cloud-bolt me-2 width-20"></i> Weather Alerts
+                </a>
+            </li>
+
             <li class="nav-item mb-1">
                 <a href="{{ route('admin.system_report') }}" class="nav-link text-white {{ request()->routeIs('admin.system_report*') ? 'active bg-primary' : '' }}">
                     <i class="fas fa-triangle-exclamation me-2 width-20"></i> System Report

@@ -180,7 +180,13 @@
 
                         <div>
                             <label class="block text-zinc-400 text-sm mb-1 font-medium">Rice Field Location</label>
-                            <small class="text-zinc-500 text-xs block mb-2">The pin starts at the barangay you chose in Step 1. Drag the pin or tap the map to mark your exact field.</small>
+                            <small class="text-zinc-500 text-xs block mb-2">This pin will be your <b class="text-zinc-300">Main Farm</b>. Search a place or tap the map to drop it exactly on your rice field, then drag to fine-tune. You can add your other farms later in the Field Map.</small>
+                            <div class="flex gap-2 mb-2">
+                                <input type="text" id="map-search-input" placeholder="Search place, barangay, landmark..." autocomplete="off" maxlength="120"
+                                    class="flex-1 min-w-0 p-3 rounded-xl bg-zinc-800 text-white text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none border border-zinc-700">
+                                <button type="button" id="map-search-btn" class="px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition">Search</button>
+                            </div>
+                            <div id="map-search-results" class="hidden mb-2 rounded-xl border border-zinc-700 bg-zinc-900 overflow-hidden text-xs"></div>
                             <div id="map-status" class="text-xs text-emerald-400 mb-2 min-h-[1rem]" role="status"></div>
                             <input type="hidden" name="latitude" id="lat-input" required>
                             <input type="hidden" name="longitude" id="lng-input" required>
@@ -223,7 +229,7 @@
                     <!-- Right Column: Interactive Map with City/Street Labels -->
                     <div class="h-[400px] md:h-full min-h-[350px] flex flex-col">
                         <div id="registration-map" class="w-full flex-1 rounded-2xl border border-zinc-700 shadow-inner z-10" style="min-height: 350px;"></div>
-                        <p class="text-xs text-zinc-400 mt-2 text-center">Tip: Tap the map or drag the pin to adjust location. Hectares automatically generate shape.</p>
+                        <p class="text-xs text-zinc-400 mt-2 text-center">Tip: Search or tap the map to place your Main Farm pin, then drag to adjust. Hectares automatically generate shape.</p>
                     </div>
                 </div>
             </div>
@@ -1099,6 +1105,14 @@ function updateFormDisplay() {
             if (!confirm.checkValidity()) { confirm.reportValidity(); return false; }
         }
 
+        if (step.querySelector('#lat-input')) {
+            const la = document.getElementById('lat-input').value, lo = document.getElementById('lng-input').value;
+            if (!la || !lo) {
+                setMapStatus('Ilagay muna ang pin ng iyong Main Farm: mag-search o i-tap ang mapa.', true);
+                return false;
+            }
+        }
+
         if (step.querySelector('#document_upload') && !rgIdGate()) return false;
 
         if (currentStep === formSteps.length - 1 && !document.getElementById('document_photo_base64').value) {
@@ -1319,13 +1333,15 @@ document.addEventListener('DOMContentLoaded', function() {
     L.control.layers(baseLayers, null, { position: 'topleft' }).addTo(regMap);
     L.control.zoom({ position: 'topleft' }).addTo(regMap);
 
-    const defaultLatLng = [10.8986, 123.4143]; 
-    placeMarker(defaultLatLng, "Farm Location");
+    // No default pin: the Main Farm pin is only placed when the farmer
+    // searches, taps the map, or (after that) drags it. It no longer follows
+    // the barangay dropdown.
 
     // Map Click Event to relocate pin and redraw polygon
     regMap.on('click', function(e) {
         placeMarker([e.latlng.lat, e.latlng.lng]);
         drawHectarePolygon();
+        setMapStatus('Nailagay ang pin. I-drag ito sa eksaktong bukid mo.');
     });
 
     // Real-time listeners
@@ -1364,7 +1380,7 @@ function updatePinColor() {
     }
 }
 
-function placeMarker(latlng, popupText = "Farm Location") {
+function placeMarker(latlng, popupText = "Main Farm") {
     if (regMarker) regMap.removeLayer(regMarker);
     
     const health = document.querySelector('select[name="crop_health"]')?.value || 'No data';
@@ -1442,8 +1458,50 @@ function geocodeOnce(query) {
             : null);
 }
 
-// Called when the Barangay dropdown changes (see the dropdown script below).
-// Tries "barangay, city, province" first, then falls back to "city, province".
+// ---- Search box -> map: lets the farmer find the rice field location ----
+function searchMapPlace() {
+    const input = document.getElementById('map-search-input');
+    const box = document.getElementById('map-search-results');
+    const q = (input.value || '').trim();
+    if (q.length < 2) { setMapStatus('Mag-type ng lugar na hahanapin.', true); return; }
+    setMapStatus('Hinahanap ang "' + q + '"...');
+    box.classList.add('hidden'); box.innerHTML = '';
+
+    fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=ph&q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(list => {
+            if (!list || !list.length) { setMapStatus('Walang nahanap. Subukan ang ibang pangalan o i-tap ang mapa.', true); return; }
+            setMapStatus('Pumili ng lugar sa listahan, o i-tap ang mapa.');
+            list.forEach(item => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'block w-full text-left px-3 py-2 text-zinc-300 hover:bg-zinc-800 border-b border-zinc-800 last:border-0';
+                b.textContent = item.display_name;
+                b.addEventListener('click', () => {
+                    const latlng = [parseFloat(item.lat), parseFloat(item.lon)];
+                    regMap.setView(latlng, 17);
+                    placeMarker(latlng, 'Main Farm');
+                    drawHectarePolygon();
+                    box.classList.add('hidden'); box.innerHTML = '';
+                    setMapStatus('Nailagay ang pin. I-drag ito sa eksaktong bukid mo.');
+                });
+                box.appendChild(b);
+            });
+            box.classList.remove('hidden');
+        })
+        .catch(() => setMapStatus('Hindi makapag-search ngayon. I-tap ang mapa para ilagay ang pin.', true));
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const btn = document.getElementById('map-search-btn');
+    const inp = document.getElementById('map-search-input');
+    if (btn) btn.addEventListener('click', searchMapPlace);
+    if (inp) inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); searchMapPlace(); }
+    });
+});
+
+// (Old barangay auto-pin helper, no longer called — the pin is independent of the dropdowns.)
 function pinFromDropdowns(barangay, city, province) {
     if (!regMap || !barangay) return;
     const myRequest = ++pinRequestId;   // ignore stale answers if the dropdown changes quickly
@@ -1556,12 +1614,6 @@ document.addEventListener('DOMContentLoaded', function () {
         barangayHidden.value = this.options[this.selectedIndex].text;
         barangayIdHidden.value = this.value;
 
-        // Auto-pin the map to the chosen barangay
-        pinFromDropdowns(
-            this.options[this.selectedIndex].text,
-            citySelect.options[citySelect.selectedIndex]?.text || '',
-            provinceSelect.options[provinceSelect.selectedIndex]?.text || ''
-        );
     });
 });
 </script>

@@ -1113,9 +1113,34 @@ const YOLO_CLASSES = [
     "rice_hispa", "rice_leaf_roller", "rice_stem_borer", "rice_thrips",
     "rice_water_weevil", "sheath_blight", "tungro_virus", "whorl_maggot"
 ];
-const YOLO_INPUT_SIZE = 640;   // matches best.onnx's exported imgsz
-const YOLO_CONF_THRESHOLD = 0.35;
-const YOLO_IOU_THRESHOLD = 0.45;
+const YOLO_INPUT_SIZE = 640;   // MUST equal the imgsz the .onnx was exported at (RiceGuard YOLO11n, 100 epochs: 640)
+
+// Per-class minimum confidence = the best-F1 value of each class measured on the
+// validation split of the final 100-epoch model (class_conf_thresholds.json).
+// Hard classes (tungro_virus, bacterial_leaf_blight, dead_heart ...) score low even
+// when correct, so one global 0.35 was hiding many true detections of them.
+const YOLO_CLASS_CONF = {
+    applesnail_eggs: 0.473, bacterial_leaf_blight: 0.209, bacterial_leaf_streak: 0.244,
+    brown_planthopper: 0.430, brown_spot: 0.355, dead_heart: 0.229, downy_mildew: 0.452,
+    green_leafhopper: 0.747, healthy_rice_plant: 0.539, leaf_blast: 0.289, leaf_folders: 0.315,
+    leafhopper: 0.678, rice_bug: 0.412, rice_false_smut: 0.328, rice_gall_midg: 0.526,
+    rice_hispa: 0.732, rice_leaf_roller: 0.618, rice_stem_borer: 0.446, rice_thrips: 0.752,
+    rice_water_weevil: 0.400, sheath_blight: 0.251, tungro_virus: 0.145, whorl_maggot: 0.342
+};
+const YOLO_DEFAULT_CONF = 0.35;  // used for any class missing from the table above
+// Ceiling: no class is ever made STRICTER than the old global 0.35. The tuned values above 0.35
+// come from small validation sets for rare classes and from dataset photos (field photos usually
+// score lower), so they are only used to LOWER the bar. Set to 1 to use the tuned values as-is.
+const YOLO_MAX_CONF = 0.35;
+const YOLO_CLASS_CONF_BY_ID = YOLO_CLASSES.map(n => Math.min(YOLO_CLASS_CONF[n] ?? YOLO_DEFAULT_CONF, YOLO_MAX_CONF));
+// Lowest per-class value = quick first-pass gate (also still used by the "nothing detected" log).
+const YOLO_CONF_THRESHOLD = Math.min(...YOLO_CLASS_CONF_BY_ID);
+// Same NMS setting the mAP / thresholds were measured with (Ultralytics val: IoU 0.7, per class).
+// Lower to ~0.5 if you see too many overlapping boxes on one lesion.
+const YOLO_IOU_THRESHOLD = 0.7;
+// false = a box only suppresses boxes of the SAME class (how the model was evaluated).
+// true  = old behaviour: any overlapping box of any class suppresses the weaker one.
+const YOLO_CLASS_AGNOSTIC_NMS = false;
 const YOLO_MODEL_URL = rgPath("{{ asset('model/best.onnx') }}");
 
 let yoloSession = null;
@@ -1474,6 +1499,7 @@ async function loadYoloModel() {
         if (!bytes) throw lastErr || new Error('best.onnx could not be downloaded');
 
         yoloSession = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
+        console.log('[YOLO11n] model loaded. inputs:', yoloSession.inputNames, 'outputs:', yoloSession.outputNames);
         isYoloReady = true;
         if (selectedEngine === 'yolo11n' && statusEl) {
             statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> YOLO11n ready`;
@@ -1518,6 +1544,9 @@ function letterboxToCanvas(source, targetSize) {
         _lbCanvas.width = targetSize;
         _lbCanvas.height = targetSize;
         _lbCtx = _lbCanvas.getContext('2d', { willReadFrequently: true });
+        // High-quality resampling keeps small lesions/insects visible when a large phone photo is shrunk to 640.
+        _lbCtx.imageSmoothingEnabled = true;
+        _lbCtx.imageSmoothingQuality = 'high';
     }
     const canvas = _lbCanvas;
     const ctx = _lbCtx;
@@ -1575,8 +1604,8 @@ async function _runYoloDetectionInner(source) {
     const data = canvasToCHWFloat(canvas);
     const inputTensor = new ort.Tensor('float32', data, [1, 3, YOLO_INPUT_SIZE, YOLO_INPUT_SIZE]);
 
-    const results = await yoloSession.run({ images: inputTensor });
-    const output = results.output0; // [1, 4+numClasses, numAnchors] — box decode already baked into the graph
+    const results = await yoloSession.run({ [yoloSession.inputNames[0]]: inputTensor });
+    const output = results[yoloSession.outputNames[0]]; // [1, 4+numClasses, numAnchors] — box decode already baked into the graph
     const numAttrs = output.dims[1];
     const numAnchors = output.dims[2];
     const numClasses = numAttrs - 4;
@@ -1591,7 +1620,7 @@ async function _runYoloDetectionInner(source) {
             if (score > bestScore) { bestScore = score; bestClass = c; }
         }
         if (bestScore > debugBestScore) { debugBestScore = bestScore; debugBestClass = bestClass; }
-        if (bestScore >= YOLO_CONF_THRESHOLD) {
+        if (bestScore >= YOLO_CONF_THRESHOLD && bestScore >= YOLO_CLASS_CONF_BY_ID[bestClass]) {
             candidates.push({
                 cx: buf[0 * numAnchors + a],
                 cy: buf[1 * numAnchors + a],
@@ -1608,7 +1637,7 @@ async function _runYoloDetectionInner(source) {
     candidates.sort((a, b) => b.score - a.score);
     const picked = [];
     for (const cand of candidates) {
-        if (picked.some(p => yoloIoU(cand, p) > YOLO_IOU_THRESHOLD)) continue;
+        if (picked.some(p => (YOLO_CLASS_AGNOSTIC_NMS || p.classId === cand.classId) && yoloIoU(cand, p) > YOLO_IOU_THRESHOLD)) continue;
         picked.push(cand);
         if (picked.length >= 50) break;
     }

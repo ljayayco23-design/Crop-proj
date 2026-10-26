@@ -226,6 +226,35 @@
                         </div>
                     @endif
 
+                    <!-- RECENT ALERTS (PAGASA + forecast-based) -->
+                    @if(isset($recentAlerts) && $recentAlerts->count())
+                    <div class="mt-4 border-t border-panelBorder pt-3">
+                        <h3 class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2"><i class="fa-solid fa-bell me-1"></i> Recent Alerts</h3>
+                        <div class="space-y-2 max-h-52 overflow-y-auto custom-scrollbar pr-1">
+                            @foreach($recentAlerts as $al)
+                                <div class="bg-[#0e1116] border border-panelBorder rounded p-2 {{ !empty($al->is_expired) ? 'opacity-60' : '' }}">
+                                    <div class="flex justify-between items-center mb-1 gap-2">
+                                        <span class="text-[9px] px-1.5 py-0.5 rounded font-bold border {{ $al->source === 'pagasa' ? 'bg-blue-500/15 text-blue-300 border-blue-500/30' : 'bg-amber-500/15 text-amber-300 border-amber-500/30' }}">{{ $al->label }}</span>
+                                        <span class="flex items-center gap-1.5 shrink-0">
+                                            @if(!empty($al->is_expired))
+                                                <span class="text-[9px] px-1.5 py-0.5 rounded font-bold bg-gray-500/20 text-gray-400 border border-gray-500/30 uppercase">Expired</span>
+                                            @else
+                                                <span class="text-[9px] px-1.5 py-0.5 rounded font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 uppercase">Active</span>
+                                            @endif
+                                            <span class="text-[9px] font-bold text-gray-300 uppercase">{{ $al->level }}</span>
+                                        </span>
+                                    </div>
+                                    <div class="text-xs font-semibold text-gray-200 leading-snug">{{ $al->headline }}</div>
+                                    <div class="flex justify-between gap-2 mt-1 text-[10px] text-gray-500">
+                                        <span class="truncate">{{ collect($al->fields ?? [])->pluck('name')->filter()->implode(', ') }}</span>
+                                        <span class="shrink-0">{{ optional($al->issued_at)->diffForHumans() }}</span>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                    @endif
+
                     <!-- LAST REPORT WIDGET -->
                     @if(isset($latestDetection) && $latestDetection)
                     <div class="mt-4 border-t border-panelBorder pt-3">
@@ -360,6 +389,31 @@ function fetchAddressForLayer(layer, lat, lng) {
                 if(typeof bindCustomTooltip === 'function') bindCustomTooltip(layer);
             }
         });
+}
+
+// Reverse-geocodes the Main Farm pin from its exact coordinates so the hover
+// tooltip shows the real location. Cached per coordinate for the session.
+function resolveMainPinAddress(marker, lat, lng, fallback, saveAfter) {
+    const key = 'mainpin_addr_' + Number(lat).toFixed(5) + '_' + Number(lng).toFixed(5);
+    const apply = (text) => {
+        marker.placeName = text;
+        if (typeof bindCustomTooltip === 'function') bindCustomTooltip(marker);
+        if (typeof updateLayersList === 'function') updateLayersList();
+        if (saveAfter) saveToDatabase();
+    };
+    try {
+        const cached = sessionStorage.getItem(key);
+        if (cached) { apply(cached); return; }
+    } catch (e) {}
+
+    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=18&lat=${lat}&lon=${lng}`)
+        .then(res => res.json())
+        .then(data => {
+            const name = (data && data.display_name) ? data.display_name : (fallback || 'Address not registered');
+            try { if (data && data.display_name) sessionStorage.setItem(key, name); } catch (e) {}
+            apply(name);
+        })
+        .catch(() => apply(fallback || 'Failed to load location'));
 }
 
 function updateWeather(lat, lng) {
@@ -832,7 +886,16 @@ function loadFromDatabase() {
             if (userFieldId) userFarmMarker._leaflet_id = userFieldId; 
             
             userFarmMarker.addTo(map);
-            userFarmMarker.placeName = uAddress;
+            // Show the REAL place under the pin (reverse-geocoded from its exact
+            // coordinates), not the barangay picked in the dropdowns. The
+            // dropdown address is only a fallback if the lookup fails.
+            userFarmMarker.placeName = "Loading exact location...";
+            resolveMainPinAddress(userFarmMarker, farmLat, farmLng, uAddress);
+            userFarmMarker.on('dragend', function(e) {
+                const pos = e.target.getLatLng();
+                updateWeather(pos.lat, pos.lng);
+                resolveMainPinAddress(e.target, pos.lat, pos.lng, uAddress, true);
+            });
 
             if (typeof bindCustomTooltip === 'function') bindCustomTooltip(userFarmMarker);
             if (typeof updateMarkerPolygon === 'function') updateMarkerPolygon(userFarmMarker);
@@ -901,6 +964,8 @@ function saveNewLocationName() {
 
 map.on('pm:create', (e) => {
 if (e.shape === 'Marker') {
+        // New-pin flow: duplicate check + draft pin (not shown/saved until "Save Pin Data")
+        if (typeof handleNewFarmPin === 'function' && handleNewFarmPin(e)) return;
         const initialColor = getFieldStatusColor('No data');
         e.layer.options.customType = 'Marker';
         e.layer.options.markerColor = initialColor;
@@ -1359,6 +1424,325 @@ function bindMarkerDrag(marker) {
 }
 
 
+// =====================================================================================
+// NEW FARM PIN FLOW
+//  - Duplicate-field check when a pin is dropped (distance via turf.distance + inside-field check)
+//  - "Same field" -> move/update existing pin   |  "Different field" -> customization (name + ha required)
+//  - A NEW pin is NOT shown on the map and NOT saved until "Save Pin Data" is pressed
+//  - Farm name required for additional pins + warning when the name already exists
+//  - Hover tooltip shows the distance to the nearest other farm pin (computed live, never stored)
+// =====================================================================================
+const FM_NEAR_THRESHOLD_M = 75;   // "malapit" distance in meters (tune between 50 - 100)
+let pendingNewPin = null;         // new pin waiting for Save (it is NOT on the map)
+let fmPreview = null;             // dashed marker that shows where the farmer clicked
+
+function fmEsc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function fmFarmPins(exclude) {
+    return map.pm.getGeomanLayers().filter(l => l instanceof L.Marker && l.options && l.options.isFarmPin && l !== exclude && l.getLatLng);
+}
+function fmMeters(a, b) {
+    return turf.distance([a.lng, a.lat], [b.lng, b.lat], { units: 'meters' });
+}
+function fmFormatDistance(m) {
+    return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : Math.round(m) + ' m';
+}
+
+// Field area of an existing pin: the drawn hectare polygon, or one rebuilt from its ha size (same math as updateMarkerPolygon)
+function fmFieldPolygon(marker) {
+    try {
+        if (marker.associatedPolygon) return marker.associatedPolygon.toGeoJSON();
+        const fSize = parseFloat(marker.options.farmSize);
+        if (!(fSize > 0)) return null;
+        const hectares = fSize > 100 ? fSize / 10000 : fSize;
+        const radius = Math.sqrt((hectares * 10000) / Math.PI) / 1000;
+        const pos = marker.getLatLng();
+        const buffered = turf.buffer(turf.point([pos.lng, pos.lat]), radius, { units: 'kilometers', steps: 4 });
+        return turf.bboxPolygon(turf.bbox(buffered));
+    } catch (e) { return null; }
+}
+
+// Nearest existing farm pin that is within the threshold OR whose field area contains the new point
+function fmFindNearbyFarm(latlng) {
+    const pt = turf.point([latlng.lng, latlng.lat]);
+    let best = null;
+    fmFarmPins().forEach(m => {
+        const dist = fmMeters(latlng, m.getLatLng());
+        let inside = false;
+        const poly = fmFieldPolygon(m);
+        if (poly) { try { inside = turf.booleanPointInPolygon(pt, poly); } catch (e) {} }
+        if (!inside && dist > FM_NEAR_THRESHOLD_M) return;
+        const cand = { marker: m, dist: dist, inside: inside };
+        if (!best || (cand.inside && !best.inside) || (cand.inside === best.inside && cand.dist < best.dist)) best = cand;
+    });
+    return best;
+}
+
+function fmFindDuplicateName(layer, name) {
+    const wanted = name.trim().toLowerCase();
+    const other = fmFarmPins(layer).find(m => (m.options.farmName || '').trim().toLowerCase() === wanted);
+    return other ? (other.options.farmName || '').trim() : null;
+}
+
+// ---------- small modal (returns a Promise with the clicked button's value) ----------
+function fmAsk(cfg) {
+    return new Promise(resolve => {
+        const old = document.getElementById('fm-modal'); if (old) old.remove();
+        const wrap = document.createElement('div');
+        wrap.id = 'fm-modal';
+        wrap.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);';
+        wrap.innerHTML = '<div class="bg-darkBg border border-panelBorder rounded-lg p-4 shadow-2xl" style="width:340px;max-width:90vw;">' +
+            '<h3 class="text-sm font-bold text-white mb-2">' + cfg.title + '</h3>' +
+            '<div class="text-xs text-gray-300 mb-4" style="line-height:1.5;">' + cfg.html + '</div>' +
+            '<div class="flex flex-col gap-2" id="fm-modal-btns"></div></div>';
+        cfg.buttons.forEach(b => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = b.label;
+            btn.className = b.primary
+                ? 'w-full bg-accent hover:bg-accentHover rounded px-3 py-2 text-xs font-bold text-white transition'
+                : 'w-full border border-panelBorder hover:bg-white/5 rounded px-3 py-2 text-xs text-gray-300 transition';
+            btn.onclick = () => { wrap.remove(); resolve(b.value); };
+            wrap.querySelector('#fm-modal-btns').appendChild(btn);
+        });
+        document.body.appendChild(wrap);
+    });
+}
+
+// ---------- banner + inline error inside the Pin Customization panel ----------
+(function injectNewPinUi() {
+    const props = document.getElementById('marker-text-props');
+    if (!props) return;
+    const html =
+        '<div id="new-pin-banner" style="display:none;" class="mb-3 rounded border border-accent px-2.5 py-2 text-[11px] text-gray-200">' +
+            '<div id="new-pin-banner-text" style="line-height:1.4;"></div>' +
+            '<button type="button" onclick="fmCancelNewPin()" class="mt-1.5 text-red-400 hover:text-red-300 underline">Cancel (discard this pin)</button>' +
+        '</div>' +
+        '<div id="pin-form-error" style="display:none;" class="mb-2 text-[11px] text-red-400"></div>';
+    const form = props.querySelector('.space-y-2');
+    if (form) form.insertAdjacentHTML('beforebegin', html); else props.insertAdjacentHTML('afterbegin', html);
+    ['prop-farm-name', 'prop-farm-size'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', () => { fmFormError(null); el.style.borderColor = ''; });
+    });
+})();
+
+function fmSetBanner(show, html) {
+    const b = document.getElementById('new-pin-banner');
+    if (!b) return;
+    b.style.display = show ? 'block' : 'none';
+    if (show && html) document.getElementById('new-pin-banner-text').innerHTML = html;
+}
+function fmFormError(msg, fieldId) {
+    const el = document.getElementById('pin-form-error');
+    if (!el) return;
+    el.style.display = msg ? 'block' : 'none';
+    el.textContent = msg || '';
+    if (msg && fieldId) {
+        const f = document.getElementById(fieldId);
+        if (f) { f.style.borderColor = '#ef4444'; f.focus(); }
+    }
+}
+
+// ---------- draft (unsaved) pin handling ----------
+function fmDiscardPending(keepPanel) {
+    if (fmPreview) { map.removeLayer(fmPreview); fmPreview = null; }
+    const had = pendingNewPin;
+    pendingNewPin = null;
+    fmSetBanner(false);
+    fmFormError(null);
+    if (had && !keepPanel) {
+        if (selectedLayer === had) selectedLayer = null;
+        const panel = document.getElementById('properties-panel');
+        panel.style.opacity = '0.5';
+        panel.style.pointerEvents = 'none';
+        updateLayersList();
+    }
+}
+window.fmCancelNewPin = function () { fmDiscardPending(false); };
+
+function fmShowPreview(latlng) {
+    if (fmPreview) map.removeLayer(fmPreview);
+    fmPreview = L.circleMarker(latlng, {
+        radius: 9, color: '#f59e0b', weight: 2, dashArray: '4 3', fillColor: '#f59e0b', fillOpacity: 0.25,
+        interactive: false, pmIgnore: true
+    });
+    fmPreview._pmTempLayer = true;   // never counted as a saved layer
+    fmPreview.addTo(map);
+}
+
+function fmBeginCustomization(layer, hit) {
+    pendingNewPin = layer;
+    selectLayer(layer);   // opens Pin Customization for the draft
+    const near = hit ? ' It is near <b>' + fmEsc(hit.marker.options.farmName || 'another field') + '</b> (' + (hit.inside ? 'inside its area' : '~' + fmFormatDistance(hit.dist)) + ').' : '';
+    fmSetBanner(true,
+        '<b class="text-white">New field.</b>' + near + ' Enter the <b>farm name</b> and <b>size (ha)</b>, then press <b>Save Pin Data</b>. ' +
+        'The pin will appear on the map only after you save. The size is used to tell if a future pin is the same field.');
+    const n = document.getElementById('prop-farm-name');
+    if (n) n.focus();
+}
+
+// Same field -> move the existing pin (and its hectare polygon) to the new spot
+function fmMoveExisting(marker, latlng) {
+    const old = marker.getLatLng();
+    const dist = fmMeters(old, latlng);
+    const bearing = turf.bearing([old.lng, old.lat], [latlng.lng, latlng.lat]);
+    marker.setLatLng(latlng);
+    if (marker.associatedPolygon && dist > 0) {
+        try {
+            const moved = turf.transformTranslate(marker.associatedPolygon.toGeoJSON(), dist, bearing, { units: 'meters' });
+            marker.associatedPolygon.setLatLngs(L.geoJSON(moved).getLayers()[0].getLatLngs());
+            marker.options.customPolygonGeoJSON = marker.associatedPolygon.toGeoJSON();
+        } catch (e) { updateMarkerPolygon(marker, true); }
+    }
+    updateWeather(latlng.lat, latlng.lng);
+    if (marker.options.isMainFarm) resolveMainPinAddress(marker, latlng.lat, latlng.lng, marker.placeName, true);
+    else fetchAddressForLayer(marker, latlng.lat, latlng.lng);
+    bindCustomTooltip(marker);
+    updateLayersList();
+    saveToDatabase();
+    selectLayer(marker);
+}
+
+// Called from the pm:create handler. Returns true when this flow took over the new marker.
+function handleNewFarmPin(e) {
+    const layer = e.layer;
+    if (layer._flowApproved) return false;      // already confirmed -> let the normal pm:create code finish it
+    fmDiscardPending(true);
+    try { map.pm.disableDraw(); } catch (err) {}
+    map.removeLayer(layer);                      // hidden until the farmer presses Save Pin Data
+
+    const c = getFieldStatusColor('No data');
+    Object.assign(layer.options, {
+        customType: 'Marker', markerColor: c, farmStatus: 'No data',
+        isFarmPin: true, isMainFarm: false, farmName: '', farmSize: '', farmVariety: ''
+    });
+
+    const latlng = layer.getLatLng();
+    pendingNewPin = layer;
+    fmShowPreview(latlng);
+
+    const hit = fmFindNearbyFarm(latlng);
+    if (!hit) { fmBeginCustomization(layer, null); return true; }
+
+    const hSize = parseFloat(hit.marker.options.farmSize) || 0;
+    const why = hit.inside
+        ? 'The pin is inside the area of this field' + (hSize ? ' (' + hSize + ' ha)' : '') + '.'
+        : 'It is about ' + fmFormatDistance(hit.dist) + ' from that pin.';
+    fmAsk({
+        title: 'Malapit ito sa ' + fmEsc(hit.marker.options.farmName || 'Unnamed Field') + '.',
+        html: '<b class="text-white">Parehong bukid ba ito?</b><br><span class="text-gray-400">' + why + '</span>',
+        buttons: [
+            { label: 'Same field — move / update it', value: 'same', primary: true },
+            { label: 'Different field — add new', value: 'different' },
+            { label: 'Cancel', value: 'cancel' }
+        ]
+    }).then(choice => {
+        if (pendingNewPin !== layer) return;     // something else replaced this draft meanwhile
+        if (choice === 'same') { fmDiscardPending(true); fmMoveExisting(hit.marker, latlng); }
+        else if (choice === 'different') fmBeginCustomization(layer, hit);
+        else fmDiscardPending(false);
+    });
+    return true;
+}
+
+// Farmer pressed Save on a valid draft -> now it really gets added to the map and saved
+function fmCommitNewPin(layer, name, size, variety) {
+    layer.options.farmName = name;
+    layer.options.farmSize = size;
+    layer.options.farmVariety = variety;
+    layer._flowApproved = true;
+    if (fmPreview) { map.removeLayer(fmPreview); fmPreview = null; }
+    pendingNewPin = null;
+    fmSetBanner(false);
+    layer.addTo(map);
+    try { L.PM.reInitLayer(layer); } catch (err) {}
+    map.fire('pm:create', { shape: 'Marker', layer: layer });   // runs the normal new-pin setup + save
+    updateMarkerPolygon(layer, true);                           // draw its hectare area
+    bindMarkerDrag(layer);
+    bindCustomTooltip(layer);
+}
+
+// ---------- wrappers (existing functions are untouched, only extended) ----------
+(function () {
+    const origSelectLayer = window.selectLayer;
+    window.selectLayer = function (layer) {
+        if (pendingNewPin && layer !== pendingNewPin) fmDiscardPending(true);   // picking something else drops the unsaved pin
+        origSelectLayer(layer);
+        fmSetBanner(layer === pendingNewPin ? true : false);
+        if (layer !== pendingNewPin) fmFormError(null);
+    };
+
+    const origDelete = window.deleteSelectedShape;
+    window.deleteSelectedShape = function () {
+        if (pendingNewPin && selectedLayer === pendingNewPin) { fmDiscardPending(false); return; }
+        return origDelete.apply(this, arguments);
+    };
+
+    const origSaveMarker = window.saveMarkerDetails;
+    window.saveMarkerDetails = async function () {
+        if (!selectedLayer || selectedLayer.options.customType !== 'Marker' || selectedLayer.options.isMainFarm) {
+            return origSaveMarker.apply(this, arguments);
+        }
+        const layer = selectedLayer;
+        const isDraft = (layer === pendingNewPin);
+        const name = document.getElementById('prop-farm-name').value.trim();
+        const sizeRaw = document.getElementById('prop-farm-size').value;
+        const variety = document.getElementById('prop-farm-variety').value;
+
+        if (!name) { fmFormError('Farm name is required for additional fields.', 'prop-farm-name'); return; }
+        if (isDraft && !(parseFloat(sizeRaw) > 0)) { fmFormError('Size (ha) is required for a new field.', 'prop-farm-size'); return; }
+        fmFormError(null);
+
+        const nameChanged = name.toLowerCase() !== (layer.options.farmName || '').trim().toLowerCase();
+        if (isDraft || nameChanged) {
+            const dup = fmFindDuplicateName(layer, name);
+            if (dup) {
+                const ans = await fmAsk({
+                    title: 'Farm name already exists',
+                    html: 'You already have a field named <b class="text-white">' + fmEsc(dup) + '</b>. Use the same name anyway?',
+                    buttons: [
+                        { label: 'Change name', value: 'change', primary: true },
+                        { label: 'Use this name anyway', value: 'keep' }
+                    ]
+                });
+                if (ans !== 'keep') { const n = document.getElementById('prop-farm-name'); if (n) n.focus(); return; }
+                if (selectedLayer !== layer || (isDraft && pendingNewPin !== layer)) return;   // changed while the prompt was open
+            }
+        }
+
+        if (isDraft) fmCommitNewPin(layer, name, sizeRaw, variety);
+        else return origSaveMarker.apply(this, arguments);
+    };
+
+    // Hover tooltip: add "Nearest field: X — 320 m" (recomputed every time it opens, so it never goes stale)
+    const origBindTooltip = window.bindCustomTooltip;
+    window.bindCustomTooltip = function (marker) {
+        origBindTooltip(marker);
+        try {
+            const tip = marker.getTooltip();
+            const base = tip && tip.getContent();
+            if (typeof base !== 'string') return;
+            marker.setTooltipContent(function () {
+                let nearest = null;
+                const me = marker.getLatLng();
+                fmFarmPins(marker).forEach(o => {
+                    const d = fmMeters(me, o.getLatLng());
+                    if (!nearest || d < nearest.d) nearest = { d: d, name: o.options.farmName || 'Unnamed Field' };
+                });
+                if (!nearest) return base;
+                const line = '<span style="font-size: 11px; color: #fff; display:block; margin-bottom:4px;">📏 Nearest field: <b>' +
+                    fmEsc(nearest.name) + '</b> — <b>' + fmFormatDistance(nearest.d) + '</b></span>';
+                const anchor = '<div style="border-top';
+                return base.indexOf(anchor) > -1 ? base.replace(anchor, () => line + anchor) : base + line;
+            });
+        } catch (err) {}
+    };
+})();
+
+// Removing some other layer while an unsaved pin is open drops the unsaved pin too
+map.on('pm:remove', () => { if (pendingNewPin && selectedLayer !== pendingNewPin) fmDiscardPending(true); });
 
 </script>
 @endsection

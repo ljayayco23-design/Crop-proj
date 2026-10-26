@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use App\Services\WeatherAlertService;
 
 class FieldMapController extends Controller
 {
@@ -31,6 +33,34 @@ public function index()
             optional($user->province)->name,
         ])->filter()->implode(', ');
         $latestDetection = \App\Models\TreatmentRecord::where('user_id', $user->id)->latest()->first();
+
+        // Recent weather alerts for the "Recent Alerts" card (farmers only): active first, expired ones last.
+        // Wrapped so the Field Map still loads if the alerts table doesn't exist yet.
+        $recentAlerts = collect();
+        if ($user->role === 'farmer') {
+            try {
+                $recentAlerts = \App\Models\WeatherAlert::where('user_id', $user->id)
+                    ->where('issued_at', '>', now()->subDays(3))
+                    ->orderByDesc('issued_at')
+                    ->limit(12)
+                    ->get()
+                    ->map(function ($a) {
+                        // Flag alerts whose validity window has passed (shown dimmed with an "Expired" tag).
+                        $exp = $a->expires_at ? \Carbon\Carbon::parse($a->expires_at) : null;
+                        $a->is_expired = $exp ? $exp->isPast() : false;
+                        return $a;
+                    })
+                    // Active alerts first (newest first), then expired ones (newest first).
+                    ->sortBy(fn ($a) => [
+                        $a->is_expired ? 1 : 0,
+                        -($a->issued_at ? \Carbon\Carbon::parse($a->issued_at)->timestamp : 0),
+                    ])
+                    ->take(5)
+                    ->values();
+            } catch (\Throwable $e) {
+                $recentAlerts = collect();
+            }
+        }
         
         // Load the new additional farms column
 $additionalFarmsJson = json_encode($user->additional_farms ?? []);
@@ -138,14 +168,14 @@ $additionalFarmsJson = json_encode($user->additional_farms ?? []);
                 'temp', 'condition', 'humidity', 'wind', 'rain', 'alerts', 'riskLevel', 'riskColor', 
                 'userLat', 'userLng', 'farmName', 'farmSize', 'otherFarms',
                 'growthStage', 'riceVariety', 'userAddress', 'latestDetection', 'additionalFarmsJson',
-                'fieldStatuses', 'fieldStatusColors'
+                'fieldStatuses', 'fieldStatusColors', 'recentAlerts'
             ));
 
              } catch (\Exception $e) {
             return view($viewTemplate, compact(
                 'userLat', 'userLng', 'farmName', 'farmSize', 'otherFarms',
                 'growthStage', 'riceVariety', 'userAddress', 'latestDetection', 'additionalFarmsJson',
-                'fieldStatuses', 'fieldStatusColors'
+                'fieldStatuses', 'fieldStatusColors', 'recentAlerts'
             ))->with('error', 'Weather service is temporarily offline or timed out.');
         }
     }
@@ -318,36 +348,25 @@ public function syncLayers(Request $request)
         }
     }
 
-    public function triggerWeatherCron(Request $request)
+    public function triggerWeatherCron(Request $request, WeatherAlertService $alerts)
     {
-        if ($request->header('Authorization') !== 'Bearer ' . env('CRON_SECRET')) {
+        // Fail closed: an empty CRON_SECRET must never let "Bearer " through.
+        $secret = (string) env('CRON_SECRET');
+        $given  = (string) $request->bearerToken();
+        if ($secret === '' || !hash_equals($secret, $given)) {
             return response()->json(['error' => 'Unauthorized request'], 401);
         }
 
-        $apiKey = env('WEATHER_API_KEY');
-        $alertsProcessed = 0;
-        
-        $response = Http::get("http://api.weatherapi.com/v1/forecast.json", [
-            'key'    => $apiKey,
-            'q'      => "Sagay City",
-            'days'   => 3,
-            'alerts' => 'yes'
-        ]);
+        @set_time_limit(90);
 
-        if ($response->successful()) {
-            $data = $response->json();
-            
-            if (isset($data['alerts']['alert']) && !empty($data['alerts']['alert'])) {
-                foreach($data['alerts']['alert'] as $alert) {
-                    $alertsProcessed++;
-                }
-            }
+        try {
+            // Behaviour depends on the mode saved by the admin: off | dry_run | live.
+            $result = $alerts->runCron();
+        } catch (\Throwable $e) {
+            Log::error('[WeatherCron] ' . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
 
-        return response()->json([
-            'status' => 'success', 
-            'alerts_found' => $alertsProcessed,
-            'message' => 'Automated weather sweep completed.'
-        ]);
+        return response()->json($result + ['message' => 'Automated weather sweep completed.']);
     }
 }
