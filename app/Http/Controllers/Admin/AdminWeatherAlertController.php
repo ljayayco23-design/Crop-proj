@@ -116,6 +116,18 @@ class AdminWeatherAlertController extends Controller
             : 'Weather alerts are switched off.');
     }
 
+    /** "Send alerts now": emails this scope's new alerts immediately (live mode only). */
+    public function sendNow(WeatherAlertService $svc)
+    {
+        @set_time_limit(90);
+        try {
+            $result = $svc->sendNow($this->scope($svc));
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Send failed: ' . $e->getMessage());
+        }
+        return back()->with($result['ok'] ? 'success' : 'error', $result['message']);
+    }
+
     /** Sends one sample email to the signed-in admin only. */
     public function test(WeatherAlertService $svc)
     {
@@ -144,10 +156,12 @@ class AdminWeatherAlertController extends Controller
         $sample['instruction'] = $sample['instruction'] ?? 'People living near the mountain slopes and in the low lying areas of the above mentioned river systems are advised to take necessary precautionary measures.';
 
         try {
-            $svc->sendEmail($sample, $admin->email, true);
+            $messageId = $svc->sendEmail($sample, $admin->email, true);
         } catch (\Throwable $e) {
             return back()->with('error', 'Test email failed: ' . $e->getMessage());
         }
-        return back()->with('success', 'Test email sent to ' . $admin->email . '.');
+        return back()->with('success', 'Brevo accepted the test email for ' . $admin->email
+            . ' (sender: ' . env('BREVO_SENDER_EMAIL', 'jfconco604@gmail.com') . ($messageId ? ', id ' . $messageId : '') . '). '
+            . 'If it does not arrive, check your Spam folder and Brevo > Transactional > Logs.');
     }
 }

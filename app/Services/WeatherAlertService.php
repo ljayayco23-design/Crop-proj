@@ -206,9 +206,10 @@ class WeatherAlertService
     }
 
     /**
-     * Admin "Go Live": every alert that is active RIGHT NOW is recorded as a
-     * "baselined" row (shown on the farmer's card, but NOT emailed). Only alerts
-     * that are new or updated after this moment can trigger an email.
+     * Admin "Go Live": switches this scope to LIVE and immediately emails every
+     * alert that is active right now to the farmers of the scope. Every alert is
+     * also saved, so it shows on the farmer's "Recent Alerts" card.
+     * Only allowed after a complete, recent dry-run (see goLiveGate()).
      */
     public function goLive(?int $userId, ?array $scope = null): array
     {
@@ -217,27 +218,99 @@ class WeatherAlertService
             return ['ok' => false, 'message' => $gate['reason']];
         }
 
+        // Check every source can be read BEFORE changing anything.
         $plan = $this->buildPlan($scope);
         if (!$plan['complete']) {
             $this->savePreview($plan, 'dry_run', [], $scope);
             return ['ok' => false, 'message' => 'Could not read every source just now (' . implode(' | ', array_merge($plan['errors'], $plan['notes'])) . '). Nothing was changed. Try again.'];
         }
 
-        $baselined = 0;
-        foreach ($plan['items'] as $it) {
-            if ($it['action'] !== 'send') continue;
-            if ($this->createRow($it, 'baselined', 'Active before Go Live; not emailed')) {
-                $baselined++;
-            }
-        }
+        // Alerts saved as "baselined" by an earlier Go Live were never emailed.
+        // Remove them so they count as new again and are emailed now.
+        $ids = $this->farmerQuery($scope)->pluck('id');
+        WeatherAlert::where('status', 'baselined')->whereIn('user_id', $ids)->delete();
+        $plan = $this->buildPlan($scope);
 
         $this->saveSettings([
             'mode' => 'live', 'live_since' => now(),
             'changed_by' => $userId, 'changed_at' => now(),
-            'last_run_at' => now(), 'last_run_mode' => 'go_live',
+            'last_run_at' => now(), 'last_run_mode' => 'live',
+            'last_error' => $plan['errors'] ? implode(' | ', $plan['errors']) : null,
         ], $scope);
 
-        return ['ok' => true, 'baselined' => $baselined, 'message' => "Live. {$baselined} alert(s) active right now were saved as baseline (no email). Only new or updated alerts will be emailed from here."];
+        $result = $this->dispatchPlan($plan);
+        $this->savePreview($plan, 'live', $result, $scope);
+
+        $msg = "Live. Sent {$result['sent']} email(s), failed {$result['failed']}, no email on file (card only) {$result['no_email']}";
+        if ($result['deferred_to_next_run'] > 0) {
+            $msg .= ", {$result['deferred_to_next_run']} waiting for the next cron run (max " . self::MAX_EMAILS_PER_RUN . ' emails per run)';
+        }
+        $msg .= '.';
+        if ($result['sent'] === 0 && $result['failed'] === 0 && $result['no_email'] === 0) {
+            $msg .= ' No alert is active for the farmers in your area right now; new alerts will be emailed automatically.';
+        }
+        return ['ok' => true, 'message' => $msg];
+    }
+
+    /**
+     * "Send alerts now" (live mode only): does the cron's job by hand for this
+     * scope. Emails every NEW alert (not already recorded, not throttled) to the
+     * farmers of the scope and saves it for their "Recent Alerts" card.
+     */
+    public function sendNow(?array $scope = null): array
+    {
+        $s = $this->settings($scope);
+        if ($s->mode !== 'live') {
+            return ['ok' => false, 'message' => 'Switch to Live first.'];
+        }
+
+        $plan = $this->buildPlan($scope);
+        if (!$plan['complete']) {
+            $this->savePreview($plan, 'live', [], $scope);
+            return ['ok' => false, 'message' => 'Could not read every source just now (' . implode(' | ', array_merge($plan['errors'], $plan['notes'])) . '). Nothing was sent. Try again.'];
+        }
+
+        $result = $this->dispatchPlan($plan);
+        $this->savePreview($plan, 'live', $result, $scope);
+        $this->saveSettings([
+            'last_run_at' => now(), 'last_run_mode' => 'live',
+            'last_error'  => $plan['errors'] ? implode(' | ', $plan['errors']) : null,
+        ], $scope);
+
+        $msg = "Sent {$result['sent']} email(s), failed {$result['failed']}, no email on file (card only) {$result['no_email']}";
+        if ($result['deferred_to_next_run'] > 0) {
+            $msg .= ", {$result['deferred_to_next_run']} waiting for the next run (max " . self::MAX_EMAILS_PER_RUN . ' emails per run)';
+        }
+        $msg .= '.';
+        if ($result['sent'] === 0 && $result['failed'] === 0 && $result['no_email'] === 0) {
+            $msg .= ' Nothing new to send: every active alert was already sent, or none is active for your farmers.';
+        }
+        return ['ok' => true, 'message' => $msg];
+    }
+
+    /** Approved farmers for a scope (area for a normal admin, the rest for the developer). */
+    private function farmerQuery(?array $scope = null)
+    {
+        $q = User::where('role', 'farmer')->where('status', 'approved');
+
+        if ($scope) {
+            return $q->where('province_id', $scope['province_id'])
+                     ->where('city_id', $scope['city_id']);
+        }
+
+        // Global row (developer): skip areas a normal admin manages on their own.
+        $managed = DB::table('weather_alert_settings')
+            ->whereNotNull('province_id')->whereNotNull('city_id')
+            ->whereNotNull('changed_by')
+            ->get(['province_id', 'city_id']);
+        if ($managed->isNotEmpty()) {
+            $q->where(function ($w) use ($managed) {
+                foreach ($managed as $m) {
+                    $w->whereRaw('NOT (province_id <=> ? AND city_id <=> ?)', [$m->province_id, $m->city_id]);
+                }
+            });
+        }
+        return $q;
     }
 
     // =====================================================================
@@ -252,31 +325,7 @@ class WeatherAlertService
         $errors = [];
         $notes  = [];
 
-        $farmerQuery = User::with('province')
-            ->where('role', 'farmer')
-            ->where('status', 'approved');
-
-        if ($scope) {
-            // Area row (normal admin): only farmers of that province + city.
-            $farmerQuery->where('province_id', $scope['province_id'])
-                        ->where('city_id', $scope['city_id']);
-        } else {
-            // Global row (developer): skip areas a normal admin manages on their own
-            // (an area row someone has explicitly set), so the admin's Live / Dry-run / Off
-            // choice for their own farmers is respected.
-            $managed = DB::table('weather_alert_settings')
-                ->whereNotNull('province_id')->whereNotNull('city_id')
-                ->whereNotNull('changed_by')
-                ->get(['province_id', 'city_id']);
-            if ($managed->isNotEmpty()) {
-                $farmerQuery->where(function ($q) use ($managed) {
-                    foreach ($managed as $m) {
-                        $q->whereRaw('NOT (province_id <=> ? AND city_id <=> ?)', [$m->province_id, $m->city_id]);
-                    }
-                });
-            }
-        }
-        $farmers = $farmerQuery->get();
+        $farmers = $this->farmerQuery($scope)->with('province')->get();
 
         $targetsByUser = [];
         $withoutPin = 0;
@@ -456,7 +505,7 @@ class WeatherAlertService
      * BREVO_API_KEY the registration email already uses; no SMTP needed).
      * Throws on failure so the caller can mark the row as failed.
      */
-    public function sendEmail(array $alert, string $to, bool $isTest = false): void
+    public function sendEmail(array $alert, string $to, bool $isTest = false): ?string
     {
         $apiKey = env('BREVO_API_KEY');
         if (!$apiKey) {
@@ -479,6 +528,9 @@ class WeatherAlertService
         if ($res->failed()) {
             throw new \RuntimeException('Brevo HTTP ' . $res->status() . ': ' . Str::limit($res->body(), 300));
         }
+
+        // Brevo's id for this message: lets you find it in Brevo > Transactional > Logs.
+        return $res->json('messageId');
     }
 
     /** Insert one alert row. Returns null if it already exists (unique key). */

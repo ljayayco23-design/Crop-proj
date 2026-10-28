@@ -39,7 +39,7 @@
         $fmt = fn ($d) => $d ? \Carbon\Carbon::parse($d)->timezone(config('app.timezone'))->format('M j, g:i A') . ' (' . \Carbon\Carbon::parse($d)->diffForHumans() . ')' : 'Never';
         $gateOk = $gate['ok'] ?? false;
         $goLiveMsg = "Go Live?\n\n" . ($sum['would_send'] ?? 0) . ' alert(s) active right now (' . ($sum['farmers_to_email'] ?? 0)
-            . " farmer(s)) will be saved as BASELINE and will NOT be emailed.\n\nFrom then on, only new or updated alerts will be emailed.";
+            . " farmer(s)) will be EMAILED NOW to the farmers in your area and shown on their Recent Alerts card.\n\nFrom then on, new or updated alerts are emailed automatically.";
     @endphp
 
     {{-- STATUS CARDS --}}
@@ -101,6 +101,12 @@
                     <input type="hidden" name="mode" value="live">
                     <button class="btn btn-danger" {{ $gateOk ? '' : 'disabled' }} title="{{ $gateOk ? '' : ($gate['reason'] ?? '') }}"><i class="fas fa-rocket me-2"></i>Go Live</button>
                 </form>
+            @else
+                <form method="POST" action="{{ route('admin.weather_alerts.send') }}"
+                      onsubmit="return confirm('Email the new alerts to the farmers in your area now?');">
+                    @csrf
+                    <button class="btn btn-danger"><i class="fas fa-paper-plane me-2"></i>Send alerts now</button>
+                </form>
             @endif
 
             <form method="POST" action="{{ route('admin.weather_alerts.mode') }}"
@@ -120,7 +126,7 @@
             @endif
         </div>
         <div class="small text-secondary mt-2">
-            Dry-run builds the full list below but sends nothing and shows nothing to farmers. The cron keeps refreshing this preview while in dry-run.
+            Dry-run builds the list below but sends nothing and shows nothing to farmers. Go Live emails the farmers in your area right away and shows the alerts on their Recent Alerts card. While live, "Send alerts now" emails any new alert immediately instead of waiting for the cron.
         </div>
     </div>
 

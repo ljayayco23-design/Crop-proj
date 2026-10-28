@@ -220,7 +220,7 @@ Route::prefix('admin')->middleware(['auth', EnsureUserRole::allow('admin', 'deve
     Route::post('/weather-alerts/run', [AdminWeatherAlertController::class, 'run'])->name('weather_alerts.run');
     Route::post('/weather-alerts/mode', [AdminWeatherAlertController::class, 'setMode'])->name('weather_alerts.mode');
     Route::post('/weather-alerts/test', [AdminWeatherAlertController::class, 'test'])->name('weather_alerts.test');
-
+    Route::post('/weather-alerts/send', [AdminWeatherAlertController::class, 'sendNow'])->name('weather_alerts.send');
 
 
     });
