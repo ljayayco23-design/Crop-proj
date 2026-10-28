@@ -43,40 +43,72 @@ class WeatherAlertService
 
     private float $startedAt = 0;
 
+    // Cron batch state: the global row + every area row run in ONE request,
+    // sharing one time budget and one PAGASA download.
+    private bool $inBatch = false;
+    private ?array $pagasaMemo = null;
+    private array $pagasaMemoNotes = [];
+
     // =====================================================================
-    //  SETTINGS
+    //  SETTINGS  (one row per scope)
+    //    scope = null                                  -> GLOBAL row (developer, all farmers
+    //                                                     not managed by an area admin)
+    //    scope = ['province_id' => X, 'city_id' => Y]  -> AREA row (a normal admin: only the
+    //                                                     farmers of that province + city)
     // =====================================================================
 
-    public function settings(): object
+    /** Scope for an actor: developer = null (global), admin = own province + city. */
+    public function scopeFor(User $actor): ?array
     {
-        $row = DB::table('weather_alert_settings')->first();
+        if ($actor->role === 'developer') return null;
+        if (!$actor->province_id || !$actor->city_id) {
+            throw new \RuntimeException('Your account has no province/city set, so there is no area to send alerts for.');
+        }
+        return ['province_id' => (int) $actor->province_id, 'city_id' => (int) $actor->city_id];
+    }
+
+    private function scopeQuery(?array $scope)
+    {
+        $q = DB::table('weather_alert_settings');
+        if ($scope) {
+            return $q->where('province_id', $scope['province_id'])->where('city_id', $scope['city_id']);
+        }
+        return $q->whereNull('province_id')->whereNull('city_id');
+    }
+
+    public function settings(?array $scope = null): object
+    {
+        $row = $this->scopeQuery($scope)->orderBy('id')->first();
         if (!$row) {
             DB::table('weather_alert_settings')->insert([
-                'mode' => 'dry_run', 'created_at' => now(), 'updated_at' => now(),
+                'mode'        => 'dry_run',
+                'province_id' => $scope['province_id'] ?? null,
+                'city_id'     => $scope['city_id'] ?? null,
+                'created_at'  => now(), 'updated_at' => now(),
             ]);
-            $row = DB::table('weather_alert_settings')->first();
+            $row = $this->scopeQuery($scope)->orderBy('id')->first();
         }
         return $row;
     }
 
-    private function saveSettings(array $data): void
+    private function saveSettings(array $data, ?array $scope = null): void
     {
         DB::table('weather_alert_settings')
-            ->where('id', $this->settings()->id)
+            ->where('id', $this->settings($scope)->id)
             ->update($data + ['updated_at' => now()]);
     }
 
-    public function setMode(string $mode, ?int $userId): void
+    public function setMode(string $mode, ?int $userId, ?array $scope = null): void
     {
         $this->saveSettings([
             'mode' => $mode, 'changed_by' => $userId, 'changed_at' => now(),
-        ]);
+        ], $scope);
     }
 
     /** "Go Live" is only allowed after a complete, recent dry-run. */
-    public function goLiveGate(): array
+    public function goLiveGate(?array $scope = null): array
     {
-        $s = $this->settings();
+        $s = $this->settings($scope);
         if (!$s->last_dry_run_ok_at) {
             return ['ok' => false, 'reason' => 'Run a dry-run first.'];
         }
@@ -91,48 +123,85 @@ class WeatherAlertService
     //  ENTRY POINTS
     // =====================================================================
 
-    /** Called by the cron route. Behaviour depends on the saved mode. */
+    /**
+     * Called by the cron route. Runs the GLOBAL row first, then every AREA row
+     * that a normal admin has switched to live (dry-run area rows are only
+     * refreshed when that admin presses "Run now", to keep the cron fast).
+     */
     public function runCron(): array
     {
-        $s = $this->settings();
+        $this->inBatch = true;
+        $this->pagasaMemo = null;
+        $this->pagasaMemoNotes = [];
+        $this->startedAt = microtime(true);
+
+        try {
+            $result = $this->runCronFor(null);
+
+            $areas = DB::table('weather_alert_settings')
+                ->whereNotNull('province_id')->whereNotNull('city_id')
+                ->whereNotNull('changed_by')
+                ->where('mode', 'live')
+                ->get(['province_id', 'city_id']);
+
+            $areaResults = [];
+            foreach ($areas as $a) {
+                $scope = ['province_id' => (int) $a->province_id, 'city_id' => (int) $a->city_id];
+                try {
+                    $areaResults[] = $scope + $this->runCronFor($scope);
+                } catch (\Throwable $e) {
+                    Log::error('[WeatherCron] area ' . $a->province_id . '/' . $a->city_id . ': ' . $e->getMessage());
+                    $areaResults[] = $scope + ['status' => 'error', 'message' => $e->getMessage()];
+                }
+            }
+            return $result + ['areas' => $areaResults];
+        } finally {
+            $this->inBatch = false;
+            $this->pagasaMemo = null;
+        }
+    }
+
+    private function runCronFor(?array $scope): array
+    {
+        $s = $this->settings($scope);
 
         if ($s->mode === 'off') {
             return ['status' => 'off', 'mode' => 'off', 'message' => 'Weather alerts are switched off.'];
         }
 
-        $plan = $this->buildPlan();
+        $plan = $this->buildPlan($scope);
 
         if ($s->mode === 'live') {
             $result = $this->dispatchPlan($plan);
-            $this->savePreview($plan, 'live', $result);
+            $this->savePreview($plan, 'live', $result, $scope);
             $this->saveSettings([
                 'last_run_at' => now(), 'last_run_mode' => 'live',
                 'last_error'  => $plan['errors'] ? implode(' | ', $plan['errors']) : null,
-            ]);
+            ], $scope);
             return ['status' => 'success', 'mode' => 'live', 'summary' => $plan['summary'], 'dispatch' => $result, 'errors' => $plan['errors']];
         }
 
         // dry_run
-        $this->savePreview($plan, 'dry_run');
+        $this->savePreview($plan, 'dry_run', [], $scope);
         $this->saveSettings([
             'last_run_at' => now(), 'last_run_mode' => 'dry_run',
             'last_dry_run_ok_at' => $plan['complete'] ? now() : $s->last_dry_run_ok_at,
             'last_error' => $plan['errors'] ? implode(' | ', $plan['errors']) : null,
-        ]);
+        ], $scope);
         return ['status' => 'success', 'mode' => 'dry_run', 'summary' => $plan['summary'], 'errors' => $plan['errors']];
     }
 
     /** Admin "Run now (dry-run)". Never sends, whatever the current mode is. */
-    public function runDry(): array
+    public function runDry(?array $scope = null): array
     {
-        $plan = $this->buildPlan();
-        $this->savePreview($plan, 'dry_run');
-        $s = $this->settings();
+        $plan = $this->buildPlan($scope);
+        $this->savePreview($plan, 'dry_run', [], $scope);
+        $s = $this->settings($scope);
         $this->saveSettings([
             'last_run_at' => now(), 'last_run_mode' => 'dry_run',
             'last_dry_run_ok_at' => $plan['complete'] ? now() : $s->last_dry_run_ok_at,
             'last_error' => $plan['errors'] ? implode(' | ', $plan['errors']) : null,
-        ]);
+        ], $scope);
         return $plan;
     }
 
@@ -141,16 +210,16 @@ class WeatherAlertService
      * "baselined" row (shown on the farmer's card, but NOT emailed). Only alerts
      * that are new or updated after this moment can trigger an email.
      */
-    public function goLive(?int $userId): array
+    public function goLive(?int $userId, ?array $scope = null): array
     {
-        $gate = $this->goLiveGate();
+        $gate = $this->goLiveGate($scope);
         if (!$gate['ok']) {
             return ['ok' => false, 'message' => $gate['reason']];
         }
 
-        $plan = $this->buildPlan();
+        $plan = $this->buildPlan($scope);
         if (!$plan['complete']) {
-            $this->savePreview($plan, 'dry_run');
+            $this->savePreview($plan, 'dry_run', [], $scope);
             return ['ok' => false, 'message' => 'Could not read every source just now (' . implode(' | ', array_merge($plan['errors'], $plan['notes'])) . '). Nothing was changed. Try again.'];
         }
 
@@ -166,7 +235,7 @@ class WeatherAlertService
             'mode' => 'live', 'live_since' => now(),
             'changed_by' => $userId, 'changed_at' => now(),
             'last_run_at' => now(), 'last_run_mode' => 'go_live',
-        ]);
+        ], $scope);
 
         return ['ok' => true, 'baselined' => $baselined, 'message' => "Live. {$baselined} alert(s) active right now were saved as baseline (no email). Only new or updated alerts will be emailed from here."];
     }
@@ -175,16 +244,39 @@ class WeatherAlertService
     //  PLAN BUILDER  (read-only: no emails, no alert rows)
     // =====================================================================
 
-    public function buildPlan(): array
+    public function buildPlan(?array $scope = null): array
     {
-        $this->startedAt = microtime(true);
+        if (!$this->inBatch) {
+            $this->startedAt = microtime(true);
+        }
         $errors = [];
         $notes  = [];
 
-        $farmers = User::with('province')
+        $farmerQuery = User::with('province')
             ->where('role', 'farmer')
-            ->where('status', 'approved')
-            ->get();
+            ->where('status', 'approved');
+
+        if ($scope) {
+            // Area row (normal admin): only farmers of that province + city.
+            $farmerQuery->where('province_id', $scope['province_id'])
+                        ->where('city_id', $scope['city_id']);
+        } else {
+            // Global row (developer): skip areas a normal admin manages on their own
+            // (an area row someone has explicitly set), so the admin's Live / Dry-run / Off
+            // choice for their own farmers is respected.
+            $managed = DB::table('weather_alert_settings')
+                ->whereNotNull('province_id')->whereNotNull('city_id')
+                ->whereNotNull('changed_by')
+                ->get(['province_id', 'city_id']);
+            if ($managed->isNotEmpty()) {
+                $farmerQuery->where(function ($q) use ($managed) {
+                    foreach ($managed as $m) {
+                        $q->whereRaw('NOT (province_id <=> ? AND city_id <=> ?)', [$m->province_id, $m->city_id]);
+                    }
+                });
+            }
+        }
+        $farmers = $farmerQuery->get();
 
         $targetsByUser = [];
         $withoutPin = 0;
@@ -198,7 +290,18 @@ class WeatherAlertService
         // ---------------- Layer 1: PAGASA ----------------
         $alerts = [];
         try {
-            $alerts = $this->loadPagasaAlerts($notes);
+            if ($this->inBatch && $this->pagasaMemo !== null) {
+                $alerts = $this->pagasaMemo;
+                $notes  = array_merge($notes, $this->pagasaMemoNotes);
+            } else {
+                $alertNotes = [];
+                $alerts = $this->loadPagasaAlerts($alertNotes);
+                $notes  = array_merge($notes, $alertNotes);
+                if ($this->inBatch) {
+                    $this->pagasaMemo = $alerts;
+                    $this->pagasaMemoNotes = $alertNotes;
+                }
+            }
         } catch (\Throwable $e) {
             $errors[] = 'PAGASA feed: ' . $e->getMessage();
             Log::warning('[WeatherAlert] PAGASA load failed: ' . $e->getMessage());
@@ -409,7 +512,7 @@ class WeatherAlertService
     //  PREVIEW STORAGE
     // =====================================================================
 
-    private function savePreview(array $plan, string $mode, array $dispatch = []): void
+    private function savePreview(array $plan, string $mode, array $dispatch = [], ?array $scope = null): void
     {
         $items = array_map(function ($i) {
             unset($i['body'], $i['instruction'], $i['compete_key'], $i['rank']);
@@ -427,7 +530,7 @@ class WeatherAlertService
             'items'        => $items,
         ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
-        $this->saveSettings(['last_preview' => $json]);
+        $this->saveSettings(['last_preview' => $json], $scope);
     }
 
     // =====================================================================
@@ -948,7 +1051,9 @@ class WeatherAlertService
 
     private function overBudget(): bool
     {
-        return (microtime(true) - $this->startedAt) > self::TIME_BUDGET_SECONDS;
+        // A cron batch (global + several areas) shares one budget, still under the 90s limit.
+        $budget = $this->inBatch ? 75 : self::TIME_BUDGET_SECONDS;
+        return (microtime(true) - $this->startedAt) > $budget;
     }
 
     private function loadXml(string $body): ?\SimpleXMLElement

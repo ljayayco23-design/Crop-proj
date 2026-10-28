@@ -8,6 +8,16 @@
         <div>
             <h3 class="fw-bold text-white mb-0"><i class="fas fa-cloud-bolt text-info me-2"></i>Weather Alerts</h3>
             <small class="text-secondary">Official PAGASA advisories + forecast-based risk, matched to each farmer's pins.</small>
+            <div class="mt-1">
+                <span class="badge bg-info text-dark"><i class="fas fa-location-dot me-1"></i>Scope: {{ $scopeLabel ?? '' }}</span>
+                <small class="text-secondary ms-1">
+                    @if($isDeveloper ?? false)
+                        Applies to all farmers except areas whose admin manages alerts on their own.
+                    @else
+                        Live / Dry-run / Off and emails apply only to approved farmers in your province and city.
+                    @endif
+                </small>
+            </div>
         </div>
     </div>
 

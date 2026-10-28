@@ -17,77 +17,39 @@ class AdminWeatherAlertController extends Controller
     }
 
     /**
-     * Approved farmers this actor may see/notify.
-     *   - developer -> every approved farmer
-     *   - admin     -> only farmers in the admin's own Province + City
-     *                  (same scoping as AdminUserController@userLog and
-     *                  AdminFieldAnalyticsController).
+     * The settings "scope" of the signed-in actor.
+     *   - developer -> null  (GLOBAL row: every farmer not managed by an area admin)
+     *   - admin     -> own Province + City (their OWN row: mode, baseline, dry-run
+     *                  gate and preview are independent from every other area).
+     * Same area rule as AdminUserController@userLog and AdminFieldAnalyticsController.
      */
-    private function scopedFarmers()
+    private function scope(WeatherAlertService $svc): ?array
     {
-        $actor = Auth::user();
-
-        return User::where('role', 'farmer')
-            ->where('status', 'approved')
-            ->when(!$this->isDeveloper(), fn ($q) => $q->where('province_id', $actor->province_id)
-                                                       ->where('city_id', $actor->city_id));
-    }
-
-    /**
-     * The saved preview is computed for ALL farmers (the service and the cron
-     * are global). A normal admin only gets the rows for farmers in their own
-     * area, and the summary numbers are recomputed from those rows.
-     */
-    private function scopePreview(?array $preview): ?array
-    {
-        if (!$preview || $this->isDeveloper()) {
-            return $preview;
-        }
-
-        $farmers = $this->scopedFarmers()->get(['id', 'email']);
-        $ids     = $farmers->pluck('id')->map(fn ($v) => (int) $v)->all();
-        $emails  = $farmers->pluck('email')->filter()->map(fn ($e) => strtolower($e))->all();
-
-        $items = collect($preview['items'] ?? [])->filter(function ($it) use ($ids, $emails) {
-            if (isset($it['user_id'])) {
-                return in_array((int) $it['user_id'], $ids, true);
-            }
-            $email = strtolower((string) ($it['email'] ?? ''));
-            return $email !== '' && in_array($email, $emails, true);
-        })->values();
-
-        $send = $items->where('action', 'send');
-
-        $preview['items'] = $items->all();
-        $preview['summary'] = array_merge($preview['summary'] ?? [], [
-            'would_send'       => $send->count(),
-            'farmers_to_email' => $send->map(fn ($it) => $it['user_id'] ?? strtolower((string) ($it['email'] ?? $it['user_name'] ?? '')))->unique()->count(),
-            'farmers_total'    => count($ids),
-        ]);
-
-        // Dispatch stats of a live run are global, so hide them from admins.
-        unset($preview['dispatch']);
-
-        return $preview;
+        return $svc->scopeFor(Auth::user());
     }
 
     public function index(WeatherAlertService $svc)
     {
+        $isDeveloper = $this->isDeveloper();
+
         try {
-            $settings = $svc->settings();
+            $scope    = $this->scope($svc);
+            $settings = $svc->settings($scope);
         } catch (\Throwable $e) {
             return view('admin.weather_alerts', [
-                'setupError'  => 'The weather alert tables are missing. Run the migration first (php artisan migrate). ' . $e->getMessage(),
-                'isDeveloper' => $this->isDeveloper(),
+                'setupError'  => $e instanceof \RuntimeException
+                    ? $e->getMessage()
+                    : 'The weather alert tables are missing or outdated. Run the migration first (php artisan migrate). ' . $e->getMessage(),
+                'isDeveloper' => $isDeveloper,
             ]);
         }
 
-        $actor       = Auth::user();
-        $isDeveloper = $this->isDeveloper();
+        $actor = Auth::user();
 
+        // The preview is already built for this scope only (see WeatherAlertService::buildPlan),
+        // so no extra filtering is needed here.
         $preview   = $settings->last_preview ? json_decode($settings->last_preview, true) : null;
-        $preview   = $this->scopePreview($preview);
-        $gate      = $svc->goLiveGate();
+        $gate      = $svc->goLiveGate($scope);
         $changer   = $settings->changed_by ? User::find($settings->changed_by) : null;
         $changedBy = $changer ? ($changer->full_name ?? $changer->name) : null;
 
@@ -109,14 +71,12 @@ class AdminWeatherAlertController extends Controller
     {
         @set_time_limit(90);
         try {
-            $plan = $svc->runDry();
+            $plan = $svc->runDry($this->scope($svc));
         } catch (\Throwable $e) {
             return back()->with('error', 'Dry-run failed: ' . $e->getMessage());
         }
 
-        // Report only the numbers this actor is allowed to see.
-        $scoped = $this->scopePreview(['items' => $plan['items'] ?? [], 'summary' => $plan['summary'] ?? []]);
-        $s = $scoped['summary'] ?? $plan['summary'];
+        $s = $plan['summary'];
 
         $msg = "Dry-run finished: {$s['would_send']} alert(s) would be sent to {$s['farmers_to_email']} farmer(s).";
         if (!$plan['complete']) {
@@ -127,16 +87,12 @@ class AdminWeatherAlertController extends Controller
 
     /**
      * Switch mode: live (with baseline), dry_run (kill switch) or off.
-     * The mode and baseline are GLOBAL (one settings row, one cron for every
-     * farmer), so only the developer may change them. A normal admin changing
-     * it would switch emailing on/off for farmers outside their area.
+     * Each actor switches ONLY their own scope: a normal admin controls the
+     * farmers of their own Province + City; the developer controls the global
+     * row (all farmers outside areas an admin manages).
      */
     public function setMode(Request $request, WeatherAlertService $svc)
     {
-        if (!$this->isDeveloper()) {
-            abort(403, 'Only the developer can change the weather alert mode.');
-        }
-
         $mode = $request->input('mode');
         if (!in_array($mode, ['live', 'dry_run', 'off'], true)) {
             return back()->with('error', 'Invalid mode.');
@@ -144,11 +100,13 @@ class AdminWeatherAlertController extends Controller
 
         @set_time_limit(90);
         try {
+            $scope = $this->scope($svc);
+
             if ($mode === 'live') {
-                $result = $svc->goLive(Auth::id());
+                $result = $svc->goLive(Auth::id(), $scope);
                 return back()->with($result['ok'] ? 'success' : 'error', $result['message']);
             }
-            $svc->setMode($mode, Auth::id());
+            $svc->setMode($mode, Auth::id(), $scope);
         } catch (\Throwable $e) {
             return back()->with('error', 'Could not change mode: ' . $e->getMessage());
         }
@@ -166,10 +124,13 @@ class AdminWeatherAlertController extends Controller
             return back()->with('error', 'Your account has no email address.');
         }
 
-        $settings = $svc->settings();
-        $preview  = $settings->last_preview ? json_decode($settings->last_preview, true) : null;
-        $preview  = $this->scopePreview($preview);
-        $sample   = null;
+        try {
+            $settings = $svc->settings($this->scope($svc));
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Test email failed: ' . $e->getMessage());
+        }
+        $preview = $settings->last_preview ? json_decode($settings->last_preview, true) : null;
+        $sample  = null;
         foreach (($preview['items'] ?? []) as $i) {
             if (($i['action'] ?? '') === 'send') { $sample = $i; break; }
         }
