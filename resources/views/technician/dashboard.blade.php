@@ -2,66 +2,9 @@
 @section('title', 'Technician Dashboard • RICEGUARD AI')
 
 @php
-    // Fetch dashboard statistics dynamically
-    $actor = Auth::user();
-
-    $totalFarmers = DB::table('users')->where('role', 'farmer')->count();
-    $totalDetections = DB::table('user_detections')->count();
-    $knowledgeEntries = DB::table('treatment_records')->count();
-
-    // Fetch all approved farmers with coordinates for the map, including
-    // each farmer's additional field plots (users.additional_farms) so the
-    // map shows every field a farmer has registered, not just their one
-    // main pin. barangay_id is included so the "View Assigned Area" button
-    // can filter these down to just the farmers inside this technician's
-    // assigned barangay(s).
-    $allFarms = DB::table('users')
-        ->where('role', 'farmer')
-        ->where('status', 'approved')
-        ->whereNotNull('latitude')
-        ->whereNotNull('longitude')
-        ->select('id', 'farm_name', 'farm_size', 'latitude', 'longitude', 'additional_farms', 'barangay_id')
-        ->get()
-        ->map(function ($farm) {
-            $farm->additional_farms = json_decode($farm->additional_farms ?? '[]', true) ?: [];
-            return $farm;
-        });
-
-    // "Reports" card: this technician's review queue — same barangay-based
-    // scope FarmerReportController@technicianQuery uses, so the number here
-    // always matches what they see on the Reports page.
-    $assignedBarangayIds = \App\Models\Assignment::active()
-        ->where('user_id', $actor->id)
-        ->where('user_type', 'technician')
-        ->pluck('barangay_id');
-
-    // Human-readable version of the same assigned area, for the "Active
-    // Field Locations & Assigned Area" card — this is the technician's
-    // real coverage area from Assignment Management, NOT their own
-    // registration province/city.
-    $assignedAreaLabel = \App\Models\Barangay::whereIn('id', $assignedBarangayIds)
-        ->pluck('name')
-        ->implode(', ');
-
-    $reportsCount = \App\Models\FarmerReport::whereHas('farmer', function ($q) use ($assignedBarangayIds) {
-        $q->whereIn('barangay_id', $assignedBarangayIds);
-    })->count();
-
-    // "Assignments" card: how many barangays this technician is actively
-    // assigned to.
-    $assignmentsCount = \App\Models\Assignment::active()
-        ->where('user_id', $actor->id)
-        ->where('user_type', 'technician')
-        ->count();
-
-    // The technician's OWN map pin. Falls back to the Sagay City center
-    // only when this technician has no registered coordinates yet, so the
-    // map always has somewhere sensible to sit — but whenever real
-    // coordinates exist, this is what gets plotted as "you are here" on
-    // the map, together with the farmer pins.
-    $techLat = $actor->latitude ?? 10.8986;
-    $techLng = $actor->longitude ?? 123.4143;
-    $techHasOwnLocation = !is_null($actor->latitude) && !is_null($actor->longitude);
+    // All numbers, farmer pins and the assigned-area label are computed in
+    // TechnicianController@dashboard and already limited to this
+    // technician's assigned barangay(s). Nothing is queried here.
 @endphp
 
 @section('content')
@@ -71,6 +14,12 @@
     #dashboard-map { height: 100% !important; width: 100% !important; position: absolute; top:0; left:0;}
     .custom-clean-tooltip { background: #161b22 !important; border: 1px solid #334155 !important; color: white !important; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5) !important; border-radius: 8px !important; opacity: 1 !important; }
     .custom-clean-tooltip::before { border-top-color: #334155 !important; }
+    /* Leaflet tooltips default to white-space: nowrap, so the long address text ran past the border. Let it wrap inside the box. */
+    .custom-clean-tooltip { white-space: normal !important; width: max-content; max-width: 260px; box-sizing: border-box; padding: 6px 8px !important; }
+    .custom-clean-tooltip div, .custom-clean-tooltip strong, .custom-clean-tooltip span { white-space: normal; word-break: break-word; overflow-wrap: anywhere; }
+    /* Leaflet tooltips default to white-space:nowrap, so long addresses ran past the border. Let them wrap inside it. */
+    .custom-clean-tooltip { white-space: normal !important; width: max-content; max-width: 260px; box-sizing: border-box; padding: 6px 8px !important; }
+    .custom-clean-tooltip div, .custom-clean-tooltip strong, .custom-clean-tooltip span { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
     .farmer-pin-icon i { color: #0ea5e9; font-size: 28px; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.8)); }
     .prodigy-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; }
     .list-hover-item:hover { border-color: #3b82f6 !important; background: rgba(59, 130, 246, 0.1); }
@@ -156,7 +105,7 @@
     <div class="col-xl-6 col-lg-4">
         <div class="prodigy-card h-100 p-0 overflow-hidden d-flex flex-column">
             <div class="bg-dark border-bottom border-secondary p-3 d-flex justify-content-between align-items-center">
-                <h6 class="mb-0 fw-bold text-white"><i class="fa-solid fa-map-location-dot text-info me-2"></i> Global Farmers Map</h6>
+                <h6 class="mb-0 fw-bold text-white"><i class="fa-solid fa-map-location-dot text-info me-2"></i> Assigned Area Farmers Map</h6>
                 <select id="dashboard-map-style" onchange="switchDashboardMapStyle(this.value)" class="form-select form-select-sm bg-dark text-white border-secondary" style="width: 130px; font-size: 0.75rem;">
                     <option value="hybrid">Satellite</option>
                     <option value="streets">Streets</option>
@@ -269,7 +218,7 @@ if (techHasOwnLocation) {
     });
     window.techMarker = L.marker([techLat, techLng], { icon: techIcon }).addTo(dashMap);
     window.techMarker.bindTooltip(`
-        <div style="text-align:left; max-width: 220px; font-family: system-ui, sans-serif; padding: 4px;">
+        <div style="text-align:left; max-width: 100%; font-family: system-ui, sans-serif; padding: 0;">
             <strong style="color:#0ea5e9; font-size: 13px; display:block; margin-bottom:2px;">
                 <i class="fa-solid fa-user-cog me-1"></i> {{ Auth::user()->full_name }} (You)
             </strong>
@@ -287,7 +236,7 @@ function attachAddressTooltip(marker, lat, lng, farmNameStr, farmSizeStr, colorH
         .then(data => {
             const exactLocation = (data && data.display_name) ? data.display_name : "Address not registered";
             marker.bindTooltip(`
-                <div style="text-align:left; max-width: 240px; font-family: system-ui, sans-serif; padding: 4px;">
+                <div style="text-align:left; max-width: 100%; font-family: system-ui, sans-serif; padding: 0;">
                     <strong style="color: ${colorHex}; font-size: 13px; display:block; margin-bottom:2px;"><i class="fa-solid fa-tractor me-1"></i> ${farmNameStr}</strong>
                     <span style="font-size: 11px; color: #fff; display:block; margin-bottom:4px;">📐 Area: <b>${farmSizeStr} ha</b></span>
                     <div style="border-top: 1px solid #444; padding-top: 4px; font-size: 10px; color: #bbb; line-height: 1.3;">
@@ -356,7 +305,7 @@ if (allFarmsData.length > 0) {
 
             const marker = L.marker([pLat, pLng], { icon: plotIcon }).addTo(dashMap);
             marker.bindTooltip(`
-                <div style="text-align:left; max-width: 220px; font-family: system-ui, sans-serif; padding: 4px;">
+                <div style="text-align:left; max-width: 100%; font-family: system-ui, sans-serif; padding: 0;">
                     <strong style="color: #10b981; font-size: 13px; display:block; margin-bottom:2px;"><i class="fa-solid fa-map-pin me-1"></i> ${plotName}</strong>
                     <span style="font-size: 11px; color: #fff; display:block;">📐 Area: <b>${plotSize} ha</b></span>
                 </div>
@@ -381,6 +330,9 @@ if (allFarmsData.length > 0) {
         const group = new L.featureGroup(markers);
         dashMap.fitBounds(group.getBounds(), { padding: [30, 30], maxZoom: 15 });
     }
+} else if (window.techMarker) {
+    // No farmers in the assigned area (or no assignment yet): just centre on the technician.
+    dashMap.setView(window.techMarker.getLatLng(), 14);
 }
 
 // Triggered by the "View Assigned Area" button. Fits the map to the

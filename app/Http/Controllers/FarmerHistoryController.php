@@ -959,6 +959,69 @@ JSON format:
         }
     }
 
+    /**
+     * Groq may now name classes outside the 23 YOLO classes. This keeps that
+     * safe: the key is cleaned into a stable lowercase snake_case string (so
+     * History groups repeat scans of the same new problem together), common
+     * legacy spellings of a KNOWN class are mapped back to the canonical key,
+     * and is_pest / class_name are guaranteed to be present. Known classes and
+     * the "Unrelated Image" case (empty class_key) pass through unchanged.
+     */
+    private function normalizeGroqClassResult(array $parsed): array
+    {
+        $clean = function ($v) {
+            $v = strtolower(trim((string) $v));
+            return trim(preg_replace('/[^a-z0-9]+/', '_', $v), '_');
+        };
+
+        $valid = $this->getValidKeys();
+        $known = array_merge($valid['disease'], $valid['pest']);
+        $aliases = [
+            'rice_gall_midge'   => 'rice_gall_midg',
+            'snail'             => 'applesnail_eggs',
+            'apple_snail_eggs'  => 'applesnail_eggs',
+            'healthy'           => 'healthy_rice_plant',
+            'healthy_rice'      => 'healthy_rice_plant',
+        ];
+
+        $key = $clean($parsed['class_key'] ?? '');
+
+        // Groq flagged this photo as not a rice plant / disease / pest (trees,
+        // objects, people ...). Normalise every way it might say so into ONE
+        // clear signal (empty class_key + not_rice = true) so the page can show
+        // its friendly "not a rice photo" panel instead of an error.
+        $unrelatedKeys = ['unrelated_image', 'unrelated', 'not_rice', 'non_rice', 'no_rice', 'none', 'unknown', 'random', 'other', 'others', 'n_a', 'na'];
+        $nameKeyForCheck = $clean($parsed['class_name'] ?? '');
+        if ($key === '' || in_array($key, $unrelatedKeys, true)
+            || in_array($nameKeyForCheck, ['unrelated_image', 'unrelated', 'not_rice', 'non_rice'], true)) {
+            $parsed['class_key'] = '';
+            $parsed['is_pest'] = false;
+            $parsed['not_rice'] = true;
+            return $parsed;
+        }
+
+        if ($key !== '' && !in_array($key, $known, true)) {
+            $nameKey = $clean($parsed['class_name'] ?? '');
+            if (isset($aliases[$key])) {
+                $key = $aliases[$key];
+            } elseif (in_array($nameKey, $known, true)) {
+                $key = $nameKey;
+            } elseif (isset($aliases[$nameKey])) {
+                $key = $aliases[$nameKey];
+            }
+        }
+        $key = rtrim(substr($key, 0, 60), '_');
+        $parsed['class_key'] = $key;
+
+        $parsed['is_pest'] = filter_var($parsed['is_pest'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+        if ($key !== '' && trim((string) ($parsed['class_name'] ?? '')) === '') {
+            $parsed['class_name'] = ucwords(str_replace('_', ' ', $key));
+        }
+
+        return $parsed;
+    }
+
     public function analyzeImageWithGroq(Request $request)
     {
         ini_set('max_execution_time', 120);
@@ -994,7 +1057,7 @@ JSON format:
 $prompt = "You are an expert senior agronomist and crop pathologist. Perform a rigorous, detail-oriented visual analysis of the provided image.
 
         CRITICAL REJECTION RULE (NON-PADDY IMAGES):
-        First, verify if the image actually contains a rice (paddy) plant, rice disease, or rice pest. If the image is unrelated (e.g., human faces, animals, vehicles, landscapes, different crops, or random objects), you MUST reject it by outputting exactly this:
+        First, verify if the image actually contains a rice (paddy) plant, rice disease symptoms, or a rice pest (insect, snail eggs, or its feeding damage on a rice plant). A real rice problem that is not in the hint lists below is still VALID and must be diagnosed, not rejected. But if the image is unrelated (e.g., human faces, people, animals that are not rice pests, vehicles, buildings, food, screens, trees, grass, weeds, ornamental plants, other crops such as corn or sugarcane, landscapes with no identifiable rice plant, or random objects), you MUST reject it and you MUST NOT guess a disease or pest for it by outputting exactly this:
         - \"class_name\": \"Unrelated Image\"
         - \"class_key\": \"\" (You MUST leave this strictly empty)
         - \"is_pest\": false
@@ -1015,7 +1078,10 @@ $prompt = "You are an expert senior agronomist and crop pathologist. Perform a r
         You MUST generate the content values for 'description', 'treatments', 'causes', 'nutrient_deficiency', 'grain_damage', 'pest_damage', 'prevention', and 'natural_enemies' strictly in the {$language} language. The JSON keys themselves MUST remain in English.
 
         CRITICAL NAMING RULE:
-        If you detect one of these diseases: [{$diseaseKeys}] or pests: [{$pestKeys}], you MUST use the exact key string provided for 'class_key'. Do not invent a variation.
+        The lists below are only HINTS for the most common cases. They are NOT the only things you may report.
+        - If what you see matches one of these diseases: [{$diseaseKeys}] or pests: [{$pestKeys}], you MUST use the exact key string provided for 'class_key'. Do not invent a variation of a listed key.
+        - If it is a real rice disease, pest, or crop disorder that is NOT in those lists, do NOT force it into the closest listed class. Identify it honestly, set 'class_key' to a new lowercase English snake_case key (letters, digits and underscores only, for example rice_blast_collar) and set 'class_name' to its common English name. Always use the same stable key for the same problem. Set 'is_pest' to true only for insects, snails, eggs or other animals.
+        - Only use the Unrelated Image rejection when the photo is truly not a rice plant, rice disease, or rice pest.
 
         CRITICAL FIELD-USAGE RULE (DISEASE VS. PEST DAMAGE):
         - 'grain_damage' describes how a DISEASE affects the grain/panicle (e.g., chalky or empty grains from a fungal or bacterial disease). Use \"—\" for this field when 'is_pest' is true.
@@ -1094,10 +1160,11 @@ $response = Http::withoutVerifying()
                         $parsedData = json_decode($jsonString, true);
 
                         // If it parses cleanly, return the success payload
-                        if (json_last_error() === JSON_ERROR_NONE && isset($parsedData['class_key'])) {
+                        if (json_last_error() === JSON_ERROR_NONE && (array_key_exists('class_key', $parsedData) || isset($parsedData['class_name']))) {
                             // Reuse / store Groq knowledge per (class, dialect) so the
                             // same class + dialect always shows the same info, and the
                             // admin can edit it in Knowledge Management.
+                            $parsedData = $this->normalizeGroqClassResult($parsedData);
                             $parsedData = $this->applySavedGroqKnowledge($parsedData, $language);
                             return response()->json(['success' => true, 'data' => $parsedData]);
                         }

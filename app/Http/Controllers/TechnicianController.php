@@ -29,26 +29,63 @@ class TechnicianController extends Controller
 
     public function dashboard()
     {
-        $barangayIds = $this->assignedBarangayIds();
+        $actor = Auth::user();
+        $assignedBarangayIds = $this->assignedBarangayIds();
 
-        // Both metrics scoped to this technician's own assigned
-        // barangay(s) only — previously these were global counts across
-        // every farmer/detection in the system, regardless of area.
+        // Every farmer-related number/pin below is limited to the
+        // barangay(s) the admin assigned to THIS technician. No active
+        // assignment = empty id list = zero farmers (never "everyone").
         $totalFarmers = DB::table('users')
             ->where('role', 'farmer')
-            ->whereIn('barangay_id', $barangayIds)
+            ->whereIn('barangay_id', $assignedBarangayIds)
             ->count();
 
         $totalDetections = DB::table('user_detections')
-            ->whereIn('user_id', function ($q) use ($barangayIds) {
+            ->whereIn('user_id', function ($q) use ($assignedBarangayIds) {
                 $q->select('id')
                   ->from('users')
                   ->where('role', 'farmer')
-                  ->whereIn('barangay_id', $barangayIds);
+                  ->whereIn('barangay_id', $assignedBarangayIds);
             })
             ->count();
 
-        return view('technician.dashboard', compact('totalFarmers', 'totalDetections'));
+        // Shared knowledge base — not farmer data, so it stays global.
+        $knowledgeEntries = DB::table('treatment_records')->count();
+
+        // Reports queue (same scope as the Reports page).
+        $reportsCount = \App\Models\FarmerReport::whereHas('farmer', function ($q) use ($assignedBarangayIds) {
+            $q->whereIn('barangay_id', $assignedBarangayIds);
+        })->count();
+
+        $assignmentsCount = $assignedBarangayIds->count();
+
+        $assignedAreaLabel = \App\Models\Barangay::whereIn('id', $assignedBarangayIds)
+            ->pluck('name')
+            ->implode(', ');
+
+        // Map pins: ONLY approved farmers inside the assigned barangay(s).
+        $allFarms = DB::table('users')
+            ->where('role', 'farmer')
+            ->where('status', 'approved')
+            ->whereIn('barangay_id', $assignedBarangayIds)
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->select('id', 'farm_name', 'farm_size', 'latitude', 'longitude', 'additional_farms', 'barangay_id')
+            ->get()
+            ->map(function ($farm) {
+                $farm->additional_farms = json_decode($farm->additional_farms ?? '[]', true) ?: [];
+                return $farm;
+            });
+
+        $techLat = $actor->latitude ?? 10.8986;
+        $techLng = $actor->longitude ?? 123.4143;
+        $techHasOwnLocation = !is_null($actor->latitude) && !is_null($actor->longitude);
+
+        return view('technician.dashboard', compact(
+            'totalFarmers', 'totalDetections', 'knowledgeEntries', 'reportsCount',
+            'assignmentsCount', 'assignedBarangayIds', 'assignedAreaLabel', 'allFarms',
+            'techLat', 'techLng', 'techHasOwnLocation'
+        ));
     }
 
     public function records()

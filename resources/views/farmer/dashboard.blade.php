@@ -4,28 +4,60 @@
 @php
     $user = Auth::user();
     $user_id = $user->id;
-    $total_detections = DB::table('user_detections')->where('user_id', $user_id)->count();
-    $affected = DB::table('user_detections')->where('user_id', $user_id)->where('class_key', 'not like', '%healthy%')->count();
-    $healthy = DB::table('user_detections')->where('user_id', $user_id)->where('class_key', 'like', '%healthy%')->count();
+    // ONE query for the card numbers so Total = Healthy + Affected always adds up.
+    // (Every row in user_detections is one saved scan — same thing History lists.)
+    $stats = DB::table('user_detections')->where('user_id', $user_id)
+        ->selectRaw("COUNT(*) as total, COALESCE(SUM(CASE WHEN class_key LIKE '%healthy%' THEN 1 ELSE 0 END), 0) as healthy")
+        ->first();
+    $total_detections = (int) ($stats->total ?? 0);
+    $healthy  = (int) ($stats->healthy ?? 0);
+    $affected = $total_detections - $healthy;
     $recent = DB::table('user_detections')->where('user_id', $user_id)->orderBy('created_at', 'desc')->limit(5)->get();
+
+    // Same display names History uses, so "rice_gall_midg" reads "Rice Gall Midge".
+    $classNames = [
+        'healthy_rice_plant' => 'Healthy Rice Plant', 'bacterial_leaf_blight' => 'Bacterial Leaf Blight',
+        'bacterial_leaf_streak' => 'Bacterial Leaf Streak', 'brown_spot' => 'Brown Spot',
+        'downy_mildew' => 'Downy Mildew', 'leaf_blast' => 'Leaf Blast', 'rice_false_smut' => 'Rice False Smut',
+        'sheath_blight' => 'Sheath Blight', 'tungro_virus' => 'Tungro Virus',
+        'applesnail_eggs' => 'Apple Snail Eggs', 'brown_planthopper' => 'Brown Planthopper',
+        'dead_heart' => 'Dead Heart', 'green_leafhopper' => 'Green Leafhopper', 'leaf_folders' => 'Leaf Folders',
+        'leafhopper' => 'Leafhopper', 'rice_bug' => 'Rice Bug', 'rice_gall_midg' => 'Rice Gall Midge',
+        'rice_hispa' => 'Rice Hispa', 'rice_leaf_roller' => 'Rice Leaf Roller', 'rice_stem_borer' => 'Rice Stem Borer',
+        'rice_thrips' => 'Rice Thrips', 'rice_water_weevil' => 'Rice Water Weevil', 'whorl_maggot' => 'Whorl Maggot',
+    ];
+    $prettyClass = fn ($k) => $classNames[strtolower(trim((string) $k))] ?? ucwords(str_replace('_', ' ', (string) $k));
 
     // Field Map context extracted dynamically within view layer
     $userLat  = $user->latitude;
     $userLng  = $user->longitude;
-    $farmName = $user->farm_name ?? ($user->full_name . "'s Farm");
+    $farmName = $user->farm_name ?: ($user->full_name . "'s Farm");
     $farmSize = $user->farm_size;
 
-    $otherFarms = DB::table('users')->where('role', 'farmer')
+    // additional_farms may arrive as an array (cast) or a raw JSON string.
+    $toPlots = function ($v) {
+        if (is_string($v)) { $v = json_decode($v, true); }
+        return is_array($v) ? array_values($v) : [];
+    };
+    $ownExtraFarms = $toPlots($user->additional_farms ?? []);
+
+    // Neighbouring farms — same rule as the Field Map page (approved farmers with a pin),
+    // plus the owner's barangay/city/province as a fallback address line.
+    $otherFarms = \App\Models\User::with(['province', 'city', 'barangay'])
+        ->where('role', 'farmer')
         ->where('status', 'approved')
         ->where('id', '!=', $user_id)
         ->whereNotNull('latitude')
         ->whereNotNull('longitude')
-        ->select('farm_name', 'farm_size', 'latitude', 'longitude', 'additional_farms')
         ->get()
-        ->map(function ($farm) {
-            $farm->additional_farms = json_decode($farm->additional_farms ?? '[]', true) ?: [];
-            return $farm;
-        });
+        ->map(fn ($f) => [
+            'farm_name'        => $f->farm_name,
+            'farm_size'        => $f->farm_size,
+            'latitude'         => $f->latitude,
+            'longitude'        => $f->longitude,
+            'address'          => collect([optional($f->barangay)->name, optional($f->city)->name, optional($f->province)->name])->filter()->implode(', '),
+            'additional_farms' => $toPlots($f->additional_farms ?? []),
+        ])->values();
 
     // "Reports" card: this farmer's own submitted reports, same as what
     // they'd see on their own Reports page (FarmerReportController@farmerIndex).
@@ -37,10 +69,22 @@
 <style>
     .dashboard-map-wrapper { position: relative; height: 100%; min-height: 380px; width: 100%; border-radius: 8px; overflow: hidden; background-color: #0e1116; }
     #dashboard-map { height: 100% !important; width: 100% !important; position: absolute; top:0; left:0;}
-    .custom-clean-tooltip { background: #161b22 !important; border: 1px solid #30363d !important; color: white !important; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5) !important; border-radius: 8px !important; opacity: 1 !important; }
-    .custom-clean-tooltip::before { border-top-color: #30363d !important; }
-    .farm-pin-icon i { color: #10b981; font-size: 32px; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.8)); }
-    .other-farm-pin i { color: #38bdf8; font-size: 26px; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.8)); }
+
+    /* ---- Pins: glyph is centred in its box so the TIP sits exactly on the coordinate ---- */
+    .pin-icon { background: transparent !important; border: 0 !important; display: flex; align-items: flex-end; justify-content: center; }
+    .pin-icon i { display: block; line-height: 1; filter: drop-shadow(0px 3px 4px rgba(0,0,0,0.8)); }
+    .pin-own i   { color: #10b981; }
+    .pin-other i { color: #38bdf8; }
+
+    /* ---- Tooltip: fixed width + wrapping, so long addresses stay INSIDE the border ---- */
+    .leaflet-tooltip.custom-clean-tooltip { background: #161b22 !important; border: 1px solid #30363d !important; color: #fff !important; box-shadow: 0 10px 15px -3px rgba(0,0,0,.5) !important; border-radius: 8px !important; opacity: 1 !important; white-space: normal !important; width: 230px; max-width: 230px; padding: 8px 10px; box-sizing: border-box; }
+    .leaflet-tooltip-top.custom-clean-tooltip::before { border-top-color: #30363d !important; }
+    .custom-clean-tooltip .tt-name { display: block; font-size: 13px; font-weight: 700; margin-bottom: 2px; overflow-wrap: anywhere; line-height: 1.25; }
+    .custom-clean-tooltip .tt-size { display: block; font-size: 11px; color: #fff; margin-bottom: 5px; }
+    .custom-clean-tooltip .tt-addr { display: flex; gap: 6px; align-items: flex-start; border-top: 1px solid #444; padding-top: 5px; font-size: 10px; color: #bbb; line-height: 1.35; }
+    .custom-clean-tooltip .tt-addr i { color: #ef4444; flex: 0 0 auto; margin-top: 2px; }
+    .custom-clean-tooltip .tt-addr span { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+
     .section-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; display: flex; flex-direction: column; }
     .scrollable-list { max-height: 320px; overflow-y: auto; }
     .scrollable-list::-webkit-scrollbar { width: 4px; }
@@ -57,7 +101,7 @@
         <div class="section-card p-4 h-100">
             <div class="d-flex align-items-center justify-content-between mb-3">
                 <i class="fa-solid fa-camera-retro fa-2x text-primary"></i>
-                <span class="badge bg-primary bg-opacity-25 text-primary border border-primary px-2 py-1">Season</span>
+                <span class="badge bg-primary bg-opacity-25 text-primary border border-primary px-2 py-1">All time</span>
             </div>
             <h6 class="text-secondary fw-bold text-uppercase mb-1">Total Detections</h6>
             <h2 class="fw-bold text-white mb-0">{{ number_format($total_detections) }}</h2>
@@ -69,7 +113,7 @@
                 <i class="fa-solid fa-bug fa-2x text-danger"></i>
                 <span class="badge bg-danger bg-opacity-25 text-danger border border-danger px-2 py-1">Attention</span>
             </div>
-            <h6 class="text-secondary fw-bold text-uppercase mb-1">Affected Plants</h6>
+            <h6 class="text-secondary fw-bold text-uppercase mb-1">Affected Scans</h6>
             <h2 class="fw-bold text-danger mb-0">{{ number_format($affected) }}</h2>
         </div>
     </div>
@@ -79,7 +123,7 @@
                 <i class="fa-solid fa-seedling fa-2x text-success"></i>
                 <span class="badge bg-success bg-opacity-25 text-success border border-success px-2 py-1">Good</span>
             </div>
-            <h6 class="text-secondary fw-bold text-uppercase mb-1">Healthy Plants</h6>
+            <h6 class="text-secondary fw-bold text-uppercase mb-1">Healthy Scans</h6>
             <h2 class="fw-bold text-success mb-0">{{ number_format($healthy) }}</h2>
         </div>
     </div>
@@ -163,11 +207,11 @@
                             <div class="d-flex align-items-center gap-3">
                                 <i class="fa-solid fa-leaf {{ str_contains($item->class_key, 'healthy') ? 'text-success' : 'text-danger' }} fa-lg"></i>
                                 <div>
-                                    <strong class="text-white text-capitalize" style="font-size: 0.9rem;">{{ str_replace('_', ' ', $item->class_key) }}</strong>
+                                    <strong class="text-white " style="font-size: 0.9rem;">{{ $prettyClass($item->class_key) }}</strong>
                                     <small class="d-block text-secondary" style="font-size: 0.75rem;">{{ \Carbon\Carbon::parse($item->created_at)->format('M d, Y • h:i A') }}</small>
                                 </div>
                             </div>
-                            <span class="badge {{ str_contains($item->class_key, 'healthy') ? 'bg-success' : 'bg-danger' }} px-2 py-1" style="font-size: 0.7rem;">{{ $item->confidence }}%</span>
+                            <span class="badge {{ str_contains($item->class_key, 'healthy') ? 'bg-success' : 'bg-danger' }} px-2 py-1" style="font-size: 0.7rem;">{{ (int) round((float) $item->confidence) }}%</span>
                         </div>
                         @endforeach
                     </div>
@@ -219,24 +263,20 @@
 <script>
 const MAPTILER_KEY = '{{ env("MAPTILER_API_KEY") }}';
 
-// 1. Initialize Map Styles
+// 1. Map styles
 const mapTiles = {
-    "hybrid": L.tileLayer(`https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=${MAPTILER_KEY}`, { maxZoom: 19, crossOrigin: true }),
+    "hybrid":  L.tileLayer(`https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=${MAPTILER_KEY}`, { maxZoom: 19, crossOrigin: true }),
     "streets": L.tileLayer(`https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`, { maxZoom: 19, crossOrigin: true }),
-    "topo": L.tileLayer(`https://api.maptiler.com/maps/topo-v2/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`, { maxZoom: 19, crossOrigin: true }),
-    "dark": L.tileLayer(`https://api.maptiler.com/maps/dataviz-dark/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`, { maxZoom: 19, crossOrigin: true })
+    "topo":    L.tileLayer(`https://api.maptiler.com/maps/topo-v2/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`, { maxZoom: 19, crossOrigin: true }),
+    "dark":    L.tileLayer(`https://api.maptiler.com/maps/dataviz-dark/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`, { maxZoom: 19, crossOrigin: true })
 };
-
 let currentTile = mapTiles["hybrid"];
-const farmLat = {{ $userLat ?? 10.8986 }};
-const farmLng = {{ $userLng ?? 123.4143 }};
 
-const dashMap = L.map('dashboard-map', {
-    center: [farmLat, farmLng],
-    zoom: 15,
-    layers: [currentTile],
-    attributionControl: false
-});
+const hasMainPin = @json($userLat !== null && $userLng !== null);
+const farmLat = @json((float) ($userLat ?? 10.8986));
+const farmLng = @json((float) ($userLng ?? 123.4143));
+
+const dashMap = L.map('dashboard-map', { center: [farmLat, farmLng], zoom: 15, layers: [currentTile], attributionControl: false });
 
 function switchDashboardMapStyle(styleKey) {
     if (mapTiles[styleKey]) {
@@ -246,123 +286,123 @@ function switchDashboardMapStyle(styleKey) {
     }
 }
 
-// 2. Reverse Geocoding for Map Tooltips
-function attachAddressTooltip(marker, lat, lng, farmNameStr, farmSizeStr, colorHex) {
-    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
-        .then(res => res.json())
-        .then(data => {
-            const exactLocation = (data && data.display_name) ? data.display_name : "Address not registered";
-            marker.bindTooltip(`
-                <div style="text-align:left; max-width: 240px; font-family: system-ui, sans-serif; padding: 4px;">
-                    <strong style="color: ${colorHex}; font-size: 13px; display:block; margin-bottom:2px;"><i class="fa-solid fa-tractor me-1"></i> ${farmNameStr}</strong>
-                    <span style="font-size: 11px; color: #fff; display:block; margin-bottom:4px;">📐 Area: <b>${farmSizeStr} ha</b></span>
-                    <div style="border-top: 1px solid #444; padding-top: 4px; font-size: 10px; color: #bbb; line-height: 1.3;">
-                        <i class="fa-solid fa-map-pin me-1" style="color: #ef4444;"></i> ${exactLocation}
-                    </div>
-                </div>
-            `, { direction: 'top', className: 'custom-clean-tooltip' });
-        })
-        .catch(() => {
-            marker.bindTooltip(`<strong>${farmNameStr}</strong><br>Size: ${farmSizeStr} ha`, { direction: 'top', className: 'custom-clean-tooltip' });
-        });
+// 2. Helpers
+// Farm/field names are typed by users — always escape before putting them in tooltip HTML.
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const fmtSize = v => { const n = parseFloat(v); return (isFinite(n) && n > 0) ? `${n} ha` : 'Not set'; };
+
+// Reverse geocoding runs only when a pin is first hovered, one request per second
+// (Nominatim's limit), and each result is kept — no burst of requests on page load.
+let geoQueue = Promise.resolve();
+function reverseGeocode(lat, lng) {
+    const job = geoQueue.then(() =>
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&accept-language=en&lat=${lat}&lon=${lng}`)
+            .then(r => { if (!r.ok) throw new Error('geocode ' + r.status); return r.json(); })
+    );
+    geoQueue = job.catch(() => {}).then(() => new Promise(res => setTimeout(res, 1000)));
+    return job;
 }
 
-// 3. Plot Pins
-if ({{ $userLat ? 'true' : 'false' }}) {
-    const mainFarmIcon = L.divIcon({
-        className: 'farm-pin-icon',
-        html: '<i class="fa-solid fa-location-dot"></i>',
-        iconSize: [32, 32], iconAnchor: [16, 32]
+function pinIcon(kind, size) {
+    return L.divIcon({
+        className: `pin-icon pin-${kind}`,
+        html: `<i class="fa-solid fa-location-dot" style="font-size:${size}px"></i>`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size],        // tip of the pin = the coordinate
+        tooltipAnchor: [0, -(size - 2)]      // tooltip opens just above the pin head
     });
-    const userMarker = L.marker([farmLat, farmLng], { icon: mainFarmIcon }).addTo(dashMap);
-    attachAddressTooltip(userMarker, farmLat, farmLng, "{{ $farmName }}", "{{ $farmSize ?? 'N/A' }}", "#10b981");
 }
 
-// Own additional field plots (users.additional_farms) — a farmer can
-// register more than one field via the Field Map page, each with its own
-// pin and hectare size, separate from the single main lat/lng above. Plot
-// every one of them here too, so this map reflects every field this
-// farmer actually has.
-const ownAdditionalFarms = @json($user->additional_farms ?? []);
-ownAdditionalFarms.forEach((plot, idx) => {
-    const coords = plot.coords || (plot.options && plot.options.coords);
-    if (!Array.isArray(coords) || coords.length < 2) return;
-    const pLng = parseFloat(coords[0]);
-    const pLat = parseFloat(coords[1]);
-    if (isNaN(pLat) || isNaN(pLng)) return;
+function tooltipHtml(name, sizeText, color, address) {
+    return `<span class="tt-name" style="color:${color}"><i class="fa-solid fa-tractor me-1"></i>${esc(name)}</span>
+            <span class="tt-size">📐 Area: <b>${esc(sizeText)}</b></span>
+            <div class="tt-addr"><i class="fa-solid fa-map-pin"></i><span>${esc(address)}</span></div>`;
+}
 
-    const opts = plot.options || {};
-    const plotName = opts.farmName || plot.placeName || `My Field ${idx + 2}`;
-    const plotSize = opts.farmSize || 0;
+function addFarmPin(lat, lng, o) {
+    const marker = L.marker([lat, lng], { icon: pinIcon(o.kind, o.size) }).addTo(dashMap);
+    const color = o.kind === 'own' ? '#10b981' : '#38bdf8';
+    const sizeText = fmtSize(o.farmSize);
+    let address = o.address || 'Locating address…';
+    marker.bindTooltip(tooltipHtml(o.name, sizeText, color, address),
+        { direction: 'top', className: 'custom-clean-tooltip', opacity: 1 });
 
-    const plotIcon = L.divIcon({
-        className: 'farm-pin-icon',
-        html: '<i class="fa-solid fa-map-pin"></i>',
-        iconSize: [26, 26], iconAnchor: [13, 26]
+    let looked = false;
+    marker.on('tooltipopen', () => {
+        if (looked) return;
+        looked = true;
+        reverseGeocode(lat, lng)
+            .then(d => { address = (d && d.display_name) ? d.display_name : (o.address || 'Address not registered'); })
+            .catch(() => { address = o.address || 'Address unavailable'; })
+            .finally(() => marker.setTooltipContent(tooltipHtml(o.name, sizeText, color, address)));
     });
-    const plotMarker = L.marker([pLat, pLng], { icon: plotIcon }).addTo(dashMap);
-    attachAddressTooltip(plotMarker, pLat, pLng, plotName, plotSize, "#10b981");
-});
+    return marker;
+}
 
-const otherFarmsData = @json($otherFarms ?? []);
-otherFarmsData.forEach(farm => {
-    if (farm.latitude && farm.longitude) {
-        const oLat = parseFloat(farm.latitude);
-        const oLng = parseFloat(farm.longitude);
-        const otherIcon = L.divIcon({
-            className: 'other-farm-pin',
-            html: '<i class="fa-solid fa-location-dot"></i>',
-            iconSize: [26, 26], iconAnchor: [13, 26]
-        });
-        const otherMarker = L.marker([oLat, oLng], { icon: otherIcon }).addTo(dashMap);
-        attachAddressTooltip(otherMarker, oLat, oLng, farm.farm_name || "Neighboring Farm", farm.farm_size || "N/A", "#38bdf8");
-    }
-
-    // Neighboring farms' additional field plots, same reasoning as above —
-    // a neighbor with 3 registered fields previously only showed 1 pin.
-    const neighborPlots = Array.isArray(farm.additional_farms) ? farm.additional_farms : [];
-    neighborPlots.forEach((plot, idx) => {
+// users.additional_farms entries: coords = [lng, lat] (GeoJSON order), options.farmName / farmSize.
+function plotsToPins(plots, fallbackName) {
+    const out = [];
+    (Array.isArray(plots) ? plots : []).forEach((plot, idx) => {
         const coords = plot.coords || (plot.options && plot.options.coords);
         if (!Array.isArray(coords) || coords.length < 2) return;
-        const pLng = parseFloat(coords[0]);
-        const pLat = parseFloat(coords[1]);
-        if (isNaN(pLat) || isNaN(pLng)) return;
-
+        const lng = parseFloat(coords[0]), lat = parseFloat(coords[1]);
+        if (isNaN(lat) || isNaN(lng)) return;
         const opts = plot.options || {};
-        const plotName = opts.farmName || plot.placeName || `${farm.farm_name || 'Neighboring Farm'} (extra field)`;
-        const plotSize = opts.farmSize || 0;
+        out.push({ lat, lng, name: opts.farmName || plot.placeName || fallbackName(idx), farmSize: opts.farmSize });
+    });
+    return out;
+}
 
-        const otherPlotIcon = L.divIcon({
-            className: 'other-farm-pin',
-            html: '<i class="fa-solid fa-map-pin"></i>',
-            iconSize: [22, 22], iconAnchor: [11, 22]
-        });
-        const otherPlotMarker = L.marker([pLat, pLng], { icon: otherPlotIcon }).addTo(dashMap);
-        otherPlotMarker.bindTooltip(`
-            <div style="text-align:left; max-width: 220px; font-family: system-ui, sans-serif; padding: 4px;">
-                <strong style="color: #38bdf8; font-size: 13px; display:block; margin-bottom:2px;"><i class="fa-solid fa-map-pin me-1"></i> ${plotName}</strong>
-                <span style="font-size: 11px; color: #fff; display:block;">📐 Area: <b>${plotSize} ha</b></span>
-            </div>
-        `, { direction: 'top', className: 'custom-clean-tooltip' });
+// 3. Plot pins
+const ownPoints = [];
+
+if (hasMainPin) {
+    addFarmPin(farmLat, farmLng, { kind: 'own', size: 34, name: @json($farmName), farmSize: @json($farmSize) });
+    ownPoints.push([farmLat, farmLng]);
+}
+
+// This farmer's other registered fields
+plotsToPins(@json($ownExtraFarms), i => `My Field ${i + 2}`).forEach(p => {
+    addFarmPin(p.lat, p.lng, { kind: 'own', size: 28, name: p.name, farmSize: p.farmSize });
+    ownPoints.push([p.lat, p.lng]);
+});
+
+// Neighbouring farmers (main pin + every extra field they registered)
+@json($otherFarms).forEach(farm => {
+    const oLat = parseFloat(farm.latitude), oLng = parseFloat(farm.longitude);
+    const baseName = farm.farm_name || 'Neighboring Farm';
+    if (!isNaN(oLat) && !isNaN(oLng)) {
+        addFarmPin(oLat, oLng, { kind: 'other', size: 26, name: baseName, farmSize: farm.farm_size, address: farm.address });
+    }
+    plotsToPins(farm.additional_farms, () => `${baseName} (extra field)`).forEach(p => {
+        addFarmPin(p.lat, p.lng, { kind: 'other', size: 22, name: p.name, farmSize: p.farmSize, address: farm.address });
     });
 });
 
-// 4. Fetch Dynamic Weather
+// 4. Weather for the farm's coordinates
 fetch(`{{ route('farmer.field_map.weather') }}?lat=${farmLat}&lon=${farmLng}`)
     .then(res => res.json())
     .then(data => {
-        if(data.error) throw new Error(data.error);
+        if (data.error) throw new Error(data.error);
         document.getElementById('weather-temp-dash').innerHTML = `${data.temp}°C`;
         document.getElementById('weather-cond-dash').innerText = data.condition;
         document.getElementById('weather-hum-dash').innerHTML = `<i class="fa-solid fa-droplet text-info me-1"></i> ${data.humidity}% Hum`;
         document.getElementById('weather-wind-dash').innerHTML = `<i class="fa-solid fa-wind text-info me-1"></i> ${data.wind} km/h`;
     })
-    .catch(err => {
+    .catch(() => {
         document.getElementById('weather-temp-dash').innerHTML = '--°C';
         document.getElementById('weather-cond-dash').innerText = 'Weather offline';
     });
 
-setTimeout(() => { dashMap.invalidateSize(); }, 400);
+// Fit the view to the farmer's own pins once the card has its final size.
+setTimeout(() => {
+    dashMap.invalidateSize();
+    if (ownPoints.length > 1) {
+        dashMap.fitBounds(L.latLngBounds(ownPoints), { padding: [50, 50], maxZoom: 16 });
+    } else if (ownPoints.length === 1) {
+        dashMap.setView(ownPoints[0], 15);
+    }
+}, 400);
 </script>
 
 <script>

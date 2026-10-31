@@ -108,6 +108,16 @@ $additionalFarmsJson = json_encode($user->additional_farms ?? []);
             ->where('role', 'farmer')
             ->where('status', 'approved')
             ->where('id', '!=', $user->id)
+            // A technician only sees farmers inside the barangay(s) an
+            // admin assigned to them (Assignment Management) — never
+            // every farmer in the system. No active assignment = none.
+            ->when($user->role === 'technician', function ($q) use ($user) {
+                $ids = \App\Models\Assignment::active()
+                    ->where('user_id', $user->id)
+                    ->where('user_type', 'technician')
+                    ->pluck('barangay_id');
+                $q->whereIn('barangay_id', $ids);
+            })
             ->whereNotNull('latitude')
             ->whereNotNull('longitude')
             ->select('id', 'farm_name', 'farm_size', 'latitude', 'longitude', 'province_id', 'city_id', 'barangay_id')

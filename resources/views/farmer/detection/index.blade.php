@@ -510,6 +510,43 @@
         .rg-tab-btn { padding: 8px 6px; font-size: 0.72rem; }
         .rg-tab-btn i { margin-right: 4px !important; }
     }
+    /* "Not a rice photo" panel — shown (instead of an error or a class named
+       "random") when Groq AI or the on-device MobileNetV2 model decides the
+       photo is not a rice plant / disease / pest. */
+    .rg-notrice { text-align: center; padding: 2rem 1rem; }
+    .rg-notrice-frame {
+        position: relative; width: 132px; height: 132px; margin: 0 auto 1.4rem;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 22px; background: radial-gradient(circle at 50% 40%, rgba(16,185,129,.16), rgba(16,185,129,.03) 70%);
+        overflow: hidden;
+    }
+    .rg-notrice-frame > i { font-size: 3.4rem; color: #34d399; opacity: .55; }
+    .rg-notrice-frame .rg-c { position: absolute; width: 26px; height: 26px; border: 3px solid #10b981; opacity: .9; }
+    .rg-notrice-frame .rg-c.tl { top: 8px; left: 8px; border-right: 0; border-bottom: 0; border-top-left-radius: 10px; }
+    .rg-notrice-frame .rg-c.tr { top: 8px; right: 8px; border-left: 0; border-bottom: 0; border-top-right-radius: 10px; }
+    .rg-notrice-frame .rg-c.bl { bottom: 8px; left: 8px; border-right: 0; border-top: 0; border-bottom-left-radius: 10px; }
+    .rg-notrice-frame .rg-c.br { bottom: 8px; right: 8px; border-left: 0; border-top: 0; border-bottom-right-radius: 10px; }
+    .rg-notrice-frame .rg-scan {
+        position: absolute; left: 10px; right: 10px; height: 2px; top: 12px;
+        background: linear-gradient(90deg, transparent, #34d399, transparent);
+        box-shadow: 0 0 10px #34d399; animation: rgNotRiceScan 2.2s ease-in-out infinite;
+    }
+    .rg-notrice-frame .rg-q {
+        position: absolute; right: 14px; bottom: 14px; width: 30px; height: 30px; border-radius: 50%;
+        background: #f59e0b; color: #1f1300; font-weight: 800; font-size: 1rem;
+        display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,.4);
+    }
+    @keyframes rgNotRiceScan { 0%,100% { top: 12px; opacity: .2; } 50% { top: calc(100% - 14px); opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .rg-notrice-frame .rg-scan { animation: none; top: 50%; } }
+    .rg-notrice-engine {
+        display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+        color: #94a3b8; border: 1px solid rgba(148,163,184,.35); border-radius: 999px; padding: 2px 10px; margin-bottom: .8rem;
+    }
+    .rg-notrice-tips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 1rem 0 1.2rem; }
+    .rg-notrice-tips span {
+        font-size: .8rem; color: #cbd5e1; background: rgba(16,185,129,.1);
+        border: 1px solid rgba(16,185,129,.28); border-radius: 999px; padding: 4px 12px;
+    }
 </style>
 
 <div class="nxl-content">
@@ -686,6 +723,24 @@
                                     isn't in the shared knowledge base yet.
                                 </p>
                                 <p class="text-secondary small mb-0">Try YOLO11n for the widest coverage, or use "Report a Problem" once available for this class.</p>
+                            </div>
+
+                            <!-- Not a rice photo: shown by showNotRicePhoto() when Groq AI or the
+                                 on-device model decides the photo is not a rice plant / disease / pest
+                                 (trees, objects, people ...). Never saved, never reportable. -->
+                            <div id="notrice-panel" class="rg-notrice hidden">
+                                <div class="rg-notrice-frame">
+                                    <span class="rg-c tl"></span><span class="rg-c tr"></span><span class="rg-c bl"></span><span class="rg-c br"></span>
+                                    <i class="fa-solid fa-leaf"></i>
+                                    <span class="rg-scan"></span>
+                                    <span class="rg-q">?</span>
+                                </div>
+                                <div class="rg-notrice-engine" id="notrice-engine"></div>
+                                <h5 class="text-white mb-2" id="notrice-title"></h5>
+                                <p class="text-secondary mb-1" id="notrice-body"></p>
+                                <p class="text-secondary small fst-italic mb-0 hidden" id="notrice-note"></p>
+                                <div class="rg-notrice-tips" id="notrice-tips"></div>
+                                <button type="button" class="btn btn-outline-success fw-bold" id="notrice-retry" onclick="rgNotRiceRetry()"></button>
                             </div>
 
                             <div id="results-panel" class="hidden">
@@ -1378,6 +1433,34 @@ function loadGroqKnowledge(className, isPest, lang, t) {
         console.warn('[Groq knowledge] request failed, using fallback:', err);
         renderKnowledgeSections(fallbackKb, isPest, t);
     });
+}
+
+// Higher-quality copy used ONLY for the Groq AI request. window.compressedBase64
+// (512px, q0.6) stays untouched for the preview / History / reports. Groq is a
+// vision LLM, so small lesions / insects / eggs need more pixels than the
+// thumbnail has. Built from `currentImage`, which already holds the full-res
+// original. Returns null on any problem so the caller can fall back to the
+// old compressed copy and Groq never breaks because of this.
+const GROQ_IMAGE_MAX_SIDE = 1024;   // longest edge in px (never upscaled)
+const GROQ_IMAGE_QUALITY  = 0.8;    // JPEG quality
+function buildGroqImage(img) {
+    try {
+        const w = img && (img.naturalWidth || img.width);
+        const h = img && (img.naturalHeight || img.height);
+        if (!w || !h) return null;
+        const scale = Math.min(1, GROQ_IMAGE_MAX_SIDE / Math.max(w, h));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(w * scale));
+        c.height = Math.max(1, Math.round(h * scale));
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        const out = c.toDataURL('image/jpeg', GROQ_IMAGE_QUALITY);
+        return (out && out.length > 100) ? out : null;
+    } catch (e) {
+        return null;
+    }
 }
 
 async function compressImageFile(file) {
@@ -2252,6 +2335,7 @@ function clearPreview() {
     clearYoloPreviewOverlay();
     document.getElementById('results-panel').classList.add('hidden');
     document.getElementById('untrained-panel')?.classList.add('hidden');
+    hideNotRicePanel();
     document.getElementById('no-result').classList.remove('hidden');
     document.getElementById('detect-row')?.classList.remove('has-result');
 }
@@ -2473,7 +2557,10 @@ window.classifyCurrentImage = async function() {
                 'X-CSRF-TOKEN': '{{ csrf_token() }}'
             },
            body: JSON.stringify({ 
-                image_base64: window.compressedBase64,
+                // Groq gets the larger copy (see buildGroqImage); falls back to
+                // the compressed one if it can't be built. History/reports
+                // still use window.compressedBase64 only.
+                image_base64: buildGroqImage(currentImage) || window.compressedBase64,
                 language: document.getElementById('language-selector').value
             })
         });
@@ -2496,6 +2583,11 @@ window.classifyCurrentImage = async function() {
             statusEl.innerHTML = `<i class="fa-solid fa-bolt"></i> Groq Ready`;
             statusEl.className = "pill-badge bg-primary text-white";
             displayGroqResults(result.data);
+        } else if (result.success && result.data && result.data.not_rice) {
+            // Groq looked at the photo and it is not a rice plant / disease / pest.
+            statusEl.innerHTML = `<i class="fa-solid fa-bolt"></i> Groq Ready`;
+            statusEl.className = "pill-badge bg-primary text-white";
+            showNotRicePhoto(result.data.description);
         } else {
             throw new Error(result.message || "Unknown API Error");
         }
@@ -2517,6 +2609,7 @@ function displayGroqResults(data) {
     knowledgeRequestToken++; // cancel any pending fallback-knowledge fetch
     currentGroqData = data;
     isShowingFallback = false;
+    hideNotRicePanel();
     const lang = document.getElementById('language-selector').value;
     const t = uiTranslations[lang];
     
@@ -2603,19 +2696,61 @@ function engineDisplayName() {
     return selectedEngine === 'model' ? 'MobileNetV2' : (selectedEngine === 'yolo11n' ? 'YOLO11n' : 'Groq AI');
 }
 
-function showUntrainedResult(rawLabel, confidence) {
-    isShowingFallback = true;
+// ---------- "Not a rice photo" handling (Groq AI + MobileNetV2 only) ----------
+// MobileNetV2's own metadata.json has a catch-all class (\"random\") for photos
+// that aren't rice. Those must never be shown by that raw name, and Groq's
+// "Unrelated Image" rejection used to surface as an error. Both now land on
+// the same friendly panel. Comparison is on the normalized label only.
+const RG_NON_RICE_LABELS = ['random', 'unrelated', 'background', 'other', 'others'];
+function isNonRiceLabel(name) {
+    return RG_NON_RICE_LABELS.includes(String(name || '').trim().toLowerCase().replace(/\s+/g, '_'));
+}
+const RG_NOT_RICE_TEXT = {
+    english:    { title: 'No rice plant spotted', body: "This photo doesn't look like a rice leaf, stem, panicle, pest or paddy field, so there is nothing to diagnose.", tips: ['Move closer to the leaf or pest', 'Use natural daylight', 'Keep one subject in focus'], retry: 'Try another photo' },
+    tagalog:    { title: 'Walang nakitang palay', body: 'Mukhang hindi dahon, tangkay, uhay, peste o palayan ang larawang ito, kaya walang masusuri.', tips: ['Lumapit sa dahon o peste', 'Gumamit ng natural na liwanag', 'Ituon ang kamera sa isang bagay'], retry: 'Subukan ang ibang larawan' },
+    cebuano:    { title: 'Walay nakita nga humay', body: "Murag dili dahon, tukog, uhay, peste o humayan kini nga hulagway, mao nga walay masusi.", tips: ['Duol sa dahon o peste', 'Gamita ang natural nga kahayag', 'Isentro ang usa ra ka butang'], retry: 'Sulayi ang lain nga hulagway' },
+    hiligaynon: { title: 'Wala sing nakita nga palay', body: 'Daw indi dahon, punoan, uhay, peste ukon uma ang sini nga retrato, gani wala sing mahimo masuri.', tips: ['Palapit sa dahon ukon peste', 'Gamita ang natural nga kasanag', 'Isentro ang isa lang ka butang'], retry: 'Sulayi ang iban nga retrato' }
+};
+let rgNotRiceNote = '';
+function hideNotRicePanel() { document.getElementById('notrice-panel')?.classList.add('hidden'); }
+function renderNotRiceText() {
+    const tx = RG_NOT_RICE_TEXT[currentLang()] || RG_NOT_RICE_TEXT.english;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('notrice-engine', engineDisplayName());
+    set('notrice-title', tx.title);
+    set('notrice-body', tx.body);
+    set('notrice-retry', tx.retry);
+    const tips = document.getElementById('notrice-tips');
+    if (tips) { tips.innerHTML = ''; tx.tips.forEach(t => { const s = document.createElement('span'); s.textContent = t; tips.appendChild(s); }); }
+    const note = document.getElementById('notrice-note');
+    if (note) { note.textContent = rgNotRiceNote; note.classList.toggle('hidden', !rgNotRiceNote); }
+}
+// Not a rice photo / not part of the trained classes: MobileNetV2 and Groq AI
+// now show the SAME popup YOLO11n uses for "Nothing detected" (showEngineError)
+// instead of an inline panel. Any previous result is cleared so Save/Report
+// can never act on a stale detection.
+function rgShowNothingDetected() {
+    isShowingFallback = false;
     currentGroqData = null;
-
-    document.getElementById('no-result').classList.add('hidden');
+    lastClassKey = null;               // nothing to save or report
     document.getElementById('results-panel').classList.add('hidden');
-    document.getElementById('untrained-panel').classList.remove('hidden');
-    document.getElementById('detect-row')?.classList.add('has-result');
+    document.getElementById('untrained-panel')?.classList.add('hidden');
+    hideNotRicePanel();
+    document.getElementById('no-result').classList.remove('hidden');
+    document.getElementById('detect-row')?.classList.remove('has-result');
+    showEngineError(
+        "Nothing detected",
+        `${engineDisplayName()} couldn't find any rice disease or pest in this image. Try a clearer, closer photo.`,
+        null, null
+    );
+}
+function showNotRicePhoto(aiNote) {
+    rgShowNothingDetected();
+}
+window.rgNotRiceRetry = function() { clearPreview(); };
 
-    const safeSetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
-    safeSetText('untrained-engine', engineDisplayName());
-    safeSetText('untrained-label', rawLabel);
-    safeSetText('untrained-confidence', confidence);
+function showUntrainedResult(rawLabel, confidence) {
+    rgShowNothingDetected();
 }
 
 // Lets the farmer tap any row in the ranked detections list and have that
@@ -2642,6 +2777,14 @@ function displayResults(predictions, forcedTopClassName = null) {
         const forced = filtered.find(p => p.className.trim().toLowerCase().replace(/\s+/g, '_') === forcedTopClassName);
         if (forced) top = forced;
     }
+
+    // The model's catch-all class (\"random\" etc.) means \"this isn't a rice photo\" —
+    // show the friendly panel instead of a class with that raw name.
+    if (top && isNonRiceLabel(top.className)) {
+        showNotRicePhoto();
+        return;
+    }
+    hideNotRicePanel();
 
     const className = top.className.trim().toLowerCase().replace(/\s+/g, '_');
     lastClassKey = className;
@@ -2728,7 +2871,7 @@ function displayResults(predictions, forcedTopClassName = null) {
     updateTypeBadge(isPest);
 
     let html = '';
-    filtered.forEach(pred => {
+    filtered.filter(pred => !isNonRiceLabel(pred.className)).forEach(pred => {
         let pName = pred.className.trim().toLowerCase().replace(/\s+/g, '_');
         const isActive = pName === className;
         html += `<div class="d-flex justify-content-between mb-2${isActive ? ' fw-bold text-white' : ''}" style="cursor:pointer;" onclick="window.selectDetection('${pName}')" title="Show this detection's info instead"><span>${tName(pName, nameMap[pName] || pred.className)}</span><span class="text-secondary">${(pred.probability * 100).toFixed(1)}%</span></div>`;
@@ -2748,6 +2891,10 @@ function displayResults(predictions, forcedTopClassName = null) {
 }
 
 document.getElementById('language-selector').addEventListener('change', function() {
+    if (!document.getElementById('notrice-panel').classList.contains('hidden')) {
+        renderNotRiceText();
+        return;
+    }
     if (!document.getElementById('results-panel').classList.contains('hidden')) {
         if (!isShowingFallback && currentGroqData) {
             displayGroqResults(currentGroqData);
