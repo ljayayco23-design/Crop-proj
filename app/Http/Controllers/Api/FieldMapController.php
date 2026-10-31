@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\FieldMapController as WebFieldMapController;
 use App\Models\TreatmentRecord;
 use App\Models\User;
+use App\Models\WeatherAlert;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -61,6 +63,57 @@ class FieldMapController extends Controller
             optional($model->city)->name,
             optional($model->province)->name,
         ])->filter()->implode(', ');
+    }
+
+    /**
+     * "Recent Alerts" card (PAGASA + forecast-based). Same rule as
+     * WebFieldMapController::index(): this farmer's alerts from the last 3 days,
+     * active first (newest first), expired last, max 5.
+     * Wrapped so the Field Map still loads if the alerts table does not exist yet.
+     */
+    private function recentAlertsFor(User $user): array
+    {
+        try {
+            return WeatherAlert::where('user_id', $user->id)
+                ->where('issued_at', '>', now()->subDays(3))
+                ->orderByDesc('issued_at')
+                ->limit(12)
+                ->get()
+                ->map(function ($a) {
+                    $exp = $a->expires_at ? Carbon::parse($a->expires_at) : null;
+                    $a->is_expired = $exp ? $exp->isPast() : false;
+                    return $a;
+                })
+                ->sortBy(fn ($a) => [
+                    $a->is_expired ? 1 : 0,
+                    -($a->issued_at ? Carbon::parse($a->issued_at)->timestamp : 0),
+                ])
+                ->take(5)
+                ->values()
+                ->map(function ($a) {
+                    $fields = $a->fields ?? [];
+                    if (is_string($fields)) {
+                        $fields = json_decode($fields, true);
+                    }
+                    if (!is_array($fields)) {
+                        $fields = [];
+                    }
+                    return [
+                        'id'         => $a->id,
+                        'source'     => $a->source,
+                        'label'      => $a->label,
+                        'level'      => $a->level,
+                        'headline'   => $a->headline,
+                        'fields'     => collect($fields)->pluck('name')->filter()->values()->all(),
+                        'issued_at'  => $a->issued_at ? Carbon::parse($a->issued_at)->toIso8601String() : null,
+                        'expires_at' => $a->expires_at ? Carbon::parse($a->expires_at)->toIso8601String() : null,
+                        'is_expired' => (bool) $a->is_expired,
+                    ];
+                })
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
     }
 
     /** GET /field-map  -> everything the web page receives, as JSON. */
@@ -167,6 +220,7 @@ class FieldMapController extends Controller
             'status_colors'     => self::STATUS_COLORS,
             'status_thresholds' => self::STATUS_THRESHOLDS,
             'latest_detection'  => $latest,
+            'recent_alerts'     => $this->recentAlertsFor($user),
         ]);
     }
 
