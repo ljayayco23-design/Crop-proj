@@ -106,7 +106,8 @@
             @csrf
             <input type="hidden" name="action" value="signup">
             
-            <input type="hidden" name="document_photo_base64" id="document_photo_base64">
+            <input type="hidden" id="document_photo_base64">
+            <input type="file" name="document_photo" id="document_photo_file" class="hidden" tabindex="-1" aria-hidden="true">
             <input type="hidden" name="selfie_photo_base64" id="selfie_photo_base64">
             <input type="hidden" name="id_check" id="id_check_input">
 
@@ -848,6 +849,7 @@ async function rgRunIdAnalysis() {
 
     idState.ok = false;
     hidden.value = ''; metaInput.value = '';
+    document.getElementById('document_photo_file').value = '';
     if (!file) { idState.busy = false; nextButton.disabled = false; rgIdPanel('hidden'); return; }
     if (!typeSel.value) {
         fileInput.value = '';
@@ -862,6 +864,11 @@ async function rgRunIdAnalysis() {
             msg => { if (run === idState.run) rgIdPanel('busy', [msg]); });
         if (run !== idState.run) return;               // a newer pick replaced this one
         hidden.value = dataUri;
+        // Send the JPEG as a real file part instead of a giant base64 text field.
+        const blob = await (await fetch(dataUri)).blob();
+        const dt = new DataTransfer();
+        dt.items.add(new File([blob], 'id.jpg', { type: 'image/jpeg' }));
+        document.getElementById('document_photo_file').files = dt.files;
         metaInput.value = JSON.stringify(meta);
         idState.ok = true;
         if (meta.status === 'unverified') {

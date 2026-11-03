@@ -211,7 +211,7 @@ class AuthController extends Controller
                     'device_latitude' => ['nullable', 'numeric', 'between:-90,90'],
                     'device_longitude' => ['nullable', 'numeric', 'between:-180,180'],
                     'id_type' => ['required', 'in:' . implode(',', self::ID_TYPES)],
-                    'document_photo_base64' => ['required', 'string', 'starts_with:data:image/jpeg;base64,', 'max:3000000'],
+                    'document_photo' => ['required', 'file', 'mimetypes:image/jpeg', 'max:3000'],
                     'id_check' => ['nullable', 'string', 'max:5000'],
                 ], [
                     'full_name.regex' => 'Ilagay ang buong pangalan (first name at last name), letra lang.',
@@ -225,8 +225,8 @@ class AuthController extends Controller
                     'farm_size.max' => 'Ang laki ng sakahan ay hindi dapat lumampas sa 1000 ha.',
                     'latitude.between' => 'Ang lokasyon ng sakahan ay dapat nasa loob ng Pilipinas.',
                     'longitude.between' => 'Ang lokasyon ng sakahan ay dapat nasa loob ng Pilipinas.',
-                    'document_photo_base64.required' => 'Mag-upload ng larawan ng valid ID.',
-                    'document_photo_base64.starts_with' => 'Hindi tinatanggap ang format ng larawan ng ID.',
+                    'document_photo.required' => 'Mag-upload ng larawan ng valid ID.',
+                    'document_photo.mimetypes' => 'Hindi tinatanggap ang format ng larawan ng ID.',
                 ]);
             } catch (ValidationException $e) {
                 return back()
@@ -236,11 +236,11 @@ class AuthController extends Controller
             }
 
             // The ID photo must really be a JPEG image of a usable size.
-            $photoBinary = base64_decode(substr($request->document_photo_base64, strlen('data:image/jpeg;base64,')), true);
+            $photoBinary = file_get_contents($request->file('document_photo')->getRealPath());
             $photoInfo = $photoBinary ? @getimagesizefromstring($photoBinary) : false;
             if (!$photoInfo || $photoInfo[2] !== IMAGETYPE_JPEG || min($photoInfo[0], $photoInfo[1]) < 400) {
                 return back()
-                    ->withErrors(['document_photo_base64' => 'Hindi valid o masyadong maliit ang larawan ng ID. Mag-upload ng mas malinaw na larawan.'])
+                    ->withErrors(['document_photo' => 'Hindi valid o masyadong maliit ang larawan ng ID. Mag-upload ng mas malinaw na larawan.'])
                     ->withInput($request->except($flashExcept))
                     ->with('open_signup', true);
             }
@@ -279,7 +279,7 @@ class AuthController extends Controller
                     'farm_size' => $request->farm_size,
                     'water_source' => $request->water_source,
                     'id_type' => $request->id_type,
-                    'document_photo' => $request->document_photo_base64, 
+                    'document_photo' => 'data:image/jpeg;base64,' . base64_encode($photoBinary),
                     'province_id' => $request->province_id,
                     'city_id' => $request->city_id,
                     'barangay_id' => $request->barangay_id,
