@@ -229,6 +229,12 @@ class AuthController extends Controller
                     'document_photo_base64.starts_with' => 'Hindi tinatanggap ang format ng larawan ng ID.',
                 ]);
             } catch (ValidationException $e) {
+                if ($isAjax) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => collect($e->errors())->flatten()->unique()->implode(' • '),
+                    ], 422);
+                }
                 return back()
                     ->withErrors($e->errors())
                     ->withInput($request->except($flashExcept))
@@ -239,6 +245,9 @@ class AuthController extends Controller
             $photoBinary = base64_decode(substr($request->document_photo_base64, strlen('data:image/jpeg;base64,')), true);
             $photoInfo = $photoBinary ? @getimagesizefromstring($photoBinary) : false;
             if (!$photoInfo || $photoInfo[2] !== IMAGETYPE_JPEG || min($photoInfo[0], $photoInfo[1]) < 400) {
+                if ($isAjax) {
+                    return response()->json(['success' => false, 'message' => 'Hindi valid o masyadong maliit ang larawan ng ID. Mag-upload ng mas malinaw na larawan.'], 422);
+                }
                 return back()
                     ->withErrors(['document_photo_base64' => 'Hindi valid o masyadong maliit ang larawan ng ID. Mag-upload ng mas malinaw na larawan.'])
                     ->withInput($request->except($flashExcept))
@@ -259,6 +268,9 @@ class AuthController extends Controller
             // Case-insensitive on purpose: TiDB's default collation is case-sensitive.
             $existing = User::whereRaw('LOWER(email) = ?', [Str::lower($request->email)])->first();
             if ($existing) {
+                if ($isAjax) {
+                    return response()->json(['success' => false, 'message' => 'Ang email na ito ay nagamit na.'], 422);
+                }
                 return back()
                     ->with('error', 'Ang email na ito ay nagamit na.')
                     ->with('open_signup', true)
@@ -352,6 +364,9 @@ class AuthController extends Controller
                 
             } catch (\Exception $e) {
                 Log::error('Signup failed: ' . $e->getMessage());
+                if ($isAjax) {
+                    return response()->json(['success' => false, 'message' => 'May problema sa pag-register. Pakisubukan ulit mamaya.'], 500);
+                }
                 return back()
                     ->with('error', 'May problema sa pag-register. Pakisubukan ulit mamaya.')
                     ->with('open_signup', true)
@@ -362,6 +377,11 @@ class AuthController extends Controller
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
+
+            if ($isAjax) {
+                $request->session()->flash('pending', $request->email);
+                return response()->json(['success' => true, 'redirect' => route('login')]);
+            }
 
             return redirect()->route('login')->with('pending', $request->email);
         }

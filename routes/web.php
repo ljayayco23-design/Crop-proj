@@ -98,6 +98,9 @@ Route::get('/', function () {
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->name('login.post')->middleware('throttle:30,1');
 
+// Website registration (sent as JSON by login.blade.php, same controller method as login)
+Route::post('/signup', [AuthController::class, 'login'])->name('signup.post')->middleware('throttle:10,1');
+
 // ✅ Keep this one and ensure the name is 'password.email'
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('password.email');
 

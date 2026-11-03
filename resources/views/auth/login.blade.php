@@ -1148,6 +1148,65 @@ function updateFormDisplay() {
 
 // --- SILENT Location Trigger on Final Submit (Mobile Optimized) ---
     const signupForm = document.getElementById('signupForm');
+
+    // Send the registration as JSON, the same way the Detection page sends its photos.
+    // (Vercel's firewall was blocking the multipart form that carried the big base64 photo.)
+    let signupSending = false;
+    signupForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        if (signupSending) return;
+        signupSending = true;
+
+        let box = document.getElementById('signupAjaxError');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'signupAjaxError';
+            box.className = 'mb-4 p-3 bg-red-700 rounded-xl text-center text-white text-sm hidden';
+            signupForm.insertBefore(box, signupForm.firstChild);
+        }
+        box.classList.add('hidden');
+
+        try {
+            const body = {};
+            new FormData(signupForm).forEach((value, key) => { body[key] = value; });
+
+            const res = await fetch("{{ route('signup.post') }}", {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': body._token || ''
+                },
+                body: JSON.stringify(body)
+            });
+
+            let data = {};
+            try { data = JSON.parse(await res.text()); } catch (err) {}
+
+            if (res.ok && data.success) {
+                window.location.href = data.redirect || "{{ route('login') }}";
+                return;
+            }
+
+            box.textContent = res.status === 419
+                ? 'Nag-expire ang page. I-refresh at subukan ulit.'
+                : (data.message || ('Hindi na-submit ang registration (' + res.status + '). Subukan ulit.'));
+            box.classList.remove('hidden');
+            box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } catch (err) {
+            box.textContent = 'Walang koneksyon. Subukan ulit.';
+            box.classList.remove('hidden');
+        }
+
+        signupSending = false;
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerText = 'Submit Registration';
+            submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+    });
     
     if (submitBtn) {
         submitBtn.addEventListener("click", function(e) {
